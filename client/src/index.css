@@ -1,0 +1,74 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Outfit', sans-serif;
+  color-scheme: light;
+  background-color: #FFFFFF;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: #FFFFFF;
+  color: #0F172A;
+  background-image: 
+    radial-gradient(circle, #FCA5A5 1.5px, transparent 1.5px),
+    radial-gradient(circle, #FDE68A 1.5px, transparent 1.5px),
+    radial-gradient(circle, #86EFAC 1.5px, transparent 1.5px),
+    radial-gradient(circle, #93C5FD 1.5px, transparent 1.5px);
+  background-size: 151px 151px, 203px 203px, 147px 147px, 182px 182px;
+  background-position: 10px 10px, 60px 120px, 130px 40px, 90px 180px;
+  background-attachment: fixed;
+}
+
+/* Custom Scrollbar for Arche Theme */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #F8FAFC;
+}
+::-webkit-scrollbar-thumb {
+  background: #38BDF8;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #0EA5E9;
+}
+
+/* Animations */
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+
+.float-animation {
+  animation: float 4s ease-in-out infinite;
+}
+
+/* Thermal Print Styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+    width: 80mm;
+    margin: 0 auto;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 12px;
+    background-color: white !important;
+    color: black !important;
+  }
+  body {
+    background-color: white !important;
+    color: black !important;
+    background-image: none !important;
+  }
+}
