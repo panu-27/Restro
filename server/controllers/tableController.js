@@ -26,3 +26,43 @@ exports.updateTableSection = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+exports.createTable = async (req, res) => {
+  try {
+    const { tableId, seats } = req.body;
+    let table = await Table.findOne({ tableId });
+    if (table) return res.status(400).json({ error: 'Table already exists' });
+
+    table = new Table({ tableId, seats });
+    await table.save();
+    res.status(201).json(table);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.deleteTable = async (req, res) => {
+  try {
+    const tableId = req.params.tableId;
+    await Table.findOneAndDelete({ tableId });
+    res.json({ message: 'Table deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.updateTableSeats = async (req, res) => {
+  try {
+    const tableId = req.params.tableId;
+    const { seats } = req.body;
+    const table = await Table.findOneAndUpdate(
+      { tableId },
+      { seats },
+      { new: true }
+    );
+    if (!table) return res.status(404).json({ error: 'Table not found' });
+    res.json(table);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};

@@ -3,7 +3,7 @@ const Table = require('../models/Table');
 
 exports.getActiveOrders = async (req, res) => {
   try {
-    const orders = await Order.find({ status: { $ne: 'Paid' } }).sort('-createdAt');
+    const orders = await Order.find({ status: { $nin: ['Paid', 'Cancelled'] } }).sort('-createdAt');
     res.json(orders);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -34,14 +34,18 @@ exports.createOrder = async (req, res) => {
 
 exports.updateOrderStatus = async (req, res) => {
   try {
-    const { status } = req.body;
-    const order = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true });
+    const { status, customerPhone } = req.body;
+    const updateFields = { status };
+    if (customerPhone !== undefined && customerPhone !== '') {
+      updateFields.customerPhone = customerPhone;
+    }
+    const order = await Order.findByIdAndUpdate(req.params.id, updateFields, { new: true });
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
     // Table State Management
     if (order.orderType === 'Dine-in') {
       const tableUpdate = {};
-      if (status === 'Paid') {
+      if (status === 'Paid' || status === 'Cancelled') {
         tableUpdate[`sections.${order.section}.status`] = 'Available';
         tableUpdate[`sections.${order.section}.orderId`] = null;
       } else if (status === 'Served') {
@@ -67,7 +71,7 @@ exports.getAllOrders = async (req, res) => {
 
     let query = {};
 
-    if (type !== 'All') {
+    if (type && type !== 'All') {
       query.orderType = type;
     }
 

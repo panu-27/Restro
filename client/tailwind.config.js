@@ -12,11 +12,11 @@ export default {
           bg: '#FFFFFF',
           text: '#0F172A',
           gray: '#64748B',
-          blue: {
-            light: '#38BDF8', // Engineered
-            deep: '#0EA5E9',  // Complexity
+          orange: {
+            light: '#FF8C6B', // Primary Light
+            deep: '#FF5A36',  // Primary Deep
           },
-          accent: '#7DD3FC'
+          accent: '#FFB89A'
         }
       },
       borderRadius: {
@@ -24,7 +24,8 @@ export default {
         '5xl': '3rem',
       },
       fontFamily: {
-        outfit: ['Outfit', 'sans-serif'],
+        sans: ['DM Sans', 'sans-serif'],
+        dmsans: ['DM Sans', 'sans-serif'],
       }
     },
   },

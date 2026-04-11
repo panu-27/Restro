@@ -1,7 +1,9 @@
 const mongoose = require('mongoose');
 
 const tableSchema = new mongoose.Schema({
-  tableId: { type: String, required: true, unique: true }, // Table 1, Table 2, etc.
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'ArcheUser', required: true },
+  tableId: { type: String, required: true }, // Not unique: true globally anymore!
+  seats: { type: Number, default: 4 },
   status: { type: String, enum: ['Available', 'Occupied', 'Served'], default: 'Available' },
   currentOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },
   sections: {
