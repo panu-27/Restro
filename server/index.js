@@ -85,8 +85,24 @@ app.post('/api/auth/register', async (req, res) => {
     const exists = await ArcheUser.findOne({ mobileNumber });
     if (exists) return res.status(400).json({ error: 'An account with this mobile number already exists' });
 
-    const user = new ArcheUser({ name, mobileNumber, password, role: 'Staff' });
+    const user = new ArcheUser({ name, mobileNumber, password, role: 'Admin' });
     await user.save();
+
+    // Generate default tables
+    const defaultTables = [];
+    for (let i = 1; i <= 10; i++) {
+      defaultTables.push({ tableId: `T${i}`, seats: 4, userId: user._id });
+    }
+    await Table.insertMany(defaultTables);
+
+    // Generate default menu
+    const defaultMenu = [
+      { name: 'Paneer Butter Masala', category: 'Veg', price: 250, userId: user._id },
+      { name: 'Chicken Tikka', category: 'Non-Veg', price: 300, userId: user._id },
+      { name: 'Coke', category: 'Beverage', price: 60, userId: user._id },
+      { name: 'Gulab Jamun', category: 'Dessert', price: 100, userId: user._id }
+    ];
+    await Menu.insertMany(defaultMenu);
 
     const token = jwt.sign({ id: user._id, name: user.name, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
     res.status(201).json({ token, user: { id: user._id, name: user.name, mobileNumber: user.mobileNumber, role: user.role } });
@@ -112,6 +128,28 @@ app.post('/api/auth/login', async (req, res) => {
     res.json({ token, user: { id: user._id, name: user.name, mobileNumber: user.mobileNumber, role: user.role } });
   } catch (err) {
     console.error('Login error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/auth/change-password
+app.post('/api/auth/change-password', auth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Current and new password are required' });
+
+    const user = await ArcheUser.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const match = await user.comparePassword(currentPassword);
+    if (!match) return res.status(400).json({ error: 'Incorrect current password' });
+
+    user.password = newPassword;
+    await user.save(); // This triggers the pre-save hook to hash the new password
+
+    res.json({ message: 'Password changed successfully' });
+  } catch (err) {
+    console.error('Change password error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -145,7 +183,7 @@ app.post('/api/subscription/activate', auth, async (req, res) => {
 
     const now = new Date();
     const trialEnd = new Date(now);
-    trialEnd.setDate(trialEnd.getDate() + TRIAL_DAYS);
+    trialEnd.setDate(trialEnd.getDate() + 7);
 
     if (sub) {
       // Reactivate expired subscription
@@ -339,9 +377,9 @@ app.patch('/api/settings', auth, async (req, res) => {
 // MENU ROUTES
 // =====================
 
-app.get('/api/menu', async (req, res) => {
+app.get('/api/menu', auth, async (req, res) => {
   try {
-    const items = await Menu.find().sort('category name');
+    const items = await Menu.find({ userId: req.user.id }).sort('category name');
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -350,7 +388,7 @@ app.get('/api/menu', async (req, res) => {
 
 app.post('/api/menu', auth, adminOnly, async (req, res) => {
   try {
-    const item = new Menu(req.body);
+    const item = new Menu({ ...req.body, userId: req.user.id });
     await item.save();
     res.status(201).json(item);
   } catch (err) {
@@ -360,7 +398,7 @@ app.post('/api/menu', auth, adminOnly, async (req, res) => {
 
 app.patch('/api/menu/:id', auth, adminOnly, async (req, res) => {
   try {
-    const item = await Menu.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const item = await Menu.findOneAndUpdate({ _id: req.params.id, userId: req.user.id }, req.body, { new: true });
     if (!item) return res.status(404).json({ error: 'Item not found' });
     res.json(item);
   } catch (err) {
@@ -370,7 +408,7 @@ app.patch('/api/menu/:id', auth, adminOnly, async (req, res) => {
 
 app.delete('/api/menu/:id', auth, adminOnly, async (req, res) => {
   try {
-    await Menu.findByIdAndDelete(req.params.id);
+    await Menu.findOneAndDelete({ _id: req.params.id, userId: req.user.id });
     res.json({ message: 'Item deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -380,7 +418,7 @@ app.delete('/api/menu/:id', auth, adminOnly, async (req, res) => {
 // PATCH /api/menu/:id/toggle — Quick availability toggle
 app.patch('/api/menu/:id/toggle', auth, adminOnly, async (req, res) => {
   try {
-    const item = await Menu.findById(req.params.id);
+    const item = await Menu.findOne({ _id: req.params.id, userId: req.user.id });
     if (!item) return res.status(404).json({ error: 'Item not found' });
     item.isAvailable = !item.isAvailable;
     await item.save();
@@ -396,7 +434,7 @@ app.patch('/api/menu/:id/toggle', auth, adminOnly, async (req, res) => {
 
 app.get('/api/orders/active', auth, async (req, res) => {
   try {
-    const orders = await Order.find({ status: { $ne: 'Paid' } }).sort('-createdAt');
+    const orders = await Order.find({ userId: req.user.id, status: { $nin: ['Paid', 'Cancelled'] } }).sort('-createdAt');
     res.json(orders);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -411,7 +449,7 @@ app.get('/api/orders', auth, async (req, res) => {
     const search = req.query.search || '';
     const type = req.query.type || 'All';
     
-    const query = {};
+    const query = { userId: req.user.id };
     if (type !== 'All') query.orderType = type;
     if (search) {
       query.$or = [
@@ -441,7 +479,7 @@ app.get('/api/orders', auth, async (req, res) => {
 // GET /api/orders/:id — Specific order detail
 app.get('/api/orders/:id', auth, async (req, res) => {
   try {
-    const order = await Order.findById(req.params.id);
+    const order = await Order.findOne({ _id: req.params.id, userId: req.user.id });
     if (!order) return res.status(404).json({ error: 'Order not found' });
     res.json(order);
   } catch (err) {
@@ -481,9 +519,11 @@ app.post('/api/orders', auth, async (req, res) => {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const countToday = await Order.countDocuments({
+      userId: req.user.id,
       createdAt: { $gte: todayStart }
     });
     orderData.orderNumber = countToday + 1;
+    orderData.userId = req.user.id;
 
     // Default formatting for quick parcels
     if (orderData.orderType === 'Parcel' && !orderData.customerName) {
@@ -497,9 +537,9 @@ app.post('/api/orders', auth, async (req, res) => {
     // Sync table state for Dine-in orders
     if (order.orderType === 'Dine-in' && order.tableId) {
       await Table.findOneAndUpdate(
-        { tableId: order.tableId },
+        { tableId: order.tableId, userId: req.user.id },
         { status: 'Occupied', currentOrderId: order._id, lastUpdated: new Date() },
-        { upsert: true }
+        { upsert: true } // Wait, upsert true with userId might be tricky if it doesn't exist, but it should exist.
       );
     }
     res.status(201).json(order);
@@ -554,8 +594,11 @@ app.patch('/api/orders/:id/add-items', auth, async (req, res) => {
 
 app.patch('/api/orders/:id/status', auth, async (req, res) => {
   try {
-    const { status } = req.body;
-    const order = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true });
+    const { status, customerPhone } = req.body;
+    const updateData = { status };
+    if (customerPhone) updateData.customerPhone = customerPhone;
+    
+    const order = await Order.findByIdAndUpdate(req.params.id, updateData, { new: true });
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
     // Sync table state (simplified)
@@ -582,8 +625,48 @@ app.patch('/api/orders/:id/status', auth, async (req, res) => {
 
 app.get('/api/tables', auth, async (req, res) => {
   try {
-    const tables = await Table.find().sort('tableId');
+    const tables = await Table.find({ userId: req.user.id }).sort('tableId');
     res.json(tables);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/tables — Add a new table
+app.post('/api/tables', auth, async (req, res) => {
+  try {
+    const { tableId, seats } = req.body;
+    const table = new Table({ tableId, seats: seats || 4, userId: req.user.id });
+    await table.save();
+    res.status(201).json(table);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/tables/:tableId — Update table seats or other metadata
+app.patch('/api/tables/:tableId', auth, async (req, res) => {
+  try {
+    const { seats, status } = req.body;
+    const update = {};
+    if (seats !== undefined) update.seats = seats;
+    if (status !== undefined) update.status = status;
+    update.lastUpdated = new Date();
+
+    const table = await Table.findOneAndUpdate({ tableId: req.params.tableId, userId: req.user.id }, update, { new: true });
+    if (!table) return res.status(404).json({ error: 'Table not found' });
+    res.json(table);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/tables/:tableId — Remove a table
+app.delete('/api/tables/:tableId', auth, async (req, res) => {
+  try {
+    const table = await Table.findOneAndDelete({ tableId: req.params.tableId, userId: req.user.id });
+    if (!table) return res.status(404).json({ error: 'Table not found' });
+    res.json({ message: 'Table removed', tableId: req.params.tableId });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -593,7 +676,7 @@ app.patch('/api/tables/:tableId/section', auth, async (req, res) => {
   try {
     const { section, status } = req.body;
     const update = { [`sections.${section}.status`]: status, lastUpdated: new Date() };
-    const table = await Table.findOneAndUpdate({ tableId: req.params.tableId }, update, { new: true, upsert: true });
+    const table = await Table.findOneAndUpdate({ tableId: req.params.tableId, userId: req.user.id }, update, { new: true, upsert: true });
     res.json(table);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -645,6 +728,7 @@ app.get('/api/analytics/sales', auth, async (req, res) => {
     const { start, end } = getDateRange(period);
 
     const orders = await Order.find({
+      userId: req.user.id,
       status: 'Paid',
       createdAt: { $gte: start, $lte: end }
     }).sort('-createdAt');
@@ -669,15 +753,49 @@ app.get('/api/analytics/sales', auth, async (req, res) => {
 
     // Daily breakdown
     const dailyMap = {};
+    
+    // Pre-populate missing days for certain periods so charts look complete
+    if (period === 'week') {
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(end);
+        d.setDate(d.getDate() - i);
+        const dayStr = d.toISOString().split('T')[0];
+        dailyMap[dayStr] = { date: dayStr, orders: 0, dineIn: 0, parcel: 0, total: 0, avgOrder: 0 };
+      }
+    }
+    
     orders.forEach(o => {
       const day = new Date(o.createdAt).toISOString().split('T')[0];
-      if (!dailyMap[day]) dailyMap[day] = { date: day, orders: 0, dineIn: 0, parcel: 0, total: 0 };
+      if (!dailyMap[day]) dailyMap[day] = { date: day, orders: 0, dineIn: 0, parcel: 0, total: 0, avgOrder: 0 };
       dailyMap[day].orders++;
       dailyMap[day].total += o.totalAmount;
       if (o.orderType === 'Dine-in') dailyMap[day].dineIn += o.totalAmount;
       else dailyMap[day].parcel += o.totalAmount;
     });
-    const dailyBreakdown = Object.values(dailyMap).sort((a, b) => b.date.localeCompare(a.date));
+    // compute avgOrder per day
+    Object.values(dailyMap).forEach(d => { d.avgOrder = d.orders > 0 ? Math.round(d.total / d.orders) : 0; });
+    const dailyBreakdown = Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date));
+
+    // Hourly breakdown — only populated for today
+    let hourlyBreakdown = [];
+    if (period === 'today') {
+      const hourlyMap = {};
+      for (let h = 0; h < 24; h++) hourlyMap[h] = { hour: h, orders: 0, dineIn: 0, parcel: 0, total: 0 };
+      orders.forEach(o => {
+        const h = new Date(o.createdAt).getHours();
+        hourlyMap[h].orders++;
+        hourlyMap[h].total += o.totalAmount;
+        if (o.orderType === 'Dine-in') hourlyMap[h].dineIn += o.totalAmount;
+        else hourlyMap[h].parcel += o.totalAmount;
+      });
+      // Only include hours from first order to current hour + 1
+      const currentHour = new Date().getHours();
+      const orderHours = orders.map(o => new Date(o.createdAt).getHours());
+      const firstHour = orderHours.length > 0 ? Math.min(...orderHours) : currentHour;
+      hourlyBreakdown = Object.values(hourlyMap)
+        .filter(h => h.hour >= firstHour && h.hour <= currentHour)
+        .sort((a, b) => a.hour - b.hour);
+    }
 
     res.json({
       period,
@@ -690,12 +808,15 @@ app.get('/api/analytics/sales', auth, async (req, res) => {
       parcelRevenue,
       avgOrderValue: Math.round(avgOrderValue * 100) / 100,
       topItems,
-      dailyBreakdown
+      dailyBreakdown,
+      hourlyBreakdown
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
+
 
 // GET /api/analytics/summary — Quick overview stats
 app.get('/api/analytics/summary', auth, async (req, res) => {
@@ -704,9 +825,9 @@ app.get('/api/analytics/summary', auth, async (req, res) => {
     today.setHours(0, 0, 0, 0);
 
     const [todayOrders, allPaidOrders, activeOrders] = await Promise.all([
-      Order.find({ status: 'Paid', createdAt: { $gte: today } }),
-      Order.countDocuments({ status: 'Paid' }),
-      Order.countDocuments({ status: { $ne: 'Paid' } })
+      Order.find({ userId: req.user.id, status: 'Paid', createdAt: { $gte: today } }),
+      Order.countDocuments({ userId: req.user.id, status: 'Paid' }),
+      Order.countDocuments({ userId: req.user.id, status: { $ne: 'Paid' } })
     ]);
 
     const todayRevenue = todayOrders.reduce((sum, o) => sum + o.totalAmount, 0);
@@ -726,37 +847,46 @@ app.get('/api/analytics/summary', auth, async (req, res) => {
 app.get('/api/analytics/export', auth, async (req, res) => {
   try {
     const period = req.query.period || 'year';
-    const { start, end } = getDateRange(period);
+    let start, end;
+
+    if (period === 'custom' && req.query.from && req.query.to) {
+      start = new Date(req.query.from);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(req.query.to);
+      end.setHours(23, 59, 59, 999);
+    } else {
+      ({ start, end } = getDateRange(period));
+    }
 
     const orders = await Order.find({
+      userId: req.user.id,
       status: 'Paid',
       createdAt: { $gte: start, $lte: end }
     }).sort('createdAt');
 
     // Build CSV
-    let csv = 'Date,Order ID,Type,Table,Section,Customer,Items,Total Amount\n';
+    let csv = 'Date,Order ID,Type,Table,Customer,Phone,Items,Total Amount\n';
     orders.forEach(o => {
       const date = new Date(o.createdAt).toLocaleDateString('en-IN');
       const items = o.items.map(i => `${i.name}x${i.quantity}`).join('; ');
-      const customer = o.orderType === 'Parcel' ? `${o.customerName} (${o.customerPhone})` : 'Walk-in';
+      const customer = o.customerName || 'Walk-in';
+      const phone = o.customerPhone || '-';
       const table = o.tableId || '-';
-      const section = o.section || '-';
-      csv += `${date},${o._id},${o.orderType},${table},${section},"${customer}","${items}",${o.totalAmount}\n`;
+      csv += `${date},${o._id},${o.orderType},${table},"${customer}",${phone},"${items}",${o.totalAmount}\n`;
     });
 
     // Summary row
     const total = orders.reduce((s, o) => s + o.totalAmount, 0);
-    csv += `\n,,,,,,TOTAL,${total}\n`;
-    csv += `,,,,,,GST (5%),${(total * 0.05).toFixed(2)}\n`;
-    csv += `,,,,,,GRAND TOTAL,${(total * 1.05).toFixed(2)}\n`;
+    csv += `\n,,,,,TOTAL,,${total}\n`;
 
     res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename="archearc-sales-${period}-${new Date().toISOString().split('T')[0]}.csv"`);
+    res.setHeader('Content-Disposition', `attachment; filename="analytics-${period}-${new Date().toISOString().split('T')[0]}.csv"`);
     res.send(csv);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 // =====================
 // HEALTH CHECK

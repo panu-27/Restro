@@ -1,19 +1,26 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,100..1000&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+.print-only {
+  display: none !important;
+}
+
 :root {
-  font-family: 'Outfit', sans-serif;
-  color-scheme: light;
+  --font-family: 'DM Sans', sans-serif;
+}
+
+/* Global: enforce DM Sans and remove all italic styles */
+*, *::before, *::after {
+  font-family: 'DM Sans', sans-serif !important;
+  font-style: normal !important;
 }
 
 body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-  @apply bg-white text-slate-900;
+  font-family: 'DM Sans', sans-serif;
+  @apply bg-[#F8FAFC] text-slate-900 antialiased selection:bg-orange-50 selection:text-orange-600;
 }
 
 /* Thermal Print Styles - Keep since @media print has no pure inline equivalent */
@@ -34,4 +41,41 @@ body {
     background-color: white !important;
     color: black !important;
   }
+}
+
+/* Utilities */
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Micro Animations */
+  .animate-stagger-1 { animation: springFade 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.05s both; }
+  .animate-stagger-2 { animation: springFade 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.10s both; }
+  .animate-stagger-3 { animation: springFade 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.15s both; }
+  .animate-stagger-4 { animation: springFade 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.20s both; }
+  .animate-stagger-5 { animation: springFade 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.25s both; }
+  
+  .animate-stat-pop { animation: statPop 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+}
+
+@keyframes springFade {
+  0% { opacity: 0; transform: translateY(12px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes statPop {
+  0% { opacity: 0; transform: scale(0.95); }
+  40% { transform: scale(1.02); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slideUp {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
 }

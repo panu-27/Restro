@@ -1,189 +1,329 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { CustomLogo } from './Logo';
-import { Phone, Lock, LogIn, AlertCircle, UserPlus, Fingerprint, ChevronRight } from 'lucide-react';
+import { Send, AlertCircle, Fingerprint, Phone, Lock, Eye, EyeOff } from 'lucide-react';
 
 const Login = ({ onLoginSuccess }) => {
   const [isRegister, setIsRegister] = useState(false);
   const [name, setName] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Switch modes and clear all state
+  const switchMode = () => {
+    setIsRegister(prev => !prev);
+    setName('');
+    setMobileNumber('');
+    setPassword('');
+    setError('');
+    setShowPassword(false);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
     setError('');
-    
+
+    // Client-side validation
+    if (mobileNumber.length < 10) {
+      setError('Please enter a valid 10-digit mobile number.');
+      return;
+    }
+    if (password.length < 4) {
+      setError('Password must be at least 4 characters.');
+      return;
+    }
+    if (isRegister && name.trim().length < 2) {
+      setError('Please enter your full name.');
+      return;
+    }
+
+    setLoading(true);
+
     const endpoint = isRegister ? '/api/auth/register' : '/api/auth/login';
-    const payload = isRegister ? { name, mobileNumber, password } : { mobileNumber, password };
+    const payload = isRegister
+      ? { name: name.trim(), mobileNumber: mobileNumber.trim(), password }
+      : { mobileNumber: mobileNumber.trim(), password };
 
     try {
       const res = await axios.post(endpoint, payload);
+      if (!res.data.token || !res.data.user) {
+        throw new Error('Invalid response from server. Please try again.');
+      }
       onLoginSuccess(res.data.token, res.data.user);
     } catch (err) {
-      setError(err.response?.data?.error || 'Authentication failed. Please try again.');
+      if (err.response?.data?.error) {
+        setError(err.response.data.error);
+      } else if (err.message) {
+        setError(err.message);
+      } else {
+        setError('Authentication failed. Please check your connection and try again.');
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  const inputStyle = {
+    width: '100%', padding: '8px 0', background: 'transparent', border: 'none',
+    borderBottom: '1px solid #dadce0', fontSize: '0.9rem', color: '#202124', outline: 'none',
+    fontFamily: 'inherit', transition: 'border-color 0.2s ease', fontWeight: 500
+  };
+
   return (
-    <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 font-outfit relative overflow-hidden">
-      {/* Decorative Dots - Background is already set in index.css */}
-      
-      {/* Navigation Simulation (Matches Image) */}
-      <div className="absolute top-0 w-full flex items-center justify-between px-12 py-8 no-print">
-        <div className="flex items-center gap-3">
-          <CustomLogo size={32} />
-          <span className="text-xl font-bold text-arche-text">ArcheArc</span>
-        </div>
-        <div className="hidden md:flex items-center gap-8">
-          <span className="text-gray-500 font-medium hover:text-arche-blue-deep cursor-pointer transition-colors">Products</span>
-          <span className="text-gray-500 font-medium hover:text-arche-blue-deep cursor-pointer transition-colors">Services</span>
-          <span className="text-gray-500 font-medium hover:text-arche-blue-deep cursor-pointer transition-colors">Pricing</span>
-          <span className="text-gray-500 font-medium hover:text-arche-blue-deep cursor-pointer transition-colors">Blog</span>
-          <span className="bg-gray-100 text-arche-text px-4 py-1.5 rounded-full font-medium">About Us</span>
-        </div>
-        <div className="flex items-center gap-6">
-          <span className="text-gray-600 font-medium cursor-pointer">Contact Us</span>
-          <button className="bg-arche-text text-white px-6 py-2.5 rounded-full font-bold flex items-center gap-2 hover:bg-black transition-all">
-            Download <LogIn size={16} />
-          </button>
-        </div>
-      </div>
+    <div className="flex flex-col page-enter" style={{ backgroundColor: '#F5F4E2', minHeight: '100vh', position: 'relative', overflowX: 'hidden' }}>
+      <style>{`
+        @keyframes dropdown-fade { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes float-sticker {
+          0%, 100% { transform: translateY(0) rotate(-4deg); }
+          50% { transform: translateY(-10px) rotate(2deg); }
+        }
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          25% { transform: translateX(-4px); }
+          50% { transform: translateX(4px); }
+          75% { transform: translateX(-4px); }
+        }
+        .contact-layout {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 60px;
+          max-width: 1100px;
+          width: 100%;
+          margin: 0 auto;
+          align-items: center;
+        }
+        @media (max-width: 992px) {
+          .contact-layout {
+            grid-template-columns: 1fr;
+            gap: 80px;
+          }
+          .contact-left-col {
+            text-align: center;
+            align-items: center;
+          }
+        }
+        .form-input:focus {
+          border-bottom-color: #1a73e8 !important;
+        }
+        .contact-form-card {
+          background-color: #ffffff;
+          border-radius: 24px;
+          padding: 60px;
+          box-shadow: 0 24px 80px rgba(0,0,0,0.06);
+          border: 1px solid rgba(0,0,0,0.05);
+          position: relative;
+          z-index: 5;
+        }
+        @media (max-width: 768px) {
+          .contact-form-card {
+            padding: 24px;
+          }
+          .sticker-wrap {
+            top: -60px !important;
+            right: -10px !important;
+          }
+          .sticker-wrap img {
+            width: 120px !important;
+          }
+        }
+      `}</style>
 
-      {/* Hero Content */}
-      <div className="max-w-4xl w-full text-center mt-20 mb-12 animate-in fade-in slide-in-from-bottom-8 duration-1000">
-        <div className="flex items-center justify-center gap-3 mb-6 transition-transform hover:scale-105 duration-300">
-          <CustomLogo size={38} />
-          <span className="text-2xl font-bold text-arche-text tracking-tight">ArcheArc <span className="text-gray-400 font-normal">Developers</span></span>
-        </div>
-        
-        <h1 className="text-5xl md:text-7xl font-black text-arche-text mb-8 leading-[1.05] tracking-tight">
-          Great restro products are <span className="text-arche-blue-light italic">engineered</span>, not improvised. We project-manage <span className="text-arche-blue-deep">complexity</span> into clarity.
-        </h1>
+      <section className="section" style={{ paddingTop: '80px', paddingBottom: '80px', position: 'relative', flex: 1, display: 'flex', alignItems: 'center' }}>
+        <div className="wrap" style={{ width: '100%', padding: '0 24px' }}>
+          <div className="contact-layout">
 
-        {/* Stats Row (Inspired by Image) */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mt-16 max-w-5xl mx-auto px-4 opacity-80">
-          {[
-            { id: 'ID_01', label: 'DELIVERIES', val: '50+' },
-            { id: 'ID_02', label: 'SUCCESS RATE', val: '99%' },
-            { id: 'ID_03', label: 'STABILITY', val: '98%' },
-            { id: 'ID_04', label: 'REACH_CAP', val: '+5M' }
-          ].map((stat, i) => (
-            <div key={i} className="flex flex-col items-center">
-              <span className="text-[10px] font-bold text-arche-blue-light tracking-[0.2em] mb-2">{stat.id}</span>
-              <div className="text-4xl md:text-5xl font-black text-arche-text mb-2">
-                {stat.val.replace(/[+%]/, '')}<span className="text-arche-blue-light">{stat.val.match(/[+%]/)?.[0]}</span>
+            {/* ── Left Column ── */}
+            <div className="contact-left-col" style={{ display: 'flex', flexDirection: 'column', gap: '36px' }}>
+              <div>
+                <h1 style={{
+                  fontSize: 'clamp(2.5rem, 4vw, 3.5rem)',
+                  fontWeight: 400,
+                  color: '#202124',
+                  marginBottom: '20px',
+                  lineHeight: 1.15,
+                  letterSpacing: '-0.03em'
+                }}>
+                  {isRegister ? 'Join the system.' : 'Welcome back.'}
+                </h1>
+                <p style={{ fontSize: '1rem', color: '#888', lineHeight: 1.6, margin: 0, maxWidth: '420px' }}>
+                  A sophisticated platform orchestrating premium, high-performance digital workflows for your restaurant.
+                </p>
               </div>
-              <span className="text-[10px] font-bold text-gray-400 tracking-[0.2em]">{stat.label}</span>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+                <div>
+                  <p style={{ fontSize: '0.8rem', fontWeight: 700, color: '#5f6368', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>POWERED BY</p>
+                  <p style={{ color: '#3c4043', fontSize: '1.05rem', margin: 0, fontWeight: 500 }}>ArcheArc Restro</p>
+                </div>
+              </div>
             </div>
-          ))}
-        </div>
-      </div>
 
-      {/* Authentication Form */}
-      <div className="w-full max-w-lg bg-white/80 backdrop-blur-xl rounded-[3rem] border border-gray-100 p-8 md:p-12 shadow-[0_40px_100px_-20px_rgba(0,0,0,0.1)] relative z-10">
-        <div className="mb-10 text-center">
-          <h2 className="text-2xl font-bold text-arche-text">
-            {isRegister ? 'Create your account' : 'System Access'}
-          </h2>
-          <p className="text-gray-400 mt-2">Manage your restaurant with precision.</p>
-        </div>
+            {/* ── Right Column ── */}
+            <div style={{ position: 'relative', width: '100%', maxWidth: '480px', margin: '0 auto' }}>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {isRegister && (
-            <div className="space-y-2 animate-in slide-in-from-top-4 duration-300">
-              <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 ml-6">Full Name</label>
-              <div className="relative">
-                <Fingerprint className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300" size={20} />
-                <input 
-                  type="text" 
-                  required
-                  className="w-full bg-gray-50/50 border border-gray-100 rounded-full py-5 pl-16 pr-8 focus:outline-none focus:ring-2 focus:ring-arche-blue-light/20 focus:border-arche-blue-light transition-all text-lg font-medium text-arche-text"
-                  placeholder="John Doe"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
+              {/* Logo Sticker */}
+              <div
+                className="sticker-wrap"
+                style={{
+                  position: 'absolute',
+                  top: '-40px',
+                  right: '-20px',
+                  zIndex: 50,
+                  pointerEvents: 'none',
+                }}
+              >
+                <img
+                  src="/imgaes/WhatsApp Image 2026-04-08 at 3.59.04 PM.jpeg"
+                  alt="Logo Sticker"
+                  style={{
+                    width: '160px',
+                    height: '160px',
+                    objectFit: 'cover',
+                    borderRadius: '50%',
+                    animation: 'float-sticker 6s ease-in-out infinite',
+                    filter: 'drop-shadow(0 16px 32px rgba(0,0,0,0.15))',
+                    border: '4px solid white'
+                  }}
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.style.display = 'none';
+                  }}
                 />
               </div>
-            </div>
-          )}
 
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 ml-6">Mobile Number</label>
-            <div className="relative">
-              <Phone className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300" size={20} />
-              <input 
-                type="tel" 
-                required
-                className="w-full bg-gray-50/50 border border-gray-100 rounded-full py-5 pl-16 pr-8 focus:outline-none focus:ring-2 focus:ring-arche-blue-light/20 focus:border-arche-blue-light transition-all text-lg font-medium text-arche-text"
-                placeholder="9876543210"
-                value={mobileNumber}
-                onChange={(e) => setMobileNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
-              />
+              {/* Login Form Card */}
+              <div className="contact-form-card">
+                <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                  <div style={{ textAlign: 'center', marginBottom: '10px' }}>
+                    <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#202124', marginBottom: '4px' }}>
+                      {isRegister ? 'Create Account' : 'System Access'}
+                    </h2>
+                    <p style={{ color: '#888', fontSize: '0.9rem' }}>
+                      {isRegister ? 'Fill in your details to get started' : 'Enter your credentials to continue'}
+                    </p>
+                  </div>
+
+                  {isRegister && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <label style={{ fontSize: '0.7rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Full Name</label>
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                        <Fingerprint size={16} style={{ position: 'absolute', left: 0, color: '#9ca3af' }} />
+                        <input
+                          type="text"
+                          required
+                          placeholder="John Doe"
+                          className="form-input"
+                          style={{...inputStyle, paddingLeft: '28px'}}
+                          value={name}
+                          onChange={e => { setName(e.target.value); setError(''); }}
+                          autoComplete="name"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <label style={{ fontSize: '0.7rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Mobile Number</label>
+                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                      <Phone size={16} style={{ position: 'absolute', left: 0, color: '#9ca3af' }} />
+                      <input
+                        type="tel"
+                        required
+                        placeholder="9876543210"
+                        className="form-input"
+                        style={{...inputStyle, paddingLeft: '28px'}}
+                        value={mobileNumber}
+                        onChange={e => { setMobileNumber(e.target.value.replace(/\D/g, '').slice(0, 10)); setError(''); }}
+                        autoComplete="tel"
+                        inputMode="numeric"
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <label style={{ fontSize: '0.7rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Password</label>
+                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                      <Lock size={16} style={{ position: 'absolute', left: 0, color: '#9ca3af' }} />
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        required
+                        placeholder="••••••••"
+                        className="form-input"
+                        style={{...inputStyle, paddingLeft: '28px', paddingRight: '32px'}}
+                        value={password}
+                        onChange={e => { setPassword(e.target.value); setError(''); }}
+                        autoComplete={isRegister ? 'new-password' : 'current-password'}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(p => !p)}
+                        style={{ position: 'absolute', right: 0, background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', padding: '4px', display: 'flex', alignItems: 'center' }}
+                        tabIndex={-1}
+                      >
+                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {error && (
+                    <div
+                      key={error}
+                      style={{ background: '#fef2f2', color: '#ef4444', padding: '12px', borderRadius: '12px', fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', animation: 'shake 0.4s' }}>
+                      <AlertCircle size={16} />
+                      {error}
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    style={{
+                      background: '#111827', color: '#fff', border: 'none',
+                      padding: '14px 24px', fontSize: '1rem', fontWeight: 600,
+                      cursor: loading ? 'not-allowed' : 'pointer',
+                      borderRadius: 100, display: 'flex', alignItems: 'center',
+                      justifyContent: 'center', gap: 10, transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                      boxShadow: '0 8px 24px rgba(17,24,39,0.2)',
+                      marginTop: '16px',
+                      opacity: loading ? 0.7 : 1,
+                    }}
+                    onMouseEnter={e => { if (!loading) { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 12px 28px rgba(17,24,39,0.25)'; } }}
+                    onMouseLeave={e => { if (!loading) { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 8px 24px rgba(17,24,39,0.2)'; } }}
+                  >
+                    {loading ? (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: 'spin 1s linear infinite' }}>
+                          <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                        </svg>
+                        {isRegister ? 'Creating Account...' : 'Signing In...'}
+                      </span>
+                    ) : (
+                      <>
+                        {isRegister ? 'Create Account' : 'Login'} <Send size={16} />
+                      </>
+                    )}
+                  </button>
+                </form>
+
+                <div style={{ marginTop: '24px', textAlign: 'center' }}>
+                  <button
+                    onClick={switchMode}
+                    style={{ background: 'transparent', border: 'none', color: '#1a73e8', fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    {isRegister ? 'Already have an account? Login' : 'Need a new account? Register now'}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 ml-6">Password</label>
-            <div className="relative">
-              <Lock className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300" size={20} />
-              <input 
-                type="password" 
-                required
-                className="w-full bg-gray-50/50 border border-gray-100 rounded-full py-5 pl-16 pr-8 focus:outline-none focus:ring-2 focus:ring-arche-blue-light/20 focus:border-arche-blue-light transition-all text-lg font-medium text-arche-text"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {error && (
-            <div className="bg-rose-50 border border-rose-100 p-4 rounded-3xl flex items-center gap-3 text-rose-500 text-sm font-bold animate-shake">
-              <AlertCircle size={18} />
-              {error}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-arche-text text-white py-5 rounded-full font-bold text-xl hover:bg-black active:scale-[0.98] transition-all shadow-xl disabled:opacity-50 flex items-center justify-center gap-3 group"
-          >
-            {loading ? 'AUTHENTICATING...' : (
-              <>
-                {isRegister ? 'CREATE ACCOUNT' : 'ACCESS SYSTEM'}
-                <ChevronRight className="group-hover:translate-x-1 transition-transform" size={20} />
-              </>
-            )}
-          </button>
-        </form>
-
-        <div className="mt-8 text-center">
-            <button 
-                onClick={() => setIsRegister(!isRegister)}
-                className="text-arche-blue-deep font-bold hover:text-arche-blue-light transition-colors"
-            >
-                {isRegister ? 'Already have an account? Login' : 'Need a new account? Register now'}
-            </button>
         </div>
-      </div>
+      </section>
 
-      {/* Floating Chat Button (Matches Image) */}
-      <div className="fixed bottom-8 right-8 bg-arche-text text-white px-6 py-4 rounded-3xl shadow-2xl flex items-center gap-3 cursor-pointer hover:scale-105 active:scale-95 transition-all z-50">
-        <div className="relative">
-          <LogIn size={20} className="rotate-90" />
-          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-arche-text"></span>
-        </div>
-        <span className="font-bold">Ask Saturn</span>
-      </div>
-
-      <div className="mt-12 text-[10px] font-bold text-gray-300 uppercase tracking-[0.4em] z-0">
-        ARCHEARC ENGINE • STABILITY MODULE v2.1
-      </div>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+      `}</style>
     </div>
   );
 };

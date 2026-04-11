@@ -156,14 +156,10 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate }) => {
   ];
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 pb-12">
+    <div className="p-6 lg:p-8 space-y-8 animate-in fade-in duration-500 pb-12">
       <header>
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-[10px] font-bold text-arche-blue-light tracking-[0.3em] uppercase">Configuration</span>
-          <div className="h-px w-12 bg-arche-blue-light/30"></div>
-        </div>
-        <h2 className="text-4xl font-black text-arche-text tracking-tight">Settings</h2>
-        <p className="text-gray-400 mt-2 font-medium">Manage your restaurant profile, taxes, menu, and subscription.</p>
+        <h1 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">Settings</h1>
+        <p className="text-xs font-black text-slate-400 uppercase tracking-widest mt-1">Manage your restaurant profile, taxes, menu, and subscription.</p>
       </header>
 
       {/* Section Tabs */}
@@ -196,25 +192,7 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate }) => {
             <SettingsInput icon={FileText} label="FSSAI License No." value={fssaiNumber} onChange={setFssaiNumber} placeholder="12345678901234" />
           </div>
 
-          {/* Table Count */}
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 ml-1">Number of Tables (10–50)</label>
-            <div className="flex items-center gap-4">
-              <div className="relative flex-1">
-                <Hash className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
-                <input type="number" min="10" max="50" value={tableCount}
-                  onChange={(e) => setTableCount(Math.max(10, Math.min(50, parseInt(e.target.value) || 10)))}
-                  className="w-full bg-gray-50/50 border border-gray-100 rounded-full py-4 pl-14 pr-6 focus:outline-none focus:border-arche-blue-deep transition-all font-bold text-arche-text" />
-              </div>
-            </div>
-            <div className="px-2">
-              <input type="range" min="10" max="50" value={tableCount} onChange={(e) => setTableCount(parseInt(e.target.value))}
-                className="w-full accent-arche-blue-deep cursor-pointer" />
-              <div className="flex justify-between text-[10px] font-bold text-gray-300">
-                <span>10</span><span className="text-arche-blue-deep text-xs">{tableCount} tables</span><span>50</span>
-              </div>
-            </div>
-          </div>
+
 
           <div className="flex justify-end pt-4">
             <button onClick={handleSaveSettings} disabled={settingsSaving}

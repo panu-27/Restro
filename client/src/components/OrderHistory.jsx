@@ -27,7 +27,7 @@ const OrderHistory = ({ onOrderClick }) => {
     setLoadingHistory(true);
     setErrorMsg('');
     try {
-      const res = await axios.get(`/api/orders?page=${pageNumber}&search=${search}&type=${type}`);
+      const res = await axios.get(`/api/orders?page=${pageNumber}&search=${search}&type=${type === 'All' ? '' : type}`);
       if (res.data && Array.isArray(res.data.orders)) {
         setHistoryOrders(res.data.orders);
         setTotalPages(res.data.pages || 1);
@@ -61,50 +61,40 @@ const OrderHistory = ({ onOrderClick }) => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] p-4 lg:p-8 space-y-8 animate-in fade-in duration-500">
-      {/* --- Dashboard Header --- */}
-      <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+    <div className="min-h-screen bg-[#F8FAFC] p-4 lg:p-10 space-y-10 animate-in fade-in duration-700">
+      
+      {/* ── Header ─────────────────────────────────────────────────── */}
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-8">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="w-2 h-2 rounded-full bg-slate-900"></span>
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">System Core v3.0</span>
-          </div>
-          <h1 className="text-4xl font-black text-slate-900 tracking-tight flex items-baseline gap-2">
-            MASTER <span className="text-indigo-600 italic text-2xl uppercase tracking-tighter">Registry</span>
-          </h1>
+          <h1 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">Order History</h1>
+          <p className="text-xs font-black text-slate-400 uppercase tracking-widest mt-1">Registry Archive v3.0</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+        <div className="flex items-center gap-3">
+          <div className="relative group">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-orange-500 transition-colors" size={16} />
             <input
               type="text"
-              placeholder="Filter by name, phone or table..."
-              className="bg-white border border-slate-200 rounded-2xl py-3 pl-10 pr-4 focus:outline-none focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 transition-all text-sm font-bold w-64"
+              placeholder="Search history..."
+              className="bg-white border border-slate-100 rounded-xl py-3 pl-11 pr-4 focus:outline-none focus:ring-4 focus:ring-orange-500/5 focus:border-orange-500 transition-all text-sm font-bold w-64 shadow-sm"
               value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setPage(1); // Reset page on search
-              }}
+              onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
             />
           </div>
         </div>
       </header>
 
-      {/* --- Filter Bar --- */}
+      {/* ── Filter Bar ───────────────────────────────────────────── */}
       <div className="flex gap-2">
         {['All', 'Dine-in', 'Parcel'].map(type => (
           <button
             key={type}
-            onClick={() => {
-              setFilterType(type);
-              setPage(1);
-            }}
+            onClick={() => { setFilterType(type); setPage(1); }}
             className={cn(
-              "px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all",
+              "px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all",
               filterType === type
-                ? "bg-white border-slate-900 text-slate-900 shadow-sm"
-                : "bg-transparent border-slate-200 text-slate-400 hover:bg-white"
+                ? "bg-slate-900 text-white shadow-xl shadow-slate-200"
+                : "bg-white border border-slate-100 text-slate-400 hover:bg-slate-50"
             )}
           >
             {type}
@@ -112,87 +102,116 @@ const OrderHistory = ({ onOrderClick }) => {
         ))}
       </div>
 
-      {/* --- Main Content Area --- */}
-      {errorMsg && (
-        <div className="p-4 bg-red-50 text-red-600 rounded-xl border border-red-100 text-center font-bold">
-          {errorMsg}
-        </div>
-      )}
-
-      {loadingHistory ? (
-        <div className="flex flex-col items-center justify-center h-[40vh] space-y-4">
-          <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-xs font-black uppercase tracking-widest text-slate-400">Querying Database...</p>
-        </div>
-      ) : (
-        <div className="grid gap-4">
-          {historyOrders.length === 0 ? (
-            <div className="py-24 flex flex-col items-center text-center space-y-4">
-              <div className="p-8 bg-white rounded-full shadow-sm">
-                <History size={48} className="text-slate-200" />
+      {/* ── Table Container ────────────────────────────────────────── */}
+      <div className="space-y-6 animate-in zoom-in-95 duration-500">
+        
+        {['Dine-in', 'Parcel'].map(sectionType => {
+          // If filter is active and doesn't match this section, don't render it
+          if (filterType !== 'All' && filterType !== sectionType) return null;
+          
+          const sectionOrders = historyOrders.filter(o => o.orderType === sectionType);
+          
+          return (
+            <div key={sectionType} className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden mb-6">
+              <div className="px-8 py-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                 <div className="flex items-center gap-3">
+                   {sectionType === 'Dine-in' ? <Utensils className="text-orange-500" size={18} /> : <Package className="text-emerald-500" size={18} />}
+                   <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest">{sectionType} Orders</h2>
+                 </div>
+                 <div className="text-xs font-bold text-slate-400 bg-white px-3 py-1 rounded-lg border border-slate-100 shadow-sm">
+                   {sectionOrders.length} {sectionOrders.length === 1 ? 'Record' : 'Records'}
+                 </div>
               </div>
-              <h3 className="text-xl font-black text-slate-400 italic">No Records Found</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-white border-b border-slate-100">
+                      <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Order ID</th>
+                      <th className="px-6 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Date & Time</th>
+                      <th className="px-6 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Customer</th>
+                      <th className="px-6 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Mobile No.</th>
+                      <th className="px-6 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Status</th>
+                      <th className="px-6 py-5 text-xs font-black text-slate-400 uppercase tracking-widest text-right">Amount</th>
+                      <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {loadingHistory ? (
+                      <tr>
+                        <td colSpan="7" className="py-16 text-center">
+                          <div className="flex flex-col items-center gap-3">
+                             <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                             <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Accessing Records...</p>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : sectionOrders.length === 0 ? (
+                      <tr>
+                        <td colSpan="7" className="py-16 text-center">
+                          <History size={32} className="mx-auto text-slate-200 mb-3" />
+                          <p className="text-sm font-black text-slate-300 uppercase">No {sectionType} records found</p>
+                        </td>
+                      </tr>
+                    ) : (
+                      sectionOrders.map((order) => {
+                        const isPaid = order.status === 'Paid' || order.status === 'Completed';
+                        const isCancelled = order.status === 'Cancelled';
+                        return (
+                          <tr key={order._id} className="group hover:bg-slate-50/50 transition-colors cursor-pointer" onClick={() => onOrderClick && onOrderClick(order._id)}>
+                            <td className="px-8 py-5">
+                              <span className="text-sm font-black text-slate-900 tracking-tighter">#{order.orderNumber || '----'}</span>
+                            </td>
+                            <td className="px-6 py-5">
+                              <div className="flex flex-col">
+                                <span className="text-[12px] font-bold text-slate-500 uppercase">
+                                  {order.createdAt ? new Date(order.createdAt).toLocaleDateString([], { day: '2-digit', month: '2-digit', year: '2-digit' }) : '--/--/--'}
+                                </span>
+                                <span className="text-[11px] text-slate-400 font-bold">
+                                  {order.createdAt ? new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase() : '--:--'}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-5">
+                              <span className={cn(
+                                "text-sm font-bold uppercase",
+                                order.customerName ? "text-slate-900" : "text-slate-300"
+                              )}>
+                                {order.customerName || 'Walk-in'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-5">
+                              <span className="text-sm font-bold text-slate-400 tracking-tighter">
+                                {order.customerPhone || '----------'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-5">
+                              <div className={cn(
+                                "inline-flex px-4 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-widest shadow-sm",
+                                isCancelled ? "bg-rose-100 text-rose-600 shadow-rose-50" :
+                                isPaid ? "bg-emerald-100 text-emerald-600 shadow-emerald-50" : "bg-amber-100 text-amber-600 shadow-amber-50"
+                              )}>
+                                {isCancelled ? 'Cancelled' : isPaid ? 'Completed' : 'Running'}
+                              </div>
+                            </td>
+                            <td className="px-6 py-5 text-right">
+                              <span className="text-lg font-black text-slate-900 tracking-tighter">₹{Math.round(order.totalAmount || 0)}</span>
+                            </td>
+                            <td className="px-8 py-5 text-center">
+                              <button className="w-10 h-10 bg-slate-50 text-emerald-500 rounded-xl flex items-center justify-center hover:bg-emerald-500 hover:text-white transition-all shadow-sm mx-auto">
+                                 <ArrowUpRight size={18} strokeWidth={3} />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          ) : (
-            historyOrders.map((order) => {
-              if (!order) return null;
-              return (
-                <div
-                  key={order._id}
-                  className="bg-white border border-slate-100 rounded-[1.5rem] p-4 flex flex-col md:flex-row items-center justify-between gap-6 hover:shadow-lg hover:-translate-y-1 transition-all"
-                >
-                  <div className="flex items-center gap-6 w-full md:w-auto">
-                  <div className="w-16 h-16 bg-slate-900 text-white rounded-[1.25rem] flex flex-col items-center justify-center shadow-lg shrink-0 border-b-4 border-indigo-500/50">
-                    <span className="text-[9px] font-black uppercase opacity-40 tracking-widest -mb-1">Order</span>
-                    <span className="text-2xl font-black italic tracking-tighter">#{order.orderNumber || '?'}</span>
-                  </div>
-                  <div className="min-w-0">
-                    <h4 className="font-black text-slate-900 truncate uppercase tracking-tight italic text-lg">
-                      {order.customerName || (order.orderType === 'Dine-in' ? `Table ${order.tableId}` : 'WALK-IN')}
-                    </h4>
-                    <p className="text-[10px] font-black text-slate-400 tracking-[0.2em] mt-1 flex items-center gap-2 uppercase">
-                       {order.orderType} <span className="w-1 h-1 bg-slate-200 rounded-full"></span> {order.status}
-                    </p>
-                  </div>
-                </div>
-
-                  <div className="hidden lg:flex items-center gap-8 text-slate-400">
-                    <div className="text-center">
-                      <p className="text-[9px] font-black uppercase mb-1 italic">Date</p>
-                      <p className="text-xs font-black text-slate-700 tracking-tighter shrink-0 flex items-center gap-1">
-                        <Calendar size={12} /> {order.createdAt ? new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
-                      </p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-[9px] font-black uppercase mb-1 italic">Items</p>
-                      <p className="text-sm font-black text-slate-700 tracking-tighter">{order.items?.length || 0} units</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-[9px] font-black uppercase mb-1 italic">Session</p>
-                      <p className={cn("text-xs font-black uppercase", order.status === 'Paid' ? "text-emerald-500" : "text-indigo-500")}>
-                        {order.status || 'Active'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between md:justify-end gap-6 w-full md:w-auto border-t md:border-t-0 pt-4 md:pt-0">
-                    <div className="text-right">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Gross Value</p>
-                      <p className="text-2xl font-black text-slate-900 italic tracking-tighter">₹{Math.round(order.totalAmount || 0)}</p>
-                    </div>
-                    <button
-                      onClick={() => onOrderClick && onOrderClick(order._id)}
-                      className="p-3 bg-slate-50 text-slate-400 rounded-xl hover:bg-slate-900 hover:text-white transition-all group"
-                    >
-                      <ArrowUpRight size={20} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      )}
+          );
+        })}
+      </div>
 
       {/* --- Pagination Controls --- */}
       {totalPages > 1 && (

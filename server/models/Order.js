@@ -9,6 +9,7 @@ const orderItemSchema = new mongoose.Schema({
 });
 
 const orderSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'ArcheUser', required: true },
   tableId: { type: String, default: null },
   section: { type: String, default: null }, // Kept for backward compat, not used in new flow
   customerName: { type: String, default: '' },
