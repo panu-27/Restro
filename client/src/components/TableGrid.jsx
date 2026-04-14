@@ -134,28 +134,42 @@ const TableGrid = ({ activeOrders, onTableClick }) => {
   );
 
   return (
-    <section className="p-6 lg:p-8 animate-in fade-in duration-500">
+    <section className="p-4 lg:p-6 pb-24 lg:pb-6 animate-in fade-in duration-500">
 
       {/* ── Top bar ──────────────────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-        <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">Tables</h1>
-          <p className="text-xs font-black text-slate-400 uppercase tracking-widest mt-1">Floor Management</p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 lg:mb-5 gap-3">
+        <div className="flex justify-between items-start w-full md:w-auto">
+          <div>
+            <h1 className="text-lg lg:text-[1.7rem] font-black text-slate-900 tracking-tight uppercase">Tables</h1>
+            <p className="text-[8px] lg:text-[10px] font-semibold text-slate-400 uppercase tracking-[0.1em] mt-1">Floor Management</p>
+          </div>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex md:hidden items-center gap-1.5 px-4 py-2.5 bg-[#FF5A36] hover:bg-orange-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-orange-200"
+          >
+            <Plus size={14} strokeWidth={3}/> Add
+          </button>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center justify-between gap-2 lg:gap-4 w-full md:w-auto">
           {/* Summary pills */}
-          <div className="flex items-center gap-1 bg-white rounded-2xl px-5 py-3 border border-slate-100 shadow-sm">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-3">Occupied</span>
-            <span className="text-xl font-black text-[#FF5A36]">{occupied}</span>
-            <span className="mx-3 text-slate-200 font-bold">|</span>
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-3">Available</span>
-            <span className="text-xl font-black text-emerald-500">{available}</span>
+          <div className="flex items-center justify-center flex-1 md:flex-none gap-3 lg:gap-4 bg-white rounded-xl lg:rounded-2xl px-4 py-3 border border-slate-100 shadow-sm w-full md:w-auto">
+            <div className="flex items-center gap-1.5 lg:gap-2">
+               <span className="w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full bg-[#FF5A36]"></span>
+               <span className="text-[9px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest">Occupied</span>
+               <span className="text-sm lg:text-xl font-black text-[#FF5A36]">{occupied}</span>
+            </div>
+            <span className="text-slate-200 font-bold">|</span>
+            <div className="flex items-center gap-1.5 lg:gap-2">
+               <span className="w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full bg-emerald-400"></span>
+               <span className="text-[9px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest">Available</span>
+               <span className="text-sm lg:text-xl font-black text-emerald-500">{available}</span>
+            </div>
           </div>
 
           <button
             onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 px-5 py-3 bg-[#FF5A36] hover:bg-orange-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest transition-all shadow-lg shadow-orange-200 active:scale-95"
+            className="hidden md:flex items-center gap-2 px-5 py-3 bg-[#FF5A36] hover:bg-orange-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest transition-all shadow-lg shadow-orange-200 active:scale-95 shrink-0"
           >
             <Plus size={16} strokeWidth={3}/> Add Table
           </button>
@@ -163,7 +177,7 @@ const TableGrid = ({ activeOrders, onTableClick }) => {
       </div>
 
       {/* ── Cards Grid ───────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 2xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-2.5 lg:gap-4">
         {[...tables]
           .sort((a, b) => {
             // Natural sort: extract trailing numbers for numeric comparison
@@ -184,25 +198,25 @@ const TableGrid = ({ activeOrders, onTableClick }) => {
             <div
               key={table._id}
               className={cn(
-                'bg-white rounded-2xl border shadow-sm hover:shadow-lg transition-all duration-300 relative',
+                'bg-white rounded-[1rem] lg:rounded-xl border shadow-sm hover:shadow-md transition-all duration-300 relative h-[96px] lg:h-[150px]',
                 isOccupied ? 'border-orange-100' : 'border-slate-100'
               )}
             >
               {/* Status badge */}
               <div className={cn(
-                'absolute top-3 right-3 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border',
+                'absolute top-1.5 lg:top-2.5 right-1.5 lg:right-2.5 px-1 lg:px-1.5 py-[2px] rounded-full text-[6px] lg:text-[8px] font-black uppercase tracking-wider border',
                 cfg.bg, cfg.text
               )}>
                 {cfg.label}
               </div>
 
               {/* Admin menu */}
-              <div className="absolute top-1.5 left-1.5 z-20" onClick={e => e.stopPropagation()}>
+              <div className="absolute top-1 lg:top-1.5 left-1 lg:left-1.5 z-20" onClick={e => e.stopPropagation()}>
                 <button
                   onClick={() => setOpenMenuId(isMenuOpen ? null : table.tableId)}
-                  className="w-5 h-5 flex items-center justify-center rounded-md text-slate-300 hover:text-slate-500 hover:bg-slate-50 transition-colors"
+                  className="w-4 h-4 lg:w-5 lg:h-5 flex items-center justify-center rounded-md text-slate-300 hover:text-slate-500 hover:bg-slate-50 transition-colors"
                 >
-                  <MoreVertical size={13}/>
+                  <MoreVertical size={13} className="w-[10px] h-[10px] lg:w-[13px] lg:h-[13px]"/>
                 </button>
                 {isMenuOpen && (
                   <div className="absolute left-0 mt-1 w-44 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 animate-in fade-in zoom-in-95 duration-150">
@@ -227,25 +241,24 @@ const TableGrid = ({ activeOrders, onTableClick }) => {
               {/* Clickable area */}
               <div
                 onClick={() => onTableClick(table.tableId)}
-                className="cursor-pointer p-4 pt-8"
+                className="cursor-pointer p-2 lg:p-3.5 pt-5 lg:pt-4 flex flex-col h-full"
               >
                 {/* Icon centered */}
-                <div className="flex justify-center mb-4 mt-2">
-                  <div className="w-[80px] h-[80px] flex items-center justify-center">
+                <div className="flex justify-center mb-1.5 lg:mb-3 mt-1 lg:mt-2 flex-grow items-center">
+                  <div className="w-[40px] h-[40px] lg:w-[62px] lg:h-[62px] flex items-center justify-center transfrom hover:scale-105 transition-transform">
                     <TableIcon label={table.tableId} occupied={isOccupied}/>
                   </div>
                 </div>
 
                 {/* Bottom info */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <span className="text-[10px] font-bold text-slate-400">{size}</span>
-                    <span className="text-slate-200 text-[10px] leading-none">·</span>
-                    <span className="text-[10px] font-bold text-slate-400">{seats} Person</span>
+                <div className="flex items-center justify-between mt-auto">
+                  <div className="flex flex-col">
+                    <span className="text-[8px] lg:text-[11px] font-black text-slate-900 leading-tight">{seats} Seats</span>
+                    <span className="text-[7px] lg:text-[9px] font-semibold text-slate-400 capitalize">{size}</span>
                   </div>
                   {/* Bill amount only when occupied */}
                   {isOccupied && billTotal > 0 && (
-                     <span className="text-xs font-black text-[#FF5A36] ml-2 truncate">
+                     <span className="text-[8px] lg:text-[12px] font-black text-[#FF5A36] truncate ml-0.5">
                       ₹{Math.round(billTotal)}
                     </span>
                   )}

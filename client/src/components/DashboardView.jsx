@@ -33,7 +33,16 @@ export const DashboardView = ({ activeOrders, tableCount, onTabChange }) => {
   }, [revenuePeriod]);
 
   // Calculations
-  const pendingOrders = activeOrders.filter(o => o.status === 'Received' || o.status === 'Preparing');
+  const occupiedTableCount = new Set(
+    (activeOrders || [])
+      .filter(o =>
+        o.orderType === 'Dine-in' &&
+        o.tableId &&
+        o.status !== 'Paid' &&
+        o.status !== 'Cancelled'
+      )
+      .map(o => o.tableId)
+  ).size;
   const paidToday = salesData?.dailyBreakdown?.find(d => 
     new Date(d.date).toDateString() === new Date().toDateString()
   )?.orders || 0;
@@ -45,127 +54,178 @@ export const DashboardView = ({ activeOrders, tableCount, onTabChange }) => {
   const getChartData = () => {
     if (!salesData || !salesData.dailyBreakdown) return [];
     const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const toDateKey = (dateValue) => {
+      const dt = new Date(dateValue);
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth() + 1).padStart(2, '0');
+      const d = String(dt.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    };
+
     const dataMap = {};
     salesData.dailyBreakdown.forEach(d => {
-      const dayStr = new Date(d.date).toLocaleDateString('en-US', { weekday: 'short' });
-      dataMap[dayStr] = d.total;
+      dataMap[toDateKey(d.date)] = d.total || 0;
     });
-    
-    return weekDays.map(d => ({
-      day: d,
-      value: dataMap[d] || 0
-    }));
+
+    const today = new Date();
+    const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const currentWeekStart = new Date(todayOnly);
+    currentWeekStart.setDate(todayOnly.getDate() - todayOnly.getDay()); // Sunday start
+
+    const baseStart = new Date(currentWeekStart);
+    if (revenuePeriod === 'previous_week') {
+      baseStart.setDate(baseStart.getDate() - 7);
+    }
+
+    return weekDays.map((day, idx) => {
+      const slotDate = new Date(baseStart);
+      slotDate.setDate(baseStart.getDate() + idx);
+      const slotKey = toDateKey(slotDate);
+
+      // For "This Week", keep upcoming days blank (zero) after today.
+      const isFutureInCurrentWeek = revenuePeriod === 'week' && slotDate > todayOnly;
+
+      return {
+        day,
+        value: isFutureInCurrentWeek ? 0 : (dataMap[slotKey] || 0)
+      };
+    });
   };
 
   const chartData = getChartData();
-  const maxChartValue = Math.max(...chartData.map(d => d.value), 1000);
+  const maxChartValue = Math.max(...chartData.map(d => d.value), 1);
+
+  const getNiceScale = (rawMax) => {
+    const targetSteps = 5;
+    const roughStep = rawMax / targetSteps;
+    const magnitude = Math.pow(10, Math.floor(Math.log10(Math.max(roughStep, 1))));
+    const residual = roughStep / magnitude;
+
+    let niceStep = magnitude;
+    if (residual > 5) niceStep = 10 * magnitude;
+    else if (residual > 2) niceStep = 5 * magnitude;
+    else if (residual > 1) niceStep = 2 * magnitude;
+
+    const niceMax = Math.max(niceStep * targetSteps, Math.ceil(rawMax / niceStep) * niceStep);
+    return { niceMax, niceStep };
+  };
+
+  const formatYAxisValue = (value) => {
+    if (value >= 100000) return `₹${(value / 100000).toFixed(1)}L`;
+    if (value >= 1000) return `₹${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)}k`;
+    return `₹${Math.round(value)}`;
+  };
+
+  const { niceMax: yAxisMax, niceStep: yAxisStep } = getNiceScale(maxChartValue);
+  const yAxisTicks = Array.from({ length: 6 }, (_, i) => yAxisMax - (i * yAxisStep));
 
   const cn = (...classes) => classes.filter(Boolean).join(' ');
+  const formatOrderNumber = (num) => String(num || '').padStart(4, '0');
 
   // Category Distribution (Mocked from topItems logic)
   const categories = ['Main Course', 'Beverages', 'Starters', 'Desserts'];
   const categoryData = [45, 25, 20, 10]; // Percentage distribution
 
   return (
-    <div className="flex-1 px-6 py-4 w-full max-w-[1800px] mx-auto overflow-hidden animate-in fade-in duration-500">
+    <div className="flex-1 px-2 lg:px-3 py-2 w-full max-w-[1800px] mx-auto overflow-hidden animate-in fade-in duration-500">
       
       {/* HEADER */}
-      <div className="mb-8 flex justify-between items-start">
+      <div className="mb-4 lg:mb-5 flex justify-between items-start">
         <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">Overview</h1>
-          <p className="text-xs font-black text-slate-400 uppercase tracking-widest mt-1">{currentDay}</p>
+          <h1 className="text-xl lg:text-[1.8rem] font-black text-slate-900 tracking-tight uppercase">Overview</h1>
+          <p className="text-[9px] lg:text-[10px] font-semibold text-slate-400 uppercase tracking-[0.1em] mt-1">{currentDay}</p>
         </div>
         <div className="flex gap-4 items-center">
-           <div className="px-4 py-2 bg-white border border-slate-100 rounded-2xl shadow-sm flex items-center gap-3">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">System Live</span>
+           <div className="px-3 py-1.5 lg:px-4 lg:py-2 bg-white border border-slate-100 rounded-xl lg:rounded-2xl flex items-center gap-2 lg:gap-3">
+              <span className="w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest text-slate-600">System Live</span>
            </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-12 gap-6 pb-20">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 lg:gap-3 pb-8">
         
         {/* ROW 1: 2 High-Density Metric Cards */}
-        <div className="col-span-12 grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="col-span-1 lg:col-span-12 grid grid-cols-1 md:grid-cols-2 gap-3 lg:gap-3">
           
           {/* Active Orders */}
-          <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-50 flex flex-col justify-between h-[180px] relative overflow-hidden group animate-stagger-1">
+          <div className="bg-white rounded-3xl lg:rounded-[1.5rem] p-3.5 lg:p-4 border border-slate-100 flex flex-col justify-between min-h-[128px] lg:h-[140px] h-auto relative overflow-hidden group animate-stagger-1">
              <div className="flex justify-between items-start w-full">
-               <div className="flex items-center gap-4">
-                 <div className="w-12 h-12 rounded-2xl bg-orange-50 flex items-center justify-center border border-orange-100/50">
-                    <ShoppingBag size={24} className="text-orange-500" strokeWidth={3} />
+               <div className="flex items-center gap-3 lg:gap-4">
+                 <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl lg:rounded-2xl bg-orange-50 flex items-center justify-center border border-orange-100/50">
+                    <ShoppingBag size={20} className="text-orange-500 lg:w-6 lg:h-6" strokeWidth={3} />
                  </div>
                  <div>
-                    <span className="text-[11px] font-black uppercase tracking-widest text-slate-400 block">Current Status</span>
+                    <span className="text-[10px] lg:text-[11px] font-black uppercase tracking-widest text-slate-400 block">Current Status</span>
                     <span className="text-sm font-black text-slate-900 uppercase ">Active Orders</span>
                  </div>
                </div>
-               <div className="flex items-center gap-1 px-3 py-1.5 bg-orange-50 rounded-xl">
-                 <TrendingUp size={12} className="text-orange-500" strokeWidth={3} />
-                 <span className="text-[10px] font-black text-orange-600">4.2% Growth</span>
+               <div className="flex items-center gap-1 px-2.5 py-1 lg:px-3 lg:py-1.5 bg-orange-50 rounded-lg lg:rounded-xl">
+                 <TrendingUp size={10} className="text-orange-500 lg:w-3 lg:h-3" strokeWidth={3} />
+                 <span className="text-[9px] lg:text-[10px] font-black text-orange-600">4.2% Growth</span>
                </div>
              </div>
              <div className="mt-4 flex items-baseline gap-3">
-                <span className="text-5xl font-black text-slate-900 tracking-tighter uppercase leading-none">
-                  {pendingOrders.length}
+                <span className="text-4xl lg:text-5xl font-black text-slate-900 tracking-tighter uppercase leading-none">
+                  {occupiedTableCount}
                 </span>
-                <span className="text-xs font-black text-orange-400 uppercase tracking-widest  mb-1">Queue Live</span>
+                <span className="text-[10px] lg:text-xs font-black text-orange-400 uppercase tracking-widest  mb-1">Queue Live</span>
              </div>
           </div>
 
           {/* Completed Today */}
-          <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-50 flex flex-col justify-between h-[180px] relative overflow-hidden group animate-stagger-2">
+          <div className="bg-white rounded-3xl lg:rounded-[1.5rem] p-3.5 lg:p-4 border border-slate-100 flex flex-col justify-between min-h-[128px] lg:h-[140px] h-auto relative overflow-hidden group animate-stagger-2">
              <div className="flex justify-between items-start w-full">
-               <div className="flex items-center gap-4">
-                 <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center border border-emerald-100/50">
-                    <CheckCircle2 size={24} className="text-emerald-500" strokeWidth={3} />
+               <div className="flex items-center gap-3 lg:gap-4">
+                 <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl lg:rounded-2xl bg-emerald-50 flex items-center justify-center border border-emerald-100/50">
+                    <CheckCircle2 size={20} className="text-emerald-500 lg:w-6 lg:h-6" strokeWidth={3} />
                  </div>
                  <div>
-                    <span className="text-[11px] font-black uppercase tracking-widest text-slate-400 block">Performance</span>
+                    <span className="text-[10px] lg:text-[11px] font-black uppercase tracking-widest text-slate-400 block">Performance</span>
                     <span className="text-sm font-black text-slate-900 uppercase ">Completed Today</span>
                  </div>
                </div>
-               <div className="px-3 py-1.5 bg-emerald-50 rounded-xl">
-                 <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Target Met</span>
+               <div className="px-2.5 py-1 lg:px-3 lg:py-1.5 bg-emerald-50 rounded-lg lg:rounded-xl">
+                 <span className="text-[9px] lg:text-[10px] font-black text-emerald-600 uppercase tracking-widest">Target Met</span>
                </div>
              </div>
              <div className="mt-4 flex items-baseline gap-3">
-                <span className="text-5xl font-black text-slate-900 tracking-tighter uppercase leading-none">
+                <span className="text-4xl lg:text-5xl font-black text-slate-900 tracking-tighter uppercase leading-none">
                   {paidToday}
                 </span>
-                <span className="text-xs font-black text-emerald-400 uppercase tracking-widest  mb-1">Settled Units</span>
+                <span className="text-[10px] lg:text-xs font-black text-emerald-400 uppercase tracking-widest  mb-1">Settled Units</span>
              </div>
           </div>
 
         </div>
 
         {/* ROW 2: Dual Charts */}
-        <div className="col-span-12 grid grid-cols-12 gap-6 mt-2">
+        <div className="col-span-1 lg:col-span-12 grid grid-cols-1 lg:grid-cols-12 gap-3 lg:gap-3 mt-1">
           
           {/* Revenue Chart - Redesigned */}
-          <div className="col-span-12 lg:col-span-8 bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-50 relative min-h-[480px] font-['DM_Sans',sans-serif] animate-stagger-3">
-            <div className="flex justify-between items-center mb-10">
+          <div className="col-span-1 lg:col-span-8 bg-white rounded-3xl lg:rounded-[1.5rem] p-3.5 lg:p-4 border border-slate-100 relative min-h-[285px] lg:min-h-[360px] font-['DM_Sans',sans-serif] animate-stagger-3">
+            <div className="flex justify-between items-center mb-6 lg:mb-8">
               <div>
-                <h2 className="text-2xl font-bold text-[#111827] tracking-tight">Revenue</h2>
-                <p className="text-sm font-medium text-slate-400 mt-0.5">Sales Overview</p>
+                <h2 className="text-[2rem] lg:text-[1.9rem] font-black text-[#111827] tracking-tight leading-none">Revenue</h2>
+                <p className="text-[11px] lg:text-[12px] font-medium text-slate-400 mt-1">Sales Overview</p>
               </div>
               <select 
                 value={revenuePeriod}
                 onChange={(e) => setRevenuePeriod(e.target.value)}
-                className="bg-slate-50 border border-slate-100 text-xs font-bold text-slate-600 px-3 py-2 rounded-xl focus:ring-0 cursor-pointer outline-none"
+                className="bg-slate-50 border border-slate-100 text-[10px] lg:text-xs font-bold text-slate-600 px-2 py-1.5 lg:px-3 lg:py-2 rounded-xl focus:ring-0 cursor-pointer outline-none"
               >
                 <option value="week">This Week</option>
                 <option value="previous_week">Previous Week</option>
               </select>
             </div>
 
-            <div className="relative h-[300px] w-full flex items-end justify-between pl-16 pr-4 pb-8">
+            <div className="relative h-[210px] lg:h-[255px] w-full flex items-end justify-between pl-9 pr-2 lg:pl-12 lg:pr-4 pb-7 overflow-visible mt-4">
               {/* Y-Axis Grid Lines */}
               <div className="absolute inset-x-0 inset-y-0 flex flex-col justify-between pointer-events-none pb-14 z-0">
-                {[1000, 800, 600, 400, 200, 0].map(val => (
-                  <div key={val} className="flex text-[11px] text-slate-400 font-medium items-center w-full">
-                    <span className="w-10 text-right mr-6">
-                      {val === 1000 ? '₹1k' : `₹${val}`}
+                {yAxisTicks.map(val => (
+                  <div key={val} className="flex text-[9px] lg:text-[11px] text-slate-400 font-medium items-center w-full">
+                    <span className="w-8 lg:w-10 text-right mr-3 lg:mr-6 shrink-0">
+                      {formatYAxisValue(val)}
                     </span>
                     <div className="flex-1 border-t border-slate-100 opacity-60"></div>
                   </div>
@@ -175,7 +235,7 @@ export const DashboardView = ({ activeOrders, tableCount, onTabChange }) => {
               {/* Chart Bars */}
               {chartData.map((d, i) => {
                 const totalValue = d.value || 0;
-                const maxH = Math.max(...chartData.map(x => x.value), 1000);
+                const maxH = yAxisMax;
                 // Minimum 8% so bars are always visible; zero-value gets a subtle stub
                 const hasValue = totalValue > 0;
                 const heightPerc = hasValue ? Math.max((totalValue / maxH) * 100, 10) : 5;
@@ -194,7 +254,7 @@ export const DashboardView = ({ activeOrders, tableCount, onTabChange }) => {
                   >
                     {/* Tooltip — only shown on click */}
                     {isSelected && (
-                      <div className="absolute -top-16 left-1/2 -translate-x-1/2 z-40 pointer-events-none"
+                      <div className="absolute -top-14 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
                         style={{ animation: 'tooltipIn 0.2s ease-out' }}
                       >
                         <div className="bg-[#111827] text-white px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2 whitespace-nowrap relative">
@@ -237,7 +297,7 @@ export const DashboardView = ({ activeOrders, tableCount, onTabChange }) => {
                     </div>
 
                     <span
-                      className="text-[12px] font-bold mt-3 tracking-tight transition-colors duration-300 group-hover:text-amber-500"
+                      className="text-[9px] lg:text-[12px] font-bold mt-3 tracking-tight transition-colors duration-300 group-hover:text-amber-500"
                       style={{ color: isSelected ? '#FF6B3D' : '#94a3b8' }}
                     >
                       {d.day}
@@ -259,11 +319,11 @@ export const DashboardView = ({ activeOrders, tableCount, onTabChange }) => {
           </div>
 
           {/* Financial Performance (Moved from Top) */}
-          <div className="col-span-12 lg:col-span-4 flex flex-col gap-6">
+          <div className="col-span-1 lg:col-span-4 flex flex-col gap-3 lg:gap-3">
              
              {/* Total Revenue card */}
-             <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-50 relative flex-1 group hover:shadow-xl hover:shadow-emerald-500/5 transition-all animate-stagger-4">
-                <div className="flex justify-between items-start mb-6">
+             <div className="bg-white rounded-3xl lg:rounded-[1.5rem] p-3.5 lg:p-4 border border-slate-100 relative flex-1 group transition-all animate-stagger-4 min-h-[165px]">
+                <div className="flex justify-between items-start mb-4 lg:mb-6">
                    <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center border border-emerald-100/50">
                       <span className="text-emerald-500 text-lg font-bold">₹</span>
                    </div>
@@ -273,12 +333,12 @@ export const DashboardView = ({ activeOrders, tableCount, onTabChange }) => {
                    </div>
                 </div>
                 <div>
-                   <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 ">Aggregate Revenue</h3>
-                   <span className="text-3xl font-black text-slate-900 tracking-tighter uppercase leading-none block">
+                   <h3 className="text-[9px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 ">Aggregate Revenue</h3>
+                   <span className="text-2xl lg:text-3xl font-black text-slate-900 tracking-tighter uppercase leading-none block">
                       ₹{Math.round(salesData?.totalRevenue || 0).toLocaleString('en-IN')}
                    </span>
                 </div>
-                <div className="mt-6 pt-6 border-t border-slate-50">
+                <div className="mt-4 lg:mt-6 pt-4 lg:pt-6 border-t border-slate-50">
                    <div className="flex justify-between text-[9px] font-black text-slate-400 uppercase tracking-widest">
                       <span>Monthly Goal</span>
                       <span className="text-emerald-500">84%</span>
@@ -290,15 +350,15 @@ export const DashboardView = ({ activeOrders, tableCount, onTabChange }) => {
              </div>
 
              {/* Average Order Value card */}
-             <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-50 relative flex-1 group hover:shadow-xl hover:shadow-orange-500/5 transition-all animate-stagger-5">
-                <div className="flex justify-between items-start mb-6">
+             <div className="bg-white rounded-3xl lg:rounded-[1.5rem] p-3.5 lg:p-4 border border-slate-100 relative flex-1 group transition-all animate-stagger-5 min-h-[165px]">
+                <div className="flex justify-between items-start mb-4 lg:mb-6">
                    <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center border border-orange-100/50">
                       <TrendingUp size={18} className="text-orange-500" strokeWidth={3} />
                    </div>
                 </div>
                 <div>
-                   <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 ">Avg Order Price</h3>
-                   <span className="text-3xl font-black text-slate-900 tracking-tighter uppercase leading-none block">
+                   <h3 className="text-[9px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 ">Avg Order Price</h3>
+                   <span className="text-2xl lg:text-3xl font-black text-slate-900 tracking-tighter uppercase leading-none block">
                       ₹{Math.round(salesData?.avgOrderValue || 0).toLocaleString('en-IN')}
                    </span>
                 </div>
@@ -311,30 +371,30 @@ export const DashboardView = ({ activeOrders, tableCount, onTabChange }) => {
           </div>
         </div>
               {/* ROW 3: Recent Orders Table */}
-        <div className="col-span-12 mt-2">
-          <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-50 h-full overflow-hidden animate-in slide-in-from-bottom duration-700">
-             <div className="flex justify-between items-center mb-8">
+        <div className="col-span-1 lg:col-span-12 mt-2">
+          <div className="bg-white rounded-3xl lg:rounded-[1.5rem] p-3.5 lg:p-4 border border-slate-100 h-full overflow-hidden animate-in slide-in-from-bottom duration-700">
+             <div className="flex justify-between items-center mb-6 lg:mb-8">
                 <div>
-                   <h2 className="text-xl font-black text-slate-900 tracking-tighter  uppercase">Recent Orders</h2>
-                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Latest transactions across all tables</p>
+                   <h2 className="text-lg lg:text-xl font-black text-slate-900 tracking-tighter uppercase">Recent Orders</h2>
+                   <p className="text-[9px] lg:text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Latest transactions across all tables</p>
                 </div>
                 <button 
                   onClick={() => onTabChange && onTabChange('history')}
-                  className="flex items-center gap-2 px-6 py-3 bg-slate-50 hover:bg-slate-900 hover:text-white rounded-[1.25rem] text-[10px] font-black text-slate-400 uppercase tracking-widest transition-all group"
+                  className="flex items-center gap-1.5 lg:gap-2 px-4 py-2 lg:px-6 lg:py-3 bg-slate-50 hover:bg-slate-900 hover:text-white rounded-[1.25rem] text-[9px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest transition-all group"
                 >
-                    View All <ArrowUpRight size={14} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5" strokeWidth={3} />
+                    View All <ArrowUpRight size={12} className="lg:w-[14px] lg:h-[14px] group-hover:translate-x-0.5 group-hover:-translate-y-0.5" strokeWidth={3} />
                 </button>
              </div>
              
-             <div className="overflow-x-auto">
+             <div className="overflow-x-auto no-scrollbar">
                <table className="w-full text-left border-collapse">
                  <thead>
                    <tr className="bg-slate-50/50 border-b border-slate-50">
-                     <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">Order ID</th>
-                     <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">Date & Time</th>
-                     <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">Status</th>
-                     <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest text-center">Items</th>
-                     <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest text-right">Amount</th>
+                     <th className="px-3 md:px-6 py-3 md:py-4 text-[9px] md:text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Order ID</th>
+                     <th className="px-3 md:px-6 py-3 md:py-4 text-[9px] md:text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Date & Time</th>
+                     <th className="px-3 md:px-6 py-3 md:py-4 text-[9px] md:text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Status</th>
+                     <th className="hidden sm:table-cell px-3 md:px-6 py-3 md:py-4 text-[9px] md:text-xs font-black text-slate-400 uppercase tracking-widest text-center whitespace-nowrap">Items</th>
+                     <th className="px-3 md:px-6 py-3 md:py-4 text-[9px] md:text-xs font-black text-slate-400 uppercase tracking-widest text-right whitespace-nowrap">Amount</th>
                    </tr>
                  </thead>
                  <tbody className="divide-y divide-slate-50">
@@ -343,35 +403,35 @@ export const DashboardView = ({ activeOrders, tableCount, onTabChange }) => {
                       const isCancelled = order.status === 'Cancelled';
                       return (
                         <tr key={order._id} className="group hover:bg-slate-50/30 transition-colors">
-                          <td className="px-6 py-5">
-                            <span className="text-sm font-black text-slate-900 tracking-tight">#{order.orderNumber || '----'}</span>
+                          <td className="px-3 md:px-6 py-4 md:py-5">
+                            <span className="text-sm font-black text-slate-900 tracking-tight">#{order.orderNumber ? formatOrderNumber(order.orderNumber) : '----'}</span>
                           </td>
-                          <td className="px-6 py-5">
+                          <td className="px-3 md:px-6 py-4 md:py-5">
                             <div className="flex flex-col">
-                              <span className="text-xs font-bold text-slate-500 uppercase">
+                              <span className="text-[10px] md:text-xs font-bold text-slate-500 uppercase whitespace-nowrap">
                                 {new Date(order.createdAt).toLocaleDateString([], { month: 'short', day: '2-digit' })}
                               </span>
-                              <span className="text-[11px] text-slate-300 font-bold uppercase">
+                              <span className="text-[9px] md:text-[11px] text-slate-300 font-bold uppercase whitespace-nowrap">
                                 {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                               </span>
                             </div>
                           </td>
-                          <td className="px-6 py-5">
+                          <td className="px-3 md:px-6 py-4 md:py-5">
                             <span className={cn(
-                              "px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-widest",
+                              "px-2 md:px-3 py-1.5 rounded-lg text-[9px] md:text-[11px] font-black uppercase tracking-widest whitespace-nowrap",
                               isCancelled ? "bg-rose-50 text-rose-500" :
                               isPaid ? "bg-emerald-50 text-emerald-500" : "bg-amber-50 text-amber-500"
                             )}>
                               {isCancelled ? 'Cancelled' : isPaid ? 'Completed' : 'Active'}
                             </span>
                           </td>
-                          <td className="px-6 py-5 text-center">
-                            <span className="text-xs font-black text-slate-600 uppercase">
+                          <td className="hidden sm:table-cell px-3 md:px-6 py-4 md:py-5 text-center">
+                            <span className="text-[10px] md:text-xs font-black text-slate-600 uppercase whitespace-nowrap">
                               {order.items?.length || 0} items
                             </span>
                           </td>
-                          <td className="px-6 py-5 text-right">
-                            <span className="text-sm font-black text-slate-900 tracking-tight">
+                          <td className="px-3 md:px-6 py-4 md:py-5 text-right">
+                            <span className="text-sm font-black text-slate-900 tracking-tight whitespace-nowrap">
                               ₹{Math.round(order.totalAmount || 0)}
                             </span>
                           </td>

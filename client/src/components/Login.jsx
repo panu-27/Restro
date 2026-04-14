@@ -92,7 +92,7 @@ const Login = ({ onLoginSuccess }) => {
           max-width: 1100px;
           width: 100%;
           margin: 0 auto;
-          align-items: center;
+          align-items: flex-start;
         }
         @media (max-width: 992px) {
           .contact-layout {
@@ -121,41 +121,43 @@ const Login = ({ onLoginSuccess }) => {
             padding: 24px;
           }
           .sticker-wrap {
-            top: -60px !important;
+            top: -50px !important;
             right: -10px !important;
+            width: 100px !important;
+            height: 100px !important;
           }
-          .sticker-wrap img {
-            width: 120px !important;
+          .sticker-wrap svg {
+            width: 55px !important;
           }
         }
       `}</style>
 
-      <section className="section" style={{ paddingTop: '80px', paddingBottom: '80px', position: 'relative', flex: 1, display: 'flex', alignItems: 'center' }}>
+      <section className="section" style={{ paddingTop: '80px', paddingBottom: '80px', position: 'relative', flex: 1, display: 'flex', alignItems: 'flex-start' }}>
         <div className="wrap" style={{ width: '100%', padding: '0 24px' }}>
           <div className="contact-layout">
 
             {/* ── Left Column ── */}
-            <div className="contact-left-col" style={{ display: 'flex', flexDirection: 'column', gap: '36px' }}>
-              <div>
+            <div className="contact-left-col" style={{ display: 'flex', flexDirection: 'column', gap: '26px', paddingTop: '18px' }}>
+              <div style={{ minHeight: '160px' }}>
                 <h1 style={{
-                  fontSize: 'clamp(2.5rem, 4vw, 3.5rem)',
+                  fontSize: 'clamp(2.1rem, 3.4vw, 3.0rem)',
                   fontWeight: 400,
                   color: '#202124',
-                  marginBottom: '20px',
-                  lineHeight: 1.15,
-                  letterSpacing: '-0.03em'
+                  marginBottom: '14px',
+                  lineHeight: 1.12,
+                  letterSpacing: '-0.03em',
+                  minHeight: '60px'
                 }}>
                   {isRegister ? 'Join the system.' : 'Welcome back.'}
                 </h1>
-                <p style={{ fontSize: '1rem', color: '#888', lineHeight: 1.6, margin: 0, maxWidth: '420px' }}>
-                  A sophisticated platform orchestrating premium, high-performance digital workflows for your restaurant.
+                <p style={{ fontSize: '0.95rem', color: '#7b8088', lineHeight: 1.55, margin: 0, maxWidth: '500px' }}>
+                  Everything your restaurant needs - orders, tables, billing - in one place. Built for the way Indian kitchens actually work.
                 </p>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <div>
-                  <p style={{ fontSize: '0.8rem', fontWeight: 700, color: '#5f6368', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>POWERED BY</p>
-                  <p style={{ color: '#3c4043', fontSize: '1.05rem', margin: 0, fontWeight: 500 }}>ArcheArc Restro</p>
+                  <p style={{ color: '#3c4043', fontSize: '1rem', margin: 0, fontWeight: 600, letterSpacing: '0.015em' }}>Powered by ArcheArc</p>
                 </div>
               </div>
             </div>
@@ -165,31 +167,25 @@ const Login = ({ onLoginSuccess }) => {
 
               {/* Logo Sticker */}
               <div
-                className="sticker-wrap"
+                className="sticker-wrap flex items-center justify-center bg-white rounded-full border-4 border-white overflow-hidden shadow-2xl"
                 style={{
                   position: 'absolute',
                   top: '-40px',
                   right: '-20px',
                   zIndex: 50,
                   pointerEvents: 'none',
+                  width: '150px',
+                  height: '150px',
+                  animation: 'float-sticker 6s ease-in-out infinite',
+                  boxShadow: '0 16px 32px rgba(0,0,0,0.15)',
                 }}
               >
                 <img
-                  src="/imgaes/WhatsApp Image 2026-04-08 at 3.59.04 PM.jpeg"
-                  alt="Logo Sticker"
-                  style={{
-                    width: '160px',
-                    height: '160px',
-                    objectFit: 'cover',
-                    borderRadius: '50%',
-                    animation: 'float-sticker 6s ease-in-out infinite',
-                    filter: 'drop-shadow(0 16px 32px rgba(0,0,0,0.15))',
-                    border: '4px solid white'
-                  }}
-                  onError={(e) => {
-                    e.target.onerror = null;
-                    e.target.style.display = 'none';
-                  }}
+                  src="/logo.png"
+                  alt="Restro logo"
+                  width={112}
+                  height={112}
+                  className="w-[112px] h-auto object-contain"
                 />
               </div>
 

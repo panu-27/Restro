@@ -358,8 +358,7 @@ const SalesReport = () => {
     { id: 'today',   label: 'Today' },
     { id: 'week',    label: 'This Week' },
     { id: 'month',   label: 'This Month' },
-    { id: '3months', label: '3 Months' },
-    { id: 'year',    label: 'FY Report' },
+    { id: 'custom',  label: 'Custom Date' },
     { id: 'all',     label: 'All Time' },
   ];
 
@@ -370,7 +369,13 @@ const SalesReport = () => {
     { id: 'custom', label: 'Custom Date Range' },
   ];
 
-  useEffect(() => { fetchSales(); }, [period]);
+  useEffect(() => {
+    if (period === 'custom') {
+      if (customFrom && customTo) fetchSales();
+    } else {
+      fetchSales();
+    }
+  }, [period, customFrom, customTo]);
 
   useEffect(() => {
     const h = (e) => { if (csvRef.current && !csvRef.current.contains(e.target)) setCsvOpen(false); };
@@ -381,7 +386,9 @@ const SalesReport = () => {
   const fetchSales = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`/api/analytics/sales?period=${period}`);
+      let url = `/api/analytics/sales?period=${period}`;
+      if (period === 'custom') url += `&from=${customFrom}&to=${customTo}`;
+      const res = await axios.get(url);
       setSalesData(res.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
@@ -491,13 +498,13 @@ const SalesReport = () => {
   }, [salesData, period]);
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] p-4 lg:p-10 space-y-8 animate-in fade-in duration-700">
+    <div className="min-h-screen bg-[#F8FAFC] p-4 pb-24 lg:p-6 lg:pb-8 space-y-6 animate-in fade-in duration-700">
 
       {/* ── Header ──────────────────────────────────────────── */}
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">Analytics</h1>
-          <p className="text-xs font-black text-slate-400 uppercase tracking-widest mt-1">Sales Intelligence Dashboard</p>
+          <h1 className="text-lg lg:text-[1.7rem] font-black text-slate-900 tracking-tight uppercase">Analytics</h1>
+          <p className="text-[8px] lg:text-[10px] font-semibold text-slate-400 uppercase tracking-[0.1em] mt-1">Sales Intelligence Dashboard</p>
         </div>
 
         {/* Export CSV dropdown */}
@@ -552,15 +559,30 @@ const SalesReport = () => {
       </header>
 
       {/* ── Period Filter ───────────────────────────────────── */}
-      <div className="flex flex-wrap gap-2">
-        {periods.map(p => (
-          <button key={p.id} onClick={() => { setPeriod(p.id); setActiveCard(null); }}
-            className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
-              period === p.id ? 'bg-slate-900 text-white shadow-xl shadow-slate-200' : 'bg-white border border-slate-100 text-slate-400 hover:bg-slate-50'
-            }`}>
-            {p.label}
-          </button>
-        ))}
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-nowrap overflow-x-auto gap-2 pb-2 hide-scrollbar w-full" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+          <style>{`.hide-scrollbar::-webkit-scrollbar { display: none; }`}</style>
+          {periods.map(p => (
+            <button key={p.id} onClick={() => { setPeriod(p.id); setActiveCard(null); }}
+              className={`shrink-0 px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
+                period === p.id ? 'bg-slate-900 text-white shadow-xl shadow-slate-200' : 'bg-white border border-slate-100 text-slate-400 hover:bg-slate-50'
+              }`}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+        
+        {period === 'custom' && (
+          <div className="flex items-center gap-3 w-full max-w-sm animate-in slide-in-from-top-2 duration-300">
+            <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+              title="Start Date"
+              className="flex-1 bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900" />
+            <span className="text-sm font-black text-slate-300">to</span>
+            <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+              title="End Date"
+              className="flex-1 bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900" />
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -575,81 +597,93 @@ const SalesReport = () => {
         </div>
       ) : (
         <>
-          {/* ── Stat Cards ─────────────────────────────────── */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
-            {statCards.map((card, i) => (
-              <button key={card.id}
-                onClick={() => setActiveCard(activeCard === card.id ? null : card.id)}
-                className={`animate-stagger-${i + 1} ${card.bg} border ${card.border} rounded-[2rem] p-7 text-left transition-all duration-300 hover:-translate-y-1 hover:shadow-xl active:scale-95 group relative outline-none ${
-                  activeCard === card.id ? 'ring-2 -translate-y-1 shadow-2xl' : ''
-                }`}
-                style={activeCard === card.id ? { '--tw-ring-color': card.accent, boxShadow: `0 20px 60px ${card.accent}22` } : {}}>
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">{card.label}</span>
-                  <card.icon size={18} className={`${card.color} transform transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3`} />
+          {/* ── Stat Cards & Expandable Chart ──────────────── */}
+          <div className={`grid gap-5 transition-all duration-500 ease-in-out ${activeCard ? 'grid-cols-1' : 'grid-cols-2 lg:grid-cols-4'}`}>
+            {statCards.map((card, i) => {
+              if (activeCard && activeCard !== card.id) return null;
+              const isActive = activeCard === card.id;
+
+              return (
+                <div key={card.id} className={`flex flex-col animate-in fade-in duration-500 ${isActive ? 'col-span-1' : ''}`}>
+                  <button
+                    onClick={() => setActiveCard(isActive ? null : card.id)}
+                    className={`relative w-full text-left outline-none transition-all duration-300 group ${card.bg} border ${card.border} ${
+                      isActive 
+                        ? 'rounded-t-[2.5rem] p-8 border-b-slate-100 ring-2'
+                        : 'rounded-[2rem] p-7 hover:-translate-y-1 hover:shadow-xl active:scale-95'
+                    }`}
+                    style={isActive ? { '--tw-ring-color': card.accent, boxShadow: `0 20px 60px ${card.accent}15` } : {}}
+                  >
+                    <div className="flex items-center justify-between mb-4 pr-10">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{card.label}</span>
+                    </div>
+                    <div className="absolute top-5 right-5 w-9 h-9 rounded-full bg-white/70 border border-white/80 flex items-center justify-center">
+                      <card.icon size={18} className={`${card.color} transform transition-transform duration-300 ${isActive ? 'scale-110' : 'group-hover:scale-110 group-hover:rotate-3'}`} />
+                    </div>
+                    <div className="text-3xl font-black text-slate-900 tracking-tight mb-2">{card.value}</div>
+                    <div className="text-sm font-bold text-slate-500">{card.sub}</div>
+
+                    {!isActive && (
+                      <div className="absolute bottom-5 right-6 opacity-0 translate-y-2 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300">
+                        <ArrowUpRight size={16} className={card.color} />
+                      </div>
+                    )}
+                    {isActive && (
+                      <div className="absolute top-5 right-16">
+                        <div className="w-8 h-8 rounded-full bg-slate-900/5 hover:bg-slate-900/10 flex items-center justify-center transition-colors">
+                          <X size={14} className="text-slate-600" />
+                        </div>
+                      </div>
+                    )}
+                  </button>
+
+                  {/* Chart Panel - Shown below the active card */}
+                  {isActive && activeCardData && (
+                    <div className="bg-white rounded-b-[2.5rem] p-8 shadow-2xl border border-slate-100 border-t-0 animate-in slide-in-from-top-2 fade-in relative z-0 mt-0">
+                      <div className="flex items-center justify-between mb-8">
+                        <div>
+                          <h2 className="text-xl font-black text-slate-900 tracking-tight uppercase">{activeCardData.chartTitle}</h2>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                            {activePeriodLabel} · {salesData?.totalOrders || 0} total orders
+                          </p>
+                        </div>
+                      </div>
+
+                      {activeCardData.chartType === 'hbar'
+                        ? <AvgOrderChart key={`chart-${activeCardData.id}-${period}`} data={chartData[activeCardData.chartKey]} color={activeCardData.chartColor} />
+                        : <LineChart key={`chart-${activeCardData.id}-${period}`} data={chartData[activeCardData.chartKey]} color={activeCardData.chartColor} label={activeCardData.id} />
+                      }
+
+                      {/* Chart footer stats */}
+                      {chartSummary && (
+                        <div className="mt-8 rounded-2xl bg-slate-50 grid grid-cols-3 divide-x divide-slate-200 border border-slate-100 overflow-hidden">
+                          <div className="flex flex-col items-start px-7 py-5 gap-1">
+                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Peak</span>
+                            <span className="text-xl font-black leading-tight" style={{ color: activeCardData.chartColor }}>
+                              {fmtS(chartSummary.peak.value)}
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-400">{chartSummary.peak.label}</span>
+                          </div>
+                          <div className="flex flex-col items-start px-7 py-5 gap-1">
+                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                              {period === 'today' ? 'Hourly Avg' : 'Daily Avg'}
+                            </span>
+                            <span className="text-xl font-black text-slate-800 leading-tight">{fmtS(chartSummary.avg)}</span>
+                            <span className="text-[10px] font-bold text-slate-400">per {period === 'today' ? 'hour' : 'day'}</span>
+                          </div>
+                          <div className="flex flex-col items-start px-7 py-5 gap-1">
+                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Data Pts</span>
+                            <span className="text-xl font-black text-slate-800 leading-tight">{chartSummary.count}</span>
+                            <span className="text-[10px] font-bold text-slate-400">tracked</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="text-2xl font-black text-slate-900 tracking-tight mb-1">{card.value}</div>
-                <div className="text-xs font-bold text-slate-400">{card.sub}</div>
-                <div className={`absolute bottom-4 right-5 transition-all duration-300 ${activeCard === card.id ? 'opacity-100' : 'opacity-0 translate-y-2 group-hover:translate-y-0 group-hover:opacity-100'}`}>
-                  <ArrowUpRight size={14} className={card.color} />
-                </div>
-              </button>
-            ))}
+              );
+            })}
           </div>
-
-          {/* ── Chart Panel ─────────────────────────────────── */}
-          {activeCard && activeCardData && (
-            <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-100 animate-slide-up duration-300">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-xl font-black text-slate-900 tracking-tight uppercase">{activeCardData.chartTitle}</h2>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                    {activePeriodLabel} · {salesData?.totalOrders || 0} total orders
-                  </p>
-                </div>
-                <button onClick={() => setActiveCard(null)}
-                  className="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors">
-                  <X size={16} className="text-slate-500" />
-                </button>
-              </div>
-
-              {activeCardData.chartType === 'hbar'
-                ? <AvgOrderChart key={`chart-${activeCardData.id}-${period}`} data={chartData[activeCardData.chartKey]} color={activeCardData.chartColor} />
-                : <LineChart key={`chart-${activeCardData.id}-${period}`} data={chartData[activeCardData.chartKey]} color={activeCardData.chartColor} label={activeCardData.id} />
-              }
-
-              {/* Chart footer stats — soft dark bar */}
-              {chartSummary && (
-                <div className="mt-6 rounded-2xl bg-slate-100 grid grid-cols-3 divide-x divide-slate-200 overflow-hidden">
-                  {/* Peak */}
-                  <div className="flex flex-col items-start px-7 py-5 gap-1">
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.22em]">Peak</span>
-                    <span className="text-xl font-black leading-tight"
-                      style={{ color: activeCardData.chartColor }}>{fmtS(chartSummary.peak.value)}</span>
-                    <span className="text-[10px] font-bold text-slate-400">{chartSummary.peak.label}</span>
-                  </div>
-
-                  {/* Avg */}
-                  <div className="flex flex-col items-start px-7 py-5 gap-1">
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.22em]">
-                      {period === 'today' ? 'Hourly Avg' : 'Daily Avg'}
-                    </span>
-                    <span className="text-xl font-black text-slate-800 leading-tight">{fmtS(chartSummary.avg)}</span>
-                    <span className="text-[10px] font-bold text-slate-400">per {period === 'today' ? 'hour' : 'day'}</span>
-                  </div>
-
-                  {/* Data Points */}
-                  <div className="flex flex-col items-start px-7 py-5 gap-1">
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.22em]">Data Points</span>
-                    <span className="text-xl font-black text-slate-800 leading-tight">{chartSummary.count}</span>
-                    <span className="text-[10px] font-bold text-slate-400">{period === 'today' ? 'hours tracked' : 'days tracked'}</span>
-                  </div>
-                </div>
-              )}
-
-
-            </div>
-          )}
 
           {/* ── Dine-in vs Parcel + Top Items ──────────────── */}
           {salesData && salesData.totalOrders > 0 && (
@@ -790,11 +824,17 @@ const SalesReport = () => {
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan="5" className="p-0 m-0">
+                        <div className="px-8 py-5 bg-slate-900 flex justify-between items-center">
+                          <span className="text-xs font-black text-white uppercase tracking-widest">Period Total</span>
+                          <span className="text-xl font-black text-white">{fmt(salesData?.totalRevenue || 0)}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  </tfoot>
                 </table>
-                <div className="px-8 py-5 bg-slate-900 flex justify-between items-center">
-                  <span className="text-xs font-black text-white uppercase tracking-widest">Period Total</span>
-                  <span className="text-xl font-black text-white">{fmt(salesData?.totalRevenue || 0)}</span>
-                </div>
               </div>
             </div>
           )}

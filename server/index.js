@@ -341,7 +341,7 @@ app.patch('/api/subscription/cancel-autopay', auth, async (req, res) => {
 // GET /api/settings
 app.get('/api/settings', auth, async (req, res) => {
   try {
-    const user = await ArcheUser.findById(req.user.id).select('tableCount restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber taxEnabled taxes name email role');
+    const user = await ArcheUser.findById(req.user.id).select('tableCount restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber printMobileRequired taxEnabled taxes menuCategories name email role');
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(user);
   } catch (err) {
@@ -352,7 +352,7 @@ app.get('/api/settings', auth, async (req, res) => {
 // PATCH /api/settings
 app.patch('/api/settings', auth, async (req, res) => {
   try {
-    const { tableCount, restaurantName, restaurantAddress, restaurantPhone, gstNumber, fssaiNumber, taxEnabled, taxes } = req.body;
+    const { tableCount, restaurantName, restaurantAddress, restaurantPhone, gstNumber, fssaiNumber, printMobileRequired, taxEnabled, taxes, menuCategories } = req.body;
     const update = {};
     if (tableCount !== undefined) {
       update.tableCount = Math.max(10, Math.min(50, parseInt(tableCount)));
@@ -362,11 +362,18 @@ app.patch('/api/settings', auth, async (req, res) => {
     if (restaurantPhone !== undefined) update.restaurantPhone = restaurantPhone;
     if (gstNumber !== undefined) update.gstNumber = gstNumber;
     if (fssaiNumber !== undefined) update.fssaiNumber = fssaiNumber;
+    if (printMobileRequired !== undefined) update.printMobileRequired = !!printMobileRequired;
     if (taxEnabled !== undefined) update.taxEnabled = taxEnabled;
     if (taxes !== undefined) update.taxes = taxes;
+    if (menuCategories !== undefined && Array.isArray(menuCategories)) {
+      const cleaned = menuCategories
+        .map(c => String(c || '').trim())
+        .filter(Boolean);
+      update.menuCategories = cleaned.length ? cleaned : ['Veg', 'Non-Veg', 'Beverage', 'Dessert'];
+    }
 
     const user = await ArcheUser.findByIdAndUpdate(req.user.id, update, { new: true })
-      .select('tableCount restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber taxEnabled taxes name email role');
+      .select('tableCount restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber printMobileRequired taxEnabled taxes menuCategories name email role');
     res.json(user);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -515,14 +522,25 @@ app.post('/api/orders', auth, async (req, res) => {
       }
     }
 
-    // AUTO-NUMBERING (Daily Reset)
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const countToday = await Order.countDocuments({
-      userId: req.user.id,
-      createdAt: { $gte: todayStart }
-    });
-    orderData.orderNumber = countToday + 1;
+    // AUTO-NUMBERING (Per-account monotonic sequence, no daily reset)
+    // Ensure legacy users are initialized from their max existing order number once.
+    if (!user?.lastOrderNumber || user.lastOrderNumber < 1) {
+      const maxExistingOrder = await Order.findOne({ userId: req.user.id })
+        .sort({ orderNumber: -1 })
+        .select('orderNumber');
+      const seedNumber = maxExistingOrder?.orderNumber || 0;
+      await ArcheUser.updateOne(
+        { _id: req.user.id, $or: [{ lastOrderNumber: { $exists: false } }, { lastOrderNumber: { $lt: 1 } }] },
+        { $set: { lastOrderNumber: seedNumber } }
+      );
+    }
+
+    const seqUser = await ArcheUser.findByIdAndUpdate(
+      req.user.id,
+      { $inc: { lastOrderNumber: 1 } },
+      { new: true, projection: { lastOrderNumber: 1 } }
+    );
+    orderData.orderNumber = seqUser?.lastOrderNumber || 1;
     orderData.userId = req.user.id;
 
     // Default formatting for quick parcels
@@ -721,11 +739,20 @@ function getDateRange(period) {
   return { start, end: now };
 }
 
-// GET /api/analytics/sales?period=today|week|month|3months|year|all
+// GET /api/analytics/sales?period=today|week|month|3months|year|all|custom
 app.get('/api/analytics/sales', auth, async (req, res) => {
   try {
     const period = req.query.period || 'today';
-    const { start, end } = getDateRange(period);
+    let start, end;
+
+    if (period === 'custom' && req.query.from && req.query.to) {
+      start = new Date(req.query.from);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(req.query.to);
+      end.setHours(23, 59, 59, 999);
+    } else {
+      ({ start, end } = getDateRange(period));
+    }
 
     const orders = await Order.find({
       userId: req.user.id,
