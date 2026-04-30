@@ -13,6 +13,8 @@ const userSchema = new mongoose.Schema({
   restaurantPhone: { type: String, default: '', trim: true },
   gstNumber: { type: String, default: '', trim: true },
   fssaiNumber: { type: String, default: '', trim: true },
+  // Default ON: admin can explicitly turn it OFF.
+  printMobileRequired: { type: Boolean, default: true },
   // Tax configuration
   taxEnabled: { type: Boolean, default: false },
   taxes: [{
@@ -20,6 +22,16 @@ const userSchema = new mongoose.Schema({
     percentage: { type: Number, default: 5 },
     enabled: { type: Boolean, default: true }
   }],
+  menuCategories: {
+    type: [String],
+    default: ['Veg', 'Non-Veg', 'Beverage', 'Dessert']
+  },
+  tableAreas: {
+    type: [String],
+    default: ['Main Floor']
+  },
+  // Monotonic per-user order sequence (1, 2, 3...)
+  lastOrderNumber: { type: Number, default: 0 },
 }, { timestamps: true });
 
 userSchema.pre('save', async function() {

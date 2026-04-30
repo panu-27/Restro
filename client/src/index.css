@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,100..1000&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,100..1000&family=Pacifico&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -10,6 +10,16 @@
 
 :root {
   --font-family: 'DM Sans', sans-serif;
+}
+
+html {
+  font-size: 12px;
+}
+
+@media (min-width: 1024px) {
+  html {
+    font-size: 13px;
+  }
 }
 
 /* Global: enforce DM Sans and remove all italic styles */
@@ -62,6 +72,18 @@ body {
   
   .animate-stat-pop { animation: statPop 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
   .animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+}
+
+/* Hide scrollbars globally but allow scrolling */
+::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+* {
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE/Edge */
 }
 
 @keyframes springFade {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { CustomLogo } from './Logo';
 import { Check, ChevronRight, CreditCard, Sparkles, Shield, ArrowRight } from 'lucide-react';
+import { CustomLogo } from './CustomLogo';
 
 const pricingPlans = [
     {
@@ -145,10 +145,8 @@ const ChoosePlan = ({ onPlanActivated }) => {
         .pricing-cards-wrapper > div { flex: 1; min-width: 320px; max-width: 400px; }
       `}</style>
       
-      {/* Navbar area */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: '32px 48px', display: 'flex', alignItems: 'center', gap: '12px', zIndex: 100, animation: 'fadeIn 1s cubic-bezier(0.16, 1, 0.3, 1) both' }}>
-        <CustomLogo size={32} />
-        <span style={{ fontSize: '1.25rem', fontWeight: 700, color: '#202124', letterSpacing: '-0.02em', marginTop: '2px' }}>ArcheArc Restro</span>
+        <CustomLogo size={116} style={{ height: '116px', objectFit: 'contain' }} />
       </div>
 
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyItems: 'center', justifyContent: 'center', padding: '120px 24px', position: 'relative', zIndex: 10 }}>

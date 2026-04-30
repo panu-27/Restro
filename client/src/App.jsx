@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { LayoutGrid, ShoppingBag, History, Settings, LogOut, User, BarChart3, Clock, ChevronDown, MoreVertical, HelpCircle, Utensils, BookOpen, LineChart, Grid, Key, X } from 'lucide-react';
-import { CustomLogo } from './components/Logo';
 import TableGrid from './components/TableGrid';
 import TableView from './components/TableView';
 import POSInterface from './components/POSInterface';
@@ -12,6 +11,14 @@ import SubscriptionBanner from './components/SubscriptionBanner';
 import SettingsPanel from './components/SettingsPanel';
 import SalesReport from './components/SalesReport';
 import { DashboardView } from './components/DashboardView';
+
+const BrandLogo = ({ className = '' }) => (
+  <img
+    src="/brand-logo.png"
+    alt="Restro"
+    className={className}
+  />
+);
 
 function App() {
   const [user, setUser] = useState(null);
@@ -132,7 +139,7 @@ function App() {
     return (
       <div className="flex items-center justify-center h-screen bg-white">
         <div className="text-center">
-          <CustomLogo size={48} className="mx-auto mb-4 animate-pulse" />
+          <BrandLogo className="h-40 mx-auto mb-4 animate-pulse object-contain" />
           <p className="text-gray-400 font-bold animate-pulse uppercase tracking-[0.2em] text-[10px]">Loading ArcheArc Restro...</p>
         </div>
       </div>
@@ -199,61 +206,74 @@ function App() {
   ];
 
   return (
-    <div className="flex h-screen bg-gray-100 p-2 lg:p-4 gap-4 overflow-hidden">
-      {/* ── Sidebar ─────────────────────────────────────────────────────────── */}
-      <aside className="w-20 lg:w-64 bg-white rounded-3xl flex flex-col py-6 px-4 shrink-0 shadow-sm transition-all duration-500 z-20">
+    <div className="flex flex-col lg:flex-row h-[100dvh] bg-[#F3F5F8] lg:p-3 gap-2 lg:gap-3 overflow-hidden relative">
+      
+      {/* ── Mobile Top Bar ─────────────────────────────────────────────────────────── */}
+      <div className="lg:hidden flex items-center justify-between bg-white px-4 py-3 z-20 mx-2 mt-2 border border-slate-100 rounded-2xl">
+        <div className="flex items-center">
+          <BrandLogo className="h-32 object-contain shrink-0" />
+        </div>
+        <div className="flex items-center gap-2">
+          {subscription?.plan === 'trial' && subscription?.isValid && (
+            <div className="flex items-center gap-1.5 px-2 py-1 bg-amber-50 rounded-lg border border-amber-100 mr-2">
+              <Clock size={12} className="text-amber-500" />
+              <span className="text-[10px] font-bold text-amber-600">Trial: {subscription.trialDaysRemaining}d</span>
+            </div>
+          )}
+          <button onClick={() => setShowPasswordModal(true)} className="p-2 text-gray-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors">
+            <Key size={18} />
+          </button>
+          <button onClick={handleLogout} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+            <LogOut size={18} />
+          </button>
+        </div>
+      </div>
+
+      {/* ── Desktop Sidebar ─────────────────────────────────────────────────────────── */}
+      <aside className="hidden lg:flex w-56 bg-white rounded-3xl flex-col py-5 px-3.5 shrink-0 transition-all duration-500 z-20 border border-slate-100">
         {/* Logo */}
-        <div className="flex items-center justify-center lg:justify-start gap-4 px-2 mb-10">
-          <div className="shrink-0">
-            <CustomLogo size={36} />
-          </div>
-          <div className="hidden lg:flex flex-col">
-            <span className="font-black text-2xl tracking-tighter text-gray-900 leading-none ">
-              RESTRO
-            </span>
-            <span className="text-[10px] font-black text-gray-500 tracking-[0.2em] mt-1 leading-none ">
-              BY ARCHEARC
-            </span>
+        <div className="flex items-center justify-center lg:justify-start pl-1 pr-1.5 mb-3 mt-1">
+          <div className="shrink-0 h-32 w-full flex items-center justify-center lg:justify-start">
+            <BrandLogo className="h-32 object-contain shrink-0" />
           </div>
         </div>
 
 
         {/* Nav: Menu */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar">
-          <p className="text-[11px] text-gray-400 mb-2 px-2 hidden lg:block font-medium uppercase tracking-wider">Menu</p>
+          <p className="text-[10px] text-gray-400 mb-1.5 px-2 font-semibold uppercase tracking-[0.12em]">Menu</p>
           <nav className="space-y-1 mb-8">
             {navTabs.filter(t => t.id !== 'settings').map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center justify-center lg:justify-start gap-3 px-3 py-3 lg:px-4 rounded-xl transition-all duration-300 text-sm font-black  uppercase tracking-tight ${
+                className={`w-full flex items-center justify-start gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-300 text-[11px] font-bold uppercase tracking-[0.02em] ${
                   activeTab === tab.id
-                    ? 'bg-[#FF5A36] text-white shadow-xl shadow-[#FF5A36]/30'
+                    ? 'bg-[#FF5A36] text-white'
                     : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                 }`}
               >
-                <tab.icon size={20} className="shrink-0" />
-                <span className="hidden lg:block">{tab.label}</span>
+                <tab.icon size={17} className="shrink-0" />
+                <span>{tab.label}</span>
               </button>
             ))}
           </nav>
 
           {/* Nav: Others */}
-          <p className="text-[11px] text-gray-400 mb-2 px-2 hidden lg:block font-medium uppercase tracking-wider">Others</p>
+          <p className="text-[10px] text-gray-400 mb-1.5 px-2 font-semibold uppercase tracking-[0.12em]">Others</p>
           <nav className="space-y-1">
-
             {navTabs.filter(t => t.id === 'settings').map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center justify-center lg:justify-start gap-3 px-3 py-3 lg:px-4 rounded-xl transition-all duration-300 text-sm font-black  uppercase tracking-tight ${
+                className={`w-full flex items-center justify-start gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-300 text-[11px] font-bold uppercase tracking-[0.02em] ${
                   activeTab === tab.id
-                    ? 'bg-[#FF5A36] text-white shadow-xl shadow-[#FF5A36]/30'
+                    ? 'bg-[#FF5A36] text-white'
                     : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                 }`}
               >
-                <tab.icon size={20} className="shrink-0" />
-                <span className="hidden lg:block">{tab.label}</span>
+                <tab.icon size={17} className="shrink-0" />
+                <span>{tab.label}</span>
               </button>
             ))}
           </nav>
@@ -262,42 +282,37 @@ function App() {
         {/* User + Logout */}
         <div className="mt-4 pt-4 border-t border-gray-100 flex flex-col gap-2">
           {subscription?.plan === 'trial' && subscription?.isValid && (
-            <div className="hidden lg:flex items-center gap-2 px-3 py-2 bg-amber-50 rounded-xl border border-amber-100">
+            <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 rounded-xl border border-amber-100">
               <Clock size={14} className="text-amber-500 shrink-0" />
               <span className="text-[10px] font-bold text-amber-600 truncate">
                 Trial: {subscription.trialDaysRemaining}d
               </span>
             </div>
           )}
-          <div className="flex items-center justify-between p-2 lg:p-2 rounded-xl border border-transparent hover:border-gray-200 transition-colors group relative cursor-pointer pt-2">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between p-2 rounded-xl border border-transparent hover:border-gray-200 transition-colors group relative cursor-pointer">
+            <div className="flex items-center gap-2.5">
               <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 shrink-0 overflow-hidden">
                 <img src={`https://ui-avatars.com/api/?name=${user?.name || 'User'}&background=DBEAFE&color=2563EB`} alt="avatar" className="w-full h-full object-cover" />
               </div>
-              <div className="hidden lg:block overflow-hidden">
-                <p className="text-sm font-bold text-gray-900 truncate">{user?.name || 'User'}</p>
-                <p className="text-[11px] text-gray-400 font-medium capitalize">Admin</p>
+              <div className="overflow-hidden">
+                <p className="text-[13px] font-semibold text-gray-900 truncate">{user?.name || 'User'}</p>
+                <p className="text-[10px] text-gray-400 font-medium capitalize">Admin</p>
               </div>
             </div>
-            <div className="hidden lg:flex flex-col items-center gap-1">
+            <div className="flex flex-col items-center gap-1">
               <button onClick={() => setShowPasswordModal(true)} className="p-1 text-gray-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors" title="Change Password">
-                <Key size={14} />
+                <Key size={12} />
               </button>
               <button onClick={handleLogout} className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Logout">
-                <LogOut size={14} />
+                <LogOut size={12} />
               </button>
-            </div>
-            {/* Mobile actions */}
-            <div className="lg:hidden absolute flex flex-col top-0 right-0 h-full p-2 gap-2">
-               <button onClick={() => setShowPasswordModal(true)} className="p-1 text-gray-400 rounded-lg" title="Change Password"><Key size={16}/></button>
-               <button onClick={handleLogout} className="p-1 text-gray-400 rounded-lg" title="Logout"><LogOut size={16}/></button>
             </div>
           </div>
         </div>
       </aside>
 
       {/* ── Main Content ─────────────────────────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto no-scrollbar relative rounded-3xl">
+      <main className="flex-1 overflow-y-auto no-scrollbar relative lg:rounded-3xl pb-24 lg:pb-0 px-2 lg:px-0">
         <div className="w-full h-full !pb-10 max-w-[1600px] mx-auto">
           {!bannerDismissed && (
             <SubscriptionBanner subscription={subscription} onDismiss={() => setBannerDismissed(true)} />
@@ -328,6 +343,7 @@ function App() {
             <div className="animate-in fade-in duration-500">
               <POSInterface
                 activeOrders={activeOrders}
+                user={user}
                 onOrderUpdate={fetchActiveOrders}
                 onOrderClick={(orderId) => setOpenOrderId(orderId)}
               />
@@ -363,10 +379,9 @@ function App() {
             </div>
           )}
 
-          {/* Change Password Modal */}
           {showPasswordModal && (
             <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="bg-white rounded-3xl w-full max-w-sm border border-slate-100 overflow-hidden animate-in zoom-in-95 duration-200">
                 <div className="flex items-center justify-between p-6 border-b border-gray-100 bg-gray-50/50">
                   <h3 className="font-black text-gray-900 text-lg">Change Password</h3>
                   <button onClick={() => setShowPasswordModal(false)} className="text-gray-400 hover:text-gray-600 bg-gray-100 hover:bg-gray-200 p-1.5 rounded-full transition-colors">
@@ -436,6 +451,29 @@ function App() {
           )}
         </div>
       </main>
+
+      {/* ── Mobile Bottom Nav ───────────────────────────────────────────────────────── */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 flex justify-around items-center h-[72px] z-30 pb-safe px-2 transition-transform duration-300">
+        {navTabs.map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex flex-col items-center justify-center w-full h-full gap-1 transition-all duration-300 ${
+                isActive ? 'text-[#FF5A36]' : 'text-gray-400 hover:text-gray-900'
+              }`}
+            >
+              <div className={`p-2 rounded-xl transition-all duration-300 ${isActive ? 'bg-[#FF5A36]/10' : ''}`}>
+                <tab.icon size={22} className={isActive ? 'fill-[#FF5A36]/20' : ''} />
+              </div>
+              <span className={`text-[9px] font-black uppercase tracking-widest truncate max-w-full px-1 ${isActive ? 'opacity-100' : 'opacity-70'}`}>
+                {tab.label}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
     </div>
   );
 }

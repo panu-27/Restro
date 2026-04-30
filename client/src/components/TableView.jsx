@@ -3,12 +3,19 @@ import axios from 'axios';
 import {
   X, Plus, Minus, Search, Printer, MessageCircle,
   ShoppingCart, Phone, Leaf, Flame,
-  Coffee, IceCream, Utensils, ArrowLeft, CreditCard, Users, SplitSquareHorizontal,
+  Coffee, IceCream, Utensils, ArrowLeft, ArrowRight, CreditCard, Users, SplitSquareHorizontal,
   Package, CheckCircle2, History
 } from 'lucide-react';
 
 // ─── Utility ─────────────────────────────────────────────────────────────
 const cn = (...classes) => classes.filter(Boolean).join(' ');
+const formatOrderDisplay = (orderNumber, orderId) => {
+  if (typeof orderNumber === 'number' && Number.isFinite(orderNumber)) {
+    return `#${String(orderNumber).padStart(4, '0')}`;
+  }
+  if (orderId) return `#${String(orderId).slice(-8).toUpperCase()}`;
+  return '—';
+};
 
 const categoryIcon = (cat) => {
   switch (cat) {
@@ -37,7 +44,9 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   const [roundItems,  setRoundItems]  = useState({}); // partId → [{menuId,name,price,qty}]
   const [partPhones,  setPartPhones]  = useState({}); // partId → phone string
   const [partOrderIds, setPartOrderIds] = useState({}); // partId → server order._id
+  const [partOrderNumbers, setPartOrderNumbers] = useState({}); // partId → server orderNumber
   const [roundMsg,    setRoundMsg]    = useState(false);
+  const [isDispatching, setIsDispatching] = useState(false);
   const [search,      setSearch]      = useState('');
   const [catFilter,   setCatFilter]   = useState('All');
   const [settled,     setSettled]     = useState(false); // success screen
@@ -68,10 +77,12 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
             status: o.status
           }));
           const orderIds = {};
+          const orderNumbers = {};
           const initPhones = {};
           active.forEach((o, idx) => {
              const pid = `part-${o._id}`;
              orderIds[pid] = o._id;
+             orderNumbers[pid] = o.orderNumber;
              if (o.customerPhone) {
                 initPhones[pid] = o.customerPhone;
              }
@@ -79,6 +90,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
           
           setParts(loadedParts);
           setPartOrderIds(orderIds);
+          setPartOrderNumbers(orderNumbers);
           setPartPhones(initPhones);
         } else {
           // New session for a table
@@ -174,7 +186,8 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
     });
   };
 
-  const saveRound = async (partId) => {
+  const saveRound = async (partId, options = {}) => {
+    const { closeAfterSave = false } = options;
     const items = currentRoundOf(partId);
     if (!items.length) return;
     
@@ -201,6 +214,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
         
         const res = await axios.post('/api/orders', orderPayload);
         setPartOrderIds(prev => ({ ...prev, [partId]: res.data._id }));
+        setPartOrderNumbers(prev => ({ ...prev, [partId]: res.data.orderNumber }));
         setParts(prev => prev.map(p => {
           if (p.id !== partId) return p;
           return { ...p, rounds: [{ roundNumber: 1, items: [...items] }] };
@@ -210,6 +224,12 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
       setRoundItems(prev => ({ ...prev, [partId]: [] }));
       setRoundMsg(true);
       setTimeout(() => setRoundMsg(false), 2000);
+      if (closeAfterSave) {
+        setIsDispatching(true);
+        setTimeout(() => {
+          onClose?.();
+        }, 170);
+      }
     } catch (err) {
       console.error('Failed to save round:', err);
       alert('Error saving round to database.');
@@ -232,26 +252,30 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
       restaurantPhone:   user?.restaurantPhone   || '',
       gstNumber:         user?.gstNumber         || '',
       fssaiNumber:       user?.fssaiNumber       || '',
+      orderId:           partOrderIds[partId]    || '',
+      orderNumber:       partOrderNumbers[partId],
       timestamp: new Date().toLocaleString('en-IN'),
     };
   };
 
   const waMessage = (bill) =>
     [
-      `🍽️ *${bill.restaurantName}*`,
-      bill.restaurantAddress ? `📍 ${bill.restaurantAddress}` : '',
+      `🏨 *${bill.restaurantName}*`,
+      bill.restaurantAddress ? `📍 ${bill.restaurantAddress}` : undefined,
+      bill.restaurantPhone ? `📞 ${bill.restaurantPhone}` : undefined,
       '',
-      `*${bill.tableId} | ${bill.partLabel}*`,
-      `🕐 ${bill.timestamp}`,
+      `🧾 *I N V O I C E*`,
+      `Order ID: ${formatOrderDisplay(bill.orderNumber, bill.orderId)}`,
       '',
-      `📋 *Order*`,
       ...bill.items.map(i => `  ${i.name} × ${i.qty}  →  ₹${(i.price * i.qty).toFixed(2)}`),
       '',
-      `Subtotal: ₹${bill.sub.toFixed(2)}`,
-      ...bill.txList.map(t => `${t.name} (${t.pct}%): ₹${t.amt.toFixed(2)}`),
-      `*Total: ₹${bill.total.toFixed(2)}*`,
+      ...(bill.txList.length > 0 ? [
+        `Subtotal: ₹${bill.sub.toFixed(2)}`,
+        ...bill.txList.map(t => `${t.name} (${t.pct}%): ₹${t.amt.toFixed(2)}`)
+      ] : []),
+      `*TOTAL: ₹${bill.total.toFixed(2)}*`,
       '',
-      `Thank you! 🙏`,
+      `Thank you! Visit again 🙏`,
     ].filter(l => l !== undefined).join('\n');
 
   // ── ONE-CLICK SETTLE ──────────────────────────────────────────────────
@@ -271,24 +295,21 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
       return;
     }
 
-    const phone = phoneOf(partId).replace(/\D/g, '');
-    if (phone.length < 10) {
-      alert('Please enter a valid 10-digit customer mobile number to finalize the bill.');
-      return;
-    }
     const hasWA = mode === 'wa' || mode === 'both';
     const doPrint = mode === 'print' || mode === 'both';
-
-    const label = hasWA ? `${bill.total.toFixed(2)} via WhatsApp to +91-${phone}` : `₹${bill.total.toFixed(2)}`;
-    const msg   = `Settle ${bill.partLabel}?\n\nTotal: ₹${label}\n\nClick OK to ${hasWA ? 'send WhatsApp bill' : doPrint ? 'print bill' : ''} & settle.\nClick Cancel to go back.`;
-
-    if (!window.confirm(msg)) return;
+    const phone = phoneOf(partId).replace(/\D/g, '');
+    const requiresPhoneForPrint = user?.printMobileRequired !== false;
+    const requiresPhone = hasWA || (doPrint && requiresPhoneForPrint);
+    if (requiresPhone && phone.length < 10) {
+      alert('Please enter a valid 10-digit customer mobile number.');
+      return;
+    }
 
     try {
       // Save phone number + Mark as Paid on Server
       await axios.patch(`/api/orders/${orderId}/status`, {
         status: 'Paid',
-        customerPhone: phone
+        customerPhone: phone.length >= 10 ? phone : ''
       });
 
       // Send WhatsApp if phone provided
@@ -327,29 +348,36 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   const PrintBill = ({ partId }) => {
     const bill = buildBill(partId);
     return (
-      <div className="hidden print:block print-only" ref={billRef}>
-        <div className="text-center font-black text-sm tracking-[0.3em] uppercase mb-1 pt-4 border-t border-dashed border-gray-400">
-          Invoice
+      <div className="hidden print:block print-only font-sans" ref={billRef}>
+        <div className="text-center font-black text-xl mb-1">{bill.restaurantName}</div>
+        {bill.restaurantAddress && <div className="text-center text-sm mb-1">{bill.restaurantAddress}</div>}
+        {bill.restaurantPhone && <div className="text-center text-sm mb-3">Ph: {bill.restaurantPhone}</div>}
+        
+        <div className="border-t border-dashed border-gray-400 my-2"></div>
+        <div className="relative my-3">
+          <div className="text-center font-black text-base tracking-[0.3em] uppercase">
+            Invoice
+          </div>
+          <div className="absolute right-1 top-1/2 -translate-y-[65%] text-sm text-slate-700">
+            Order ID: {formatOrderDisplay(bill.orderNumber, bill.orderId)}
+          </div>
         </div>
-        <div className="mb-4"></div>
+        
         {bill.items.map((item, i) => (
-          <div key={i} className="flex justify-between text-sm mb-1">
+          <div key={i} className="flex justify-between text-base mb-1.5">
             <span>{item.name} × {item.qty}</span>
             <span>₹{(item.price * item.qty).toFixed(2)}</span>
           </div>
         ))}
-        <div className="mt-2 pt-2 border-t border-dashed border-gray-400">
-          <div className="flex justify-between text-sm"><span>Subtotal</span><span>₹{bill.sub.toFixed(2)}</span></div>
-          {bill.txList.map((t, i) => (
-            <div key={i} className="flex justify-between text-xs text-gray-500">
-              <span>{t.name} ({t.pct}%)</span><span>₹{t.amt.toFixed(2)}</span>
-            </div>
-          ))}
-          <div className="flex justify-between font-black text-lg mt-2 pt-2 border-t border-dashed border-gray-400">
+        
+        <div className="border-t border-dashed border-gray-400 mt-3 pt-3">
+          <div className="flex justify-between font-black text-xl mb-3">
             <span>TOTAL</span><span>₹{bill.total.toFixed(2)}</span>
           </div>
+          <div className="border-t border-dashed border-gray-400 mb-3"></div>
         </div>
-        <p className="text-center text-xs mt-4 pt-3 border-t border-dashed border-gray-400">Thank you! Visit again 🙏</p>
+        
+        <p className="text-center text-sm mt-4">Thank you! Visit again 🙏</p>
       </div>
     );
   };
@@ -392,28 +420,46 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
 
   // ── Render ────────────────────────────────────────────────────────────
   return (
-    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
+    <div
+      className={cn(
+        "h-screen bg-[#f8f7f5] flex flex-col overflow-hidden font-sans transition-all duration-150",
+        isDispatching && "opacity-0 -translate-y-1 scale-[0.995]"
+      )}
+    >
 
       {/* ── Header ───────────────────────────────────────────────────── */}
-      <div className="bg-white border-b border-gray-100 px-6 py-4 flex items-center gap-4 no-print">
-        <button
-          onClick={onClose}
-          className="w-9 h-9 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors shrink-0"
-        >
-          <ArrowLeft size={16} />
-        </button>
-        <div className="flex-1 min-w-0">
-          <h1 className="text-lg font-black text-gray-900 truncate">{tableId ? 'Table View' : 'Parcel View'}</h1>
-          <p className="text-xs text-gray-400 font-medium">
-            {tableId || parts[0]?.label || 'Loading...'}
-          </p>
+      <div className="px-5 py-4 flex justify-between items-center no-print">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onClose}
+            className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-colors shrink-0"
+          >
+            <ArrowLeft size={18} className="text-slate-600" />
+          </button>
+          <div className="flex flex-col">
+            <h1 className="text-lg font-bold text-slate-900 tracking-tight leading-none mb-1">{tableId ? 'Table view' : 'Parcel view'}</h1>
+            <p className="text-[11px] text-slate-400 font-semibold tracking-wide uppercase">
+              {tableId || parts[0]?.label || 'Loading...'}
+            </p>
+          </div>
         </div>
+        
+        {!isReadOnly && parts.length > 0 && (
+           <button
+             onClick={addPart}
+             className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 transition-colors"
+           >
+             Split bill
+           </button>
+        )}
       </div>
+
+      <div className="mx-5 border-b border-slate-200 no-print"></div>
 
       {/* ── Parts Tab Bar ─────────────────────────────────────────────── */}
       {parts.length > 1 && (
-        <div className="bg-white border-b border-gray-100 px-6 no-print">
-          <div className="flex gap-2 overflow-x-auto pb-1 pt-2">
+        <div className="px-5 no-print">
+          <div className="flex gap-2 overflow-x-auto pb-2 pt-3 no-scrollbar">
             {parts.map((p, idx) => {
               const items = allItemsForPart(p.id);
               const tot   = totalOf(subtotalOf(items), taxListOf(subtotalOf(items)));
@@ -422,18 +468,18 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                   key={p.id}
                   onClick={() => setActivePart(idx)}
                   className={cn(
-                    'flex items-center gap-2 shrink-0 px-4 py-2 rounded-full text-sm font-bold transition-all border',
+                    'flex items-center gap-2 shrink-0 px-4 py-2 rounded-xl text-xs font-medium transition-all border',
                     activePart === idx
-                      ? 'bg-gray-900 text-white border-gray-900 shadow-md'
-                      : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                      ? 'bg-slate-800 text-white border-slate-800'
+                      : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
                   )}
                 >
                   <Users size={13} />
                   {p.label}
                   {items.length > 0 && (
                     <span className={cn(
-                      'text-xs font-black px-2 py-0.5 rounded-full',
-                      activePart === idx ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'
+                      'text-[10px] font-bold px-1.5 py-0.5 rounded-full',
+                      activePart === idx ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
                     )}>
                       ₹{tot.toFixed(0)}
                     </span>
@@ -441,8 +487,8 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                   <span
                     onClick={(e) => { e.stopPropagation(); removePart(idx); }}
                     className={cn(
-                      'w-4 h-4 flex items-center justify-center rounded-full text-xs cursor-pointer hover:bg-red-500 hover:text-white transition-colors',
-                      activePart === idx ? 'text-white/60' : 'text-gray-400'
+                      'w-4 h-4 flex items-center justify-center rounded-full text-xs cursor-pointer transition-colors',
+                      activePart === idx ? 'text-white/60 hover:text-white hover:bg-red-500' : 'text-slate-400 hover:text-red-500'
                     )}
                   >×</span>
                 </button>
@@ -453,10 +499,10 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
       )}
 
       {/* ── Body ──────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-12 h-full gap-4 relative overflow-hidden">
+      <div className="flex flex-col lg:grid lg:grid-cols-12 flex-1 relative overflow-y-auto lg:overflow-hidden gap-0 lg:gap-4 pb-0 no-print">
         
         {/* LEFT COLUMN: ACTIVE ORDERS */}
-        <div className="col-span-3 h-full flex flex-col bg-slate-50 border-r border-slate-100 overflow-hidden">
+        <div className="hidden lg:flex lg:col-span-3 h-full flex-col bg-slate-50 border-r border-slate-100 overflow-hidden">
           <div className="flex items-center gap-2 mb-6 p-6">
             <span className="w-2 h-2 rounded-full bg-orange-500"></span>
             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Active Orders</span>
@@ -519,33 +565,33 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
         </div>
 
         {/* ── Column 2: Menu ─────────────────────────────────────────── */}
-        <div className="col-span-5 bg-white flex flex-col overflow-hidden shadow-sm animate-in fade-in duration-700">
-          <div className="p-6 border-b border-slate-50">
-            <div className="mb-6">
-              <h2 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Menu</h2>
+        <div className="lg:col-span-5 flex flex-col lg:overflow-hidden bg-[#f8f7f5] lg:bg-white border-b border-slate-200 lg:border-none">
+          <div className="px-5 pt-2 pb-4 lg:sticky lg:top-0 z-10 bg-[#f8f7f5] lg:bg-white">
+            <h2 className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-3">Menu</h2>
+            <div className="mb-4">
               <div className="relative group">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors" size={18} />
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                 <input
                   type="text"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder="Search your cravings..."
-                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 pl-12 pr-6 outline-none focus:border-orange-500/50 focus:ring-4 focus:ring-orange-500/5 transition-all text-sm font-bold placeholder:text-slate-300"
+                  className="w-full bg-white border border-slate-200 rounded-xl py-3 pl-10 pr-4 outline-none text-sm text-slate-700 placeholder:text-slate-400 focus:border-orange-400 transition-colors"
                 />
               </div>
             </div>
 
             <div className="space-y-3">
-              <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+              <div className="flex gap-2.5 overflow-x-auto no-scrollbar pb-1">
                 {categories.map(cat => (
                   <button
                     key={cat}
                     onClick={() => setCatFilter(cat)}
                     className={cn(
-                      'shrink-0 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all',
+                      'shrink-0 px-5 py-2 rounded-xl text-sm transition-colors border',
                       catFilter === cat
-                        ? 'bg-[#FF5A36] text-white shadow-lg shadow-orange-200'
-                        : 'bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600'
+                        ? 'bg-[#ff5a36] text-white border-[#ff5a36] font-medium'
+                        : 'bg-transparent text-slate-600 border-slate-200 hover:border-slate-300'
                     )}
                   >
                     {cat}
@@ -555,14 +601,14 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto no-scrollbar">
+          <div className="lg:flex-1 lg:overflow-y-auto no-scrollbar px-5">
             {filteredMenu.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-slate-200">
-                <Utensils size={48} strokeWidth={1} className="mb-4 opacity-20" />
-                <p className="text-sm font-black  uppercase tracking-widest">No matching delicacies</p>
+              <div className="py-20 lg:h-full flex flex-col items-center justify-center text-slate-400">
+                <Utensils size={32} strokeWidth={1} className="mb-4 opacity-50" />
+                <p className="text-sm font-medium tracking-tight">No matching delicacies</p>
               </div>
             ) : (
-              <div className="divide-y divide-slate-50">
+              <div className="flex flex-col gap-3 pb-4">
                 {filteredMenu.map(item => {
                   const inCart = activeCurrent.find(i => i.menuId === item._id);
                   return (
@@ -570,46 +616,51 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                       key={item._id}
                       onClick={() => !isReadOnly && addItem(item)}
                       className={cn(
-                        'flex items-center gap-6 p-5 transition-all cursor-pointer group hover:bg-slate-50/50',
+                        'flex items-center gap-4 p-3.5 bg-white border border-slate-200 rounded-2xl transition-all cursor-pointer hover:border-slate-300',
                         isReadOnly && 'opacity-50 cursor-not-allowed',
-                        inCart && 'bg-emerald-50/30'
+                        inCart && 'border-[#ff5a36] bg-orange-50 shadow-[0_0_0_1px_rgba(255,90,54,0.15)]'
                       )}
                     >
-                      <div className="w-20 text-xl font-black text-slate-400  tracking-tighter group-hover:text-slate-900 transition-colors shrink-0">
-                        ₹{item.price}
-                      </div>
-                      
-                      <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center shrink-0 border border-slate-100 group-hover:border-orange-200 group-hover:bg-white transition-all">
+                      <div className={cn(
+                        "w-11 h-11 rounded-full bg-orange-50 flex items-center justify-center shrink-0",
+                        inCart && "bg-orange-100"
+                      )}>
                         {categoryIcon(item.category)}
                       </div>
 
-                      <div className="flex-1">
-                        <h4 className="text-[17px] font-black text-slate-800 tracking-tight  uppercase truncate group-hover:text-orange-700 transition-colors">
+                      <div className="flex-1 min-w-0">
+                        <h4 className={cn(
+                          "text-[15px] font-medium text-slate-800 tracking-tight truncate",
+                          inCart && "text-[#c2410c] font-semibold"
+                        )}>
                           {item.name}
                         </h4>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Recommended</p>
+                        <p className="text-xs text-slate-400 mt-0.5">Recommended</p>
                       </div>
 
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center justify-end gap-3 w-auto shrink-0 pl-2">
+                        <span className="text-[15px] font-medium text-slate-800">
+                          ₹{item.price}
+                        </span>
                         {inCart ? (
-                           <div className="flex items-center gap-3 bg-white border border-slate-100 rounded-full p-1.5 shadow-sm">
+                           <div className="flex items-center gap-2.5">
                               <button 
                                 onClick={(e) => { e.stopPropagation(); updateQty(item._id, -1); }}
-                                className="w-7 h-7 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center hover:bg-rose-50 hover:text-rose-500"
+                                className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-50 disabled:opacity-50"
                               >
-                                <Minus size={14} strokeWidth={3} />
+                                <Minus size={14} />
                               </button>
-                              <span className="text-sm font-black w-4 text-center">{inCart.qty}</span>
+                              <span className="text-sm font-semibold w-3 text-center">{inCart.qty}</span>
                               <button 
                                 onClick={(e) => { e.stopPropagation(); updateQty(item._id, 1); }}
-                                className="w-7 h-7 bg-[#FF5A36] text-white rounded-full flex items-center justify-center hover:bg-orange-600 shadow-md shadow-orange-100"
+                                className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-50"
                               >
-                                <Plus size={14} strokeWidth={3} />
+                                <Plus size={14} />
                               </button>
                            </div>
                         ) : (
-                          <div className="w-10 h-10 border-2 border-slate-100 rounded-xl flex items-center justify-center group-hover:border-orange-500 transition-colors">
-                            <Plus size={18} className="text-slate-200 group-hover:text-orange-500" strokeWidth={3} />
+                          <div className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors">
+                            <Plus size={16} strokeWidth={2} />
                           </div>
                         )}
                       </div>
@@ -622,52 +673,37 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
         </div>
 
         {/* ── Column 3: Order Summary ─────────────────────────────────── */}
-        <div className="col-span-4 bg-orange-50/20 rounded-[2.5rem] border border-orange-100/50 flex flex-col overflow-hidden shadow-sm animate-in slide-in-from-right duration-500 m-2">
-            <div className="p-8 pb-4 flex justify-between items-start">
+        <div className="lg:h-auto lg:col-span-4 bg-[#f8f7f5] flex flex-col lg:z-20 lg:sticky lg:bottom-0 lg:static px-5 pt-5 pb-8 min-h-screen lg:min-h-0 lg:border-t lg:border-slate-200">
+            <div className="flex justify-between items-center mb-4">
                <div>
-                  <h3 className="text-xs font-black text-slate-400 tracking-[0.2em] mb-4 uppercase">Current Order</h3>
-                  <h4 className="text-2xl font-black text-slate-900 tracking-tighter  uppercase truncate">
-                    {activePartData?.label || 'Session'}
-                  </h4>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{tableId || 'Walk-in'}</p>
+                  <h3 className="text-[11px] font-semibold text-slate-500 tracking-widest uppercase">
+                    Current Order — {tableId || parts[0]?.label || 'Session'}
+                  </h3>
                </div>
                <div className="flex flex-col items-end gap-2">
                  {isReadOnly && (
-                   <div className="bg-emerald-100 text-emerald-600 text-[10px] font-black px-3 py-1 rounded-full uppercase ">
+                   <div className="bg-emerald-100 text-emerald-600 text-[10px] font-medium px-2 py-0.5 rounded uppercase">
                      Archived
                    </div>
-                 )}
-                 {!isReadOnly && (
-                    <button
-                      onClick={addPart}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 hover:bg-[#FF5A36] rounded-full text-[9px] font-black text-white uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-slate-100"
-                    >
-                      <SplitSquareHorizontal size={12} /> Split Bill
-                    </button>
                  )}
                </div>
             </div>
 
-          <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-6">
+          <div className="flex-none lg:flex-1 lg:overflow-y-auto no-scrollbar space-y-4 mb-4">
             {activeCurrent.length === 0 && activePartData?.rounds.length === 0 && (
-              <div className="h-full flex flex-col items-center justify-center text-center">
-                <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
-                  <ShoppingCart size={24} className="text-slate-200" />
-                </div>
-                <h5 className="text-sm font-black text-slate-400  uppercase">Select item from menu</h5>
-                <p className="text-[10px] text-slate-300 font-bold uppercase tracking-wider mt-1">Waiting for deployment...</p>
+              <div className="py-6 flex flex-col items-center justify-center text-center">
+                <p className="text-sm font-medium text-slate-500">No items added yet</p>
               </div>
             )}
 
             {activePartData?.rounds.map(r => (
-              <div key={r.roundNumber} className="relative pl-6 border-l-2 border-emerald-500/20 py-2">
-                <div className="absolute -left-[5px] top-4 w-2 h-2 rounded-full bg-emerald-500"></div>
-                <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-3 ">Deployed • Round {r.roundNumber}</p>
-                <div className="space-y-2">
+              <div key={r.roundNumber} className="relative pl-3 border-l-2 border-slate-300 py-1">
+                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Round {r.roundNumber}</p>
+                <div className="space-y-1">
                   {r.items.map((i, idx) => (
                     <div key={idx} className="flex justify-between text-sm">
-                      <span className="font-bold text-slate-700  uppercase">{i.name} × {i.qty}</span>
-                      <span className="font-black text-slate-900 tracking-tight">₹{i.price * i.qty}</span>
+                      <span className="font-medium text-slate-700">{i.name} × {i.qty}</span>
+                      <span className="font-medium text-slate-800">₹{i.price * i.qty}</span>
                     </div>
                   ))}
                 </div>
@@ -675,24 +711,26 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
             ))}
 
             {activeCurrent.length > 0 && (
-               <div className="relative pl-6 border-l-2 border-amber-500/20 py-2 animate-in fade-in slide-in-from-top-2">
-                 <div className="absolute -left-[5px] top-4 w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>
-                 <p className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-4 ">Staging • New Items</p>
-                 <div className="space-y-4">
+               <div className="relative pt-2">
+                 <div className="flex items-center gap-1.5 mb-3">
+                   <div className="w-1.5 h-1.5 rounded-full bg-[#ff5a36]"></div>
+                   <p className="text-[11px] font-semibold text-[#ff5a36] uppercase tracking-widest">New Items</p>
+                 </div>
+                 <div className="space-y-3">
                     {activeCurrent.map(item => (
                       <div key={item.menuId} className="flex justify-between items-center group">
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-black text-slate-900  uppercase truncate">{item.name}</p>
-                          <div className="flex items-center gap-3 mt-1">
+                          <p className="text-sm font-medium text-slate-800 truncate">{item.name}</p>
+                          <div className="flex items-center gap-2 mt-1">
                              <div className="flex items-center gap-2">
-                               <button onClick={() => updateQty(item.menuId, -1)} className="p-1 hover:text-rose-500 transition-colors"><Minus size={12} /></button>
-                               <span className="text-[11px] font-black">{item.qty}</span>
-                               <button onClick={() => updateQty(item.menuId, 1)} className="p-1 hover:text-emerald-500 transition-colors"><Plus size={12} /></button>
+                               <button onClick={() => updateQty(item.menuId, -1)} className="p-0.5 text-slate-400 hover:text-slate-600"><Minus size={12} /></button>
+                               <span className="text-xs font-semibold w-3 text-center">{item.qty}</span>
+                               <button onClick={() => updateQty(item.menuId, 1)} className="p-0.5 text-slate-400 hover:text-slate-600"><Plus size={12} /></button>
                              </div>
-                             <span className="text-[10px] font-bold text-slate-400 tracking-tighter">× ₹{item.price}</span>
+                             <span className="text-[11px] text-slate-400">× ₹{item.price}</span>
                           </div>
                         </div>
-                        <span className="text-[15px] font-black text-slate-900 tracking-tighter ">₹{item.price * item.qty}</span>
+                        <span className="text-[15px] font-medium text-slate-800">₹{item.price * item.qty}</span>
                       </div>
                     ))}
                  </div>
@@ -700,92 +738,95 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
             )}
           </div>
 
-          <div className="p-8 bg-white/50 backdrop-blur-sm border-t border-orange-100/50 space-y-4">
+          <div className="bg-[#f8f7f5] space-y-4">
             {activeCurrent.length > 0 && (
               <button
-                onClick={() => saveRound(currentPartId)}
+                onClick={() => saveRound(currentPartId, { closeAfterSave: true })}
+                disabled={isDispatching}
                 className={cn(
-                  'w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-3',
+                  'w-full py-4 rounded-xl text-[14px] font-bold tracking-wide transition-all flex items-center justify-center gap-2.5 border shadow-sm active:scale-[0.98]',
+                  isDispatching && 'opacity-70 cursor-wait',
                   roundMsg
-                    ? 'bg-emerald-500 text-white shadow-xl shadow-emerald-100'
-                    : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-xl shadow-emerald-100/50'
+                    ? 'bg-emerald-500 text-white border-emerald-500 shadow-emerald-200'
+                    : 'bg-emerald-500 text-white border-emerald-500 shadow-emerald-200 hover:bg-emerald-600 hover:border-emerald-600'
                 )}
               >
-                {roundMsg ? <><CheckCircle2 size={16} /> Order Dispatched!</> : <><Package size={16} /> Dispatch to Kitchen</>}
+                {roundMsg
+                  ? <><CheckCircle2 size={16} strokeWidth={2.5} /> Order Dispatched!</>
+                  : <><ArrowRight size={16} strokeWidth={2.5} /> Dispatch to kitchen</>}
               </button>
             )}
 
             {activeAllItems.length > 0 && (
-              <div className="space-y-4 pt-2">
-                <div className="space-y-2">
-                  <div className="flex justify-between text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+              <div className="space-y-4 pt-4 border-t border-slate-200">
+                <div className="space-y-3">
+                  <div className="flex justify-between text-xs font-semibold text-slate-500 uppercase tracking-widest">
                     <span>Subtotal</span>
-                    <span>₹{activeSub.toFixed(2)}</span>
+                    <span className="font-medium">₹{activeSub.toFixed(2)}</span>
                   </div>
                   {activeTaxes.map(t => (
-                    <div key={t.name} className="flex justify-between text-[10px] font-black text-slate-400 uppercase tracking-tighter ">
+                    <div key={t.name} className="flex justify-between text-[11px] font-medium text-slate-400 tracking-wide">
                       <span>{t.name} ({t.pct}%)</span>
                       <span>₹{t.amt.toFixed(2)}</span>
                     </div>
                   ))}
-                  <div className="flex justify-between items-baseline pt-4 border-t border-orange-100/50">
-                    <span className="text-sm font-black text-orange-900/40  uppercase tracking-widest">Net Payable</span>
-                    <span className="text-4xl font-black text-slate-900 tracking-tighter  underline decoration-emerald-500/20 underline-offset-8 decoration-4">
+                  <div className="flex justify-between items-center pt-4 border-t border-slate-200">
+                    <span className="text-sm font-bold text-slate-800 uppercase tracking-widest">Net Payable</span>
+                    <span className="text-3xl font-semibold text-slate-900 tracking-tight">
                       ₹{activeTotal.toFixed(0)}
                     </span>
                   </div>
                 </div>
 
-                <div className="relative group">
-                   <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-orange-500 transition-colors" size={14} />
+                <div className="relative">
+                   <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
                    <input
                      type="tel"
                      value={phoneOf(currentPartId)}
                      onChange={e => setPartPhones(prev => ({ ...prev, [currentPartId]: e.target.value }))}
-                     placeholder="10-DIGIT MOBILE NUMBER (REQUIRED)"
-                     className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3 pl-10 pr-4 outline-none focus:border-orange-500/50 text-[10px] font-black tracking-widest placeholder:text-slate-300"
+                     placeholder={user?.printMobileRequired ? "10-digit mobile number (required)" : "10-digit mobile number (required for WhatsApp)"}
+                     className="w-full bg-white border border-slate-200 rounded-xl py-3.5 pl-10 pr-4 outline-none text-sm text-slate-700 placeholder:text-slate-500 focus:border-[#ff5a36] transition-colors"
                      maxLength={10}
                    />
                 </div>
 
                 {!isReadOnly ? (
-                  <div className="grid grid-cols-3 gap-2 mt-2">
+                  <div className="grid grid-cols-2 gap-2 mt-2">
                     {/* Print */}
                     <button onClick={() => handleSettle(currentPartId, 'print')}
-                      className="flex flex-col items-center justify-center gap-1.5 py-4 rounded-xl border border-slate-200 bg-white hover:border-slate-400 text-slate-700 transition-all active:scale-95 shadow-sm">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="6 9 6 2 18 2 18 9"/>
-                        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-                        <rect x="6" y="14" width="12" height="8"/>
-                      </svg>
-                      <span className="text-[10px] font-black uppercase tracking-wider">Print</span>
+                      className="flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl border border-slate-200 bg-white hover:border-slate-300 text-slate-600 transition-all active:scale-95">
+                      <Printer size={18} strokeWidth={2} />
+                      <span className="text-[10px] font-semibold uppercase tracking-widest">Print</span>
                     </button>
 
                     {/* WhatsApp */}
                     <button onClick={() => handleSettle(currentPartId, 'wa')}
-                      className="flex flex-col items-center justify-center gap-1.5 py-4 rounded-xl border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition-all active:scale-95 shadow-sm">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z"/>
-                      </svg>
-                      <span className="text-[10px] font-black uppercase tracking-wider">WhatsApp</span>
+                      className="flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl border border-slate-200 bg-white hover:border-emerald-300 text-[#00a884] transition-all active:scale-95">
+                      <MessageCircle size={18} strokeWidth={2} />
+                      <span className="text-[10px] font-semibold uppercase tracking-widest text-[#00a884]">WhatsApp</span>
                     </button>
 
                     {/* Both */}
                     <button onClick={() => handleSettle(currentPartId, 'both')}
-                      className="flex flex-col items-center justify-center gap-1.5 py-4 rounded-xl bg-[#FF5A36] hover:bg-orange-600 text-white transition-all active:scale-95 shadow-md shadow-orange-200">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
-                      </svg>
-                      <span className="text-[10px] font-black uppercase tracking-wider">Both</span>
+                      className="flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl bg-[#FF5A36] hover:bg-orange-600 active:bg-orange-700 text-white transition-all active:scale-95 shadow-md shadow-orange-200">
+                      <CheckCircle2 size={18} strokeWidth={2} />
+                      <span className="text-[10px] font-semibold uppercase tracking-widest text-white">Both</span>
+                    </button>
+
+                    {/* Continue without bill */}
+                    <button onClick={() => handleSettle(currentPartId, 'none')}
+                      className="flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 transition-all active:scale-95">
+                      <ArrowRight size={18} strokeWidth={2} />
+                      <span className="text-[10px] font-semibold uppercase tracking-widest">Without Bill</span>
                     </button>
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       onClick={() => window.print()}
-                      className="py-3 bg-slate-100 text-slate-900 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2"
+                      className="py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-semibold text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 hover:border-slate-300"
                     >
-                      <Printer size={14} /> Reprint
+                      <Printer size={16} /> Reprint
                     </button>
                     {phoneOf(currentPartId).replace(/\D/g, '').length >= 10 && (
                       <button
@@ -793,9 +834,9 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                           const bill = buildBill(currentPartId);
                           window.open(`https://wa.me/91${phoneOf(currentPartId).replace(/\D/g, '')}?text=${encodeURIComponent(waMessage(bill))}`, '_blank');
                         }}
-                        className="py-3 bg-emerald-500 text-white rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2"
+                        className="py-3 bg-white border border-[#00a884] text-[#00a884] rounded-xl font-semibold text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-50"
                       >
-                        <MessageCircle size={14} /> WhatsApp
+                        <MessageCircle size={16} /> WhatsApp
                       </button>
                     )}
                   </div>
