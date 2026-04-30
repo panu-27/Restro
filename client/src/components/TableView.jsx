@@ -46,6 +46,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   const [partOrderIds, setPartOrderIds] = useState({}); // partId → server order._id
   const [partOrderNumbers, setPartOrderNumbers] = useState({}); // partId → server orderNumber
   const [roundMsg,    setRoundMsg]    = useState(false);
+  const [isDispatching, setIsDispatching] = useState(false);
   const [search,      setSearch]      = useState('');
   const [catFilter,   setCatFilter]   = useState('All');
   const [settled,     setSettled]     = useState(false); // success screen
@@ -185,7 +186,8 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
     });
   };
 
-  const saveRound = async (partId) => {
+  const saveRound = async (partId, options = {}) => {
+    const { closeAfterSave = false } = options;
     const items = currentRoundOf(partId);
     if (!items.length) return;
     
@@ -222,6 +224,12 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
       setRoundItems(prev => ({ ...prev, [partId]: [] }));
       setRoundMsg(true);
       setTimeout(() => setRoundMsg(false), 2000);
+      if (closeAfterSave) {
+        setIsDispatching(true);
+        setTimeout(() => {
+          onClose?.();
+        }, 170);
+      }
     } catch (err) {
       console.error('Failed to save round:', err);
       alert('Error saving round to database.');
@@ -412,7 +420,12 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
 
   // ── Render ────────────────────────────────────────────────────────────
   return (
-    <div className="h-screen bg-[#f8f7f5] flex flex-col overflow-hidden font-sans">
+    <div
+      className={cn(
+        "h-screen bg-[#f8f7f5] flex flex-col overflow-hidden font-sans transition-all duration-150",
+        isDispatching && "opacity-0 -translate-y-1 scale-[0.995]"
+      )}
+    >
 
       {/* ── Header ───────────────────────────────────────────────────── */}
       <div className="px-5 py-4 flex justify-between items-center no-print">
@@ -728,9 +741,11 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
           <div className="bg-[#f8f7f5] space-y-4">
             {activeCurrent.length > 0 && (
               <button
-                onClick={() => saveRound(currentPartId)}
+                onClick={() => saveRound(currentPartId, { closeAfterSave: true })}
+                disabled={isDispatching}
                 className={cn(
                   'w-full py-4 rounded-xl text-[14px] font-bold tracking-wide transition-all flex items-center justify-center gap-2.5 border shadow-sm active:scale-[0.98]',
+                  isDispatching && 'opacity-70 cursor-wait',
                   roundMsg
                     ? 'bg-emerald-500 text-white border-emerald-500 shadow-emerald-200'
                     : 'bg-emerald-500 text-white border-emerald-500 shadow-emerald-200 hover:bg-emerald-600 hover:border-emerald-600'

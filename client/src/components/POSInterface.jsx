@@ -20,7 +20,7 @@ const fmtDate = (d) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit',
 const fmtOrderNo = (n) => String(n || '').padStart(4, '0');
 
 // ── Detail Modal ──────────────────────────────────────────────────────────────
-const OrderDetailModal = ({ order, onClose, onProceed }) => {
+const OrderDetailModal = ({ order, onClose, onProceed, onCancel }) => {
   const [itemsOpen,  setItemsOpen]  = useState(true);
 
   if (!order) return null;
@@ -107,12 +107,20 @@ const OrderDetailModal = ({ order, onClose, onProceed }) => {
 
           {order.status !== 'Paid' && order.status !== 'Cancelled' && (
             <section className="border-t border-slate-100 pt-5 animate-in slide-in-from-bottom-2 duration-200">
-              <button
-                onClick={() => onProceed(order._id)}
-                className="w-full py-3.5 rounded-xl bg-[#FF5A36] hover:bg-orange-600 text-white text-xs font-black uppercase tracking-widest transition-all active:scale-95 shadow-md shadow-orange-200"
-              >
-                Proceed to Billing
-              </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  onClick={() => onCancel(order._id)}
+                  className="w-full py-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-black uppercase tracking-widest transition-all active:scale-95 border border-rose-100"
+                >
+                  Cancel Order
+                </button>
+                <button
+                  onClick={() => onProceed(order._id)}
+                  className="w-full py-3.5 rounded-xl bg-[#FF5A36] hover:bg-orange-600 text-white text-xs font-black uppercase tracking-widest transition-all active:scale-95 shadow-md shadow-orange-200"
+                >
+                  Proceed to Billing
+                </button>
+              </div>
             </section>
           )}
         </div>
@@ -134,22 +142,16 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onOrderClick }) => {
   const [detailOrder,   setDetailOrder]   = useState(null);
   const [isAdding,      setIsAdding]      = useState(false);
   const [newParcel,     setNewParcel]     = useState({ name: '', phone: '' });
-  const [allOrders,     setAllOrders]     = useState([]);
+  const [orderStats, setOrderStats] = useState({ total: 0, running: 0, completed: 0, cancelled: 0 });
 
-  // Fetch a broader set including recent completed for stats
+  // Fetch accurate stats from dedicated endpoint
   useEffect(() => {
-    axios.get('/api/orders?page=1&limit=50')
-      .then(r => setAllOrders(Array.isArray(r.data) ? r.data : (r.data.orders || [])))
+    axios.get('/api/orders/stats')
+      .then(r => setOrderStats(r.data))
       .catch(() => {});
   }, [activeOrders]);
 
-  // Stats
-  const stats = useMemo(() => {
-    const running   = (activeOrders || []).filter(o => o.status !== 'Paid' && o.status !== 'Cancelled').length;
-    const completed = allOrders.filter(o => o.status === 'Paid').length;
-    const cancelled = allOrders.filter(o => o.status === 'Cancelled').length;
-    return { total: running, running, completed, cancelled };
-  }, [activeOrders, allOrders]);
+  const stats = orderStats;
 
   // Filtered running orders
   const filtered = useMemo(() => {
@@ -167,10 +169,13 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onOrderClick }) => {
     return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   }, [activeOrders, filterType, searchTerm]);
 
-  const handleStatusUpdate = async (id, status) => {
+  const handleStatusUpdate = async (id, status, opts = {}) => {
+    const { closeDetail = true } = opts;
     try {
       await axios.patch(`/api/orders/${id}/status`, { status });
-      setDetailOrder(null);
+      setDetailOrder((prev) => (prev && prev._id === id ? { ...prev, status } : prev));
+      setAllOrders((prev) => prev.map((o) => (o._id === id ? { ...o, status } : o)));
+      if (closeDetail) setDetailOrder(null);
       onOrderUpdate();
     } catch (err) { console.error(err); }
   };
@@ -190,7 +195,7 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onOrderClick }) => {
   };
 
   return (
-    <div className="min-h-full bg-[#F8FAFC] p-4 lg:p-6 pb-24 lg:pb-6 space-y-4 lg:space-y-5 animate-in fade-in duration-500 no-print">
+    <div className="min-h-full bg-[#F8FAFC] p-4 lg:p-6 pb-24 lg:pb-6 space-y-4 lg:space-y-5 no-print">
 
       {/* ── Page Title ──────────────────────────────────────────────── */}
       <div className="flex items-start justify-between">
@@ -383,6 +388,7 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onOrderClick }) => {
             setDetailOrder(null);
             if (onOrderClick) onOrderClick(id);
           }}
+          onCancel={(id) => handleStatusUpdate(id, 'Cancelled', { closeDetail: false })}
         />
       )}
 

@@ -26,6 +26,10 @@ const userSchema = new mongoose.Schema({
     type: [String],
     default: ['Veg', 'Non-Veg', 'Beverage', 'Dessert']
   },
+  tableAreas: {
+    type: [String],
+    default: ['Main Floor']
+  },
   // Monotonic per-user order sequence (1, 2, 3...)
   lastOrderNumber: { type: Number, default: 0 },
 }, { timestamps: true });

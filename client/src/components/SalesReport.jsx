@@ -501,7 +501,7 @@ const SalesReport = () => {
     <div className="min-h-screen bg-[#F8FAFC] p-4 pb-24 lg:p-6 lg:pb-8 space-y-6 animate-in fade-in duration-700">
 
       {/* ── Header ──────────────────────────────────────────── */}
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <header className="flex flex-row items-center justify-between gap-4">
         <div>
           <h1 className="text-lg lg:text-[1.7rem] font-black text-slate-900 tracking-tight uppercase">Analytics</h1>
           <p className="text-[8px] lg:text-[10px] font-semibold text-slate-400 uppercase tracking-[0.1em] mt-1">Sales Intelligence Dashboard</p>

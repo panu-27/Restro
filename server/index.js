@@ -448,6 +448,21 @@ app.get('/api/orders/active', auth, async (req, res) => {
   }
 });
 
+// GET /api/orders/stats — Accurate order counts
+app.get('/api/orders/stats', auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const [running, completed, cancelled] = await Promise.all([
+      Order.countDocuments({ userId, status: { $nin: ['Paid', 'Cancelled'] } }),
+      Order.countDocuments({ userId, status: 'Paid' }),
+      Order.countDocuments({ userId, status: 'Cancelled' }),
+    ]);
+    res.json({ total: running + completed + cancelled, running, completed, cancelled });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/orders — Paginated history with search and filter
 app.get('/api/orders', auth, async (req, res) => {
   try {
@@ -641,6 +656,56 @@ app.patch('/api/orders/:id/status', auth, async (req, res) => {
 // TABLE ROUTES
 // =====================
 
+app.get('/api/table-areas', auth, async (req, res) => {
+  try {
+    const user = await ArcheUser.findById(req.user.id).select('tableAreas');
+    const areas = Array.isArray(user?.tableAreas) && user.tableAreas.length
+      ? user.tableAreas
+      : ['Main Floor'];
+    res.json(areas);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/table-areas', auth, async (req, res) => {
+  try {
+    const name = String(req.body?.name || '').trim();
+    if (!name) return res.status(400).json({ error: 'Area name is required' });
+
+    const user = await ArcheUser.findById(req.user.id).select('tableAreas');
+    const current = Array.isArray(user?.tableAreas) ? user.tableAreas : ['Main Floor'];
+    const exists = current.some(a => a.toLowerCase() === name.toLowerCase());
+    const next = exists ? current : [...current, name];
+
+    await ArcheUser.findByIdAndUpdate(req.user.id, { tableAreas: next });
+    res.status(201).json(next);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/table-areas/:name', auth, async (req, res) => {
+  try {
+    const name = String(req.params.name || '').trim();
+    if (!name) return res.status(400).json({ error: 'Area name is required' });
+    if (name.toLowerCase() === 'main floor') return res.status(400).json({ error: 'Cannot delete Main Floor' });
+
+    const user = await ArcheUser.findById(req.user.id).select('tableAreas');
+    const current = Array.isArray(user?.tableAreas) ? user.tableAreas : ['Main Floor'];
+    const next = current.filter(a => a.toLowerCase() !== name.toLowerCase());
+
+    await ArcheUser.findByIdAndUpdate(req.user.id, { tableAreas: next });
+    
+    // Optionally delete tables in this area
+    await Table.deleteMany({ userId: req.user.id, area: new RegExp('^' + name + '$', 'i') });
+    
+    res.json({ message: 'Area deleted successfully', tableAreas: next });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/tables', auth, async (req, res) => {
   try {
     const tables = await Table.find({ userId: req.user.id }).sort('tableId');
@@ -653,9 +718,19 @@ app.get('/api/tables', auth, async (req, res) => {
 // POST /api/tables — Add a new table
 app.post('/api/tables', auth, async (req, res) => {
   try {
-    const { tableId, seats } = req.body;
-    const table = new Table({ tableId, seats: seats || 4, userId: req.user.id });
+    const { tableId, seats, area } = req.body;
+    const normalizedArea = (area || 'Main Floor').trim();
+    const table = new Table({
+      tableId,
+      seats: seats || 4,
+      area: normalizedArea,
+      userId: req.user.id
+    });
     await table.save();
+    await ArcheUser.findByIdAndUpdate(
+      req.user.id,
+      { $addToSet: { tableAreas: normalizedArea } }
+    );
     res.status(201).json(table);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -665,10 +740,11 @@ app.post('/api/tables', auth, async (req, res) => {
 // PATCH /api/tables/:tableId — Update table seats or other metadata
 app.patch('/api/tables/:tableId', auth, async (req, res) => {
   try {
-    const { seats, status } = req.body;
+    const { seats, status, area } = req.body;
     const update = {};
     if (seats !== undefined) update.seats = seats;
     if (status !== undefined) update.status = status;
+    if (area !== undefined) update.area = (area || 'Main Floor').trim();
     update.lastUpdated = new Date();
 
     const table = await Table.findOneAndUpdate({ tableId: req.params.tableId, userId: req.user.id }, update, { new: true });
@@ -709,6 +785,7 @@ app.patch('/api/tables/:tableId/section', auth, async (req, res) => {
 function getDateRange(period) {
   const now = new Date();
   let start;
+  let end = now;
   switch (period) {
     case 'today':
       start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -717,6 +794,16 @@ function getDateRange(period) {
       start = new Date(now);
       start.setDate(start.getDate() - 7);
       break;
+    case 'previous_week': {
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      end = new Date(todayStart);
+      end.setDate(end.getDate() - 7);
+      end.setHours(23, 59, 59, 999);
+      start = new Date(end);
+      start.setDate(start.getDate() - 6);
+      start.setHours(0, 0, 0, 0);
+      break;
+    }
     case 'month':
       start = new Date(now);
       start.setMonth(start.getMonth() - 1);
@@ -736,10 +823,10 @@ function getDateRange(period) {
       start = new Date(2020, 0, 1);
       break;
   }
-  return { start, end: now };
+  return { start, end };
 }
 
-// GET /api/analytics/sales?period=today|week|month|3months|year|all|custom
+// GET /api/analytics/sales?period=today|week|previous_week|month|3months|year|all|custom
 app.get('/api/analytics/sales', auth, async (req, res) => {
   try {
     const period = req.query.period || 'today';
@@ -782,7 +869,7 @@ app.get('/api/analytics/sales', auth, async (req, res) => {
     const dailyMap = {};
     
     // Pre-populate missing days for certain periods so charts look complete
-    if (period === 'week') {
+    if (period === 'week' || period === 'previous_week') {
       for (let i = 6; i >= 0; i--) {
         const d = new Date(end);
         d.setDate(d.getDate() - i);

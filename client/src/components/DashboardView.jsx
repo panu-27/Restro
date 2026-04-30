@@ -1,9 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { 
   ChevronRight, ChevronDown, Clock, MoveUpRight, ArrowUpRight, 
   TrendingUp, ShoppingBag, CheckCircle2, DollarSign, Package, Users
 } from 'lucide-react';
+
+const StatValue = ({ value, isLoading = false, prefix = '' }) => {
+  const normalized = Number(value || 0);
+
+  if (isLoading) {
+    return <span className="inline-block align-middle">--</span>;
+  }
+
+  return <span>{prefix}{normalized.toLocaleString('en-IN')}</span>;
+};
 
 export const DashboardView = ({ activeOrders, tableCount, onTabChange }) => {
   const [salesData, setSalesData] = useState(null);
@@ -12,6 +22,14 @@ export const DashboardView = ({ activeOrders, tableCount, onTabChange }) => {
   const [revenuePeriod, setRevenuePeriod] = useState('week');
   const [selectedBar, setSelectedBar] = useState(null);
   const [recentOrders, setRecentOrders] = useState([]);
+  const [ordersPeriod, setOrdersPeriod] = useState('week');
+  const [ordersTotal, setOrdersTotal] = useState(0);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersDropdownOpen, setOrdersDropdownOpen] = useState(false);
+  const [ordersDropdownView, setOrdersDropdownView] = useState('main'); // 'main' | 'custom'
+  const [ordersCustomFrom, setOrdersCustomFrom] = useState('');
+  const [ordersCustomTo, setOrdersCustomTo] = useState('');
+  const ordersDropdownRef = useRef(null);
 
   useEffect(() => {
     Promise.all([
@@ -31,6 +49,35 @@ export const DashboardView = ({ activeOrders, tableCount, onTabChange }) => {
     .catch(console.error)
     .finally(() => setLoading(false));
   }, [revenuePeriod]);
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (ordersDropdownRef.current && !ordersDropdownRef.current.contains(event.target)) {
+        setOrdersDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, []);
+
+  useEffect(() => {
+    if (ordersPeriod === 'custom' && (!ordersCustomFrom || !ordersCustomTo)) return;
+    const fetchOrdersTotal = async () => {
+      setOrdersLoading(true);
+      try {
+        let url = `/api/analytics/sales?period=${ordersPeriod}`;
+        if (ordersPeriod === 'custom') url += `&from=${ordersCustomFrom}&to=${ordersCustomTo}`;
+        const res = await axios.get(url);
+        setOrdersTotal(res.data?.totalOrders || 0);
+      } catch (err) {
+        console.error('Failed to fetch total orders:', err);
+        setOrdersTotal(0);
+      } finally {
+        setOrdersLoading(false);
+      }
+    };
+    fetchOrdersTotal();
+  }, [ordersPeriod, ordersCustomFrom, ordersCustomTo]);
 
   // Calculations
   const occupiedTableCount = new Set(
@@ -145,8 +192,8 @@ export const DashboardView = ({ activeOrders, tableCount, onTabChange }) => {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 lg:gap-3 pb-8">
         
-        {/* ROW 1: 2 High-Density Metric Cards */}
-        <div className="col-span-1 lg:col-span-12 grid grid-cols-1 md:grid-cols-2 gap-3 lg:gap-3">
+        {/* ROW 1: 3 High-Density Metric Cards */}
+        <div className="col-span-1 lg:col-span-12 grid grid-cols-1 md:grid-cols-3 gap-3 lg:gap-3">
           
           {/* Active Orders */}
           <div className="bg-white rounded-3xl lg:rounded-[1.5rem] p-3.5 lg:p-4 border border-slate-100 flex flex-col justify-between min-h-[128px] lg:h-[140px] h-auto relative overflow-hidden group animate-stagger-1">
@@ -167,7 +214,7 @@ export const DashboardView = ({ activeOrders, tableCount, onTabChange }) => {
              </div>
              <div className="mt-4 flex items-baseline gap-3">
                 <span className="text-4xl lg:text-5xl font-black text-slate-900 tracking-tighter uppercase leading-none">
-                  {occupiedTableCount}
+                  <StatValue value={occupiedTableCount} isLoading={loading} />
                 </span>
                 <span className="text-[10px] lg:text-xs font-black text-orange-400 uppercase tracking-widest  mb-1">Queue Live</span>
              </div>
@@ -191,9 +238,105 @@ export const DashboardView = ({ activeOrders, tableCount, onTabChange }) => {
              </div>
              <div className="mt-4 flex items-baseline gap-3">
                 <span className="text-4xl lg:text-5xl font-black text-slate-900 tracking-tighter uppercase leading-none">
-                  {paidToday}
+                  <StatValue value={paidToday} isLoading={loading} />
                 </span>
                 <span className="text-[10px] lg:text-xs font-black text-emerald-400 uppercase tracking-widest  mb-1">Settled Units</span>
+             </div>
+          </div>
+
+          {/* Total Orders */}
+          <div className="bg-white rounded-3xl lg:rounded-[1.5rem] p-3.5 lg:p-4 border border-slate-100 flex flex-col justify-between min-h-[128px] lg:h-[140px] h-auto relative z-20 group animate-stagger-3">
+             <div className="flex justify-between items-start w-full">
+               <div className="flex items-center gap-3 lg:gap-4">
+                 <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl lg:rounded-2xl bg-indigo-50 flex items-center justify-center border border-indigo-100/50">
+                    <Package size={20} className="text-indigo-500 lg:w-6 lg:h-6" strokeWidth={3} />
+                 </div>
+                 <div>
+                    <span className="text-[10px] lg:text-[11px] font-black uppercase tracking-widest text-slate-400 block">Overall Volume</span>
+                    <span className="text-sm font-black text-slate-900 uppercase ">Total Orders</span>
+                 </div>
+               </div>
+               <div className="relative" ref={ordersDropdownRef}>
+                 <button
+                   onClick={() => { setOrdersDropdownOpen((prev) => !prev); setOrdersDropdownView('main'); }}
+                   className="flex items-center gap-1.5 px-2.5 py-1 lg:px-3 lg:py-1.5 bg-indigo-50 border border-indigo-100/50 rounded-lg lg:rounded-xl hover:bg-indigo-100 transition-colors"
+                 >
+                   <span className="text-[9px] lg:text-[10px] font-black text-indigo-600 uppercase tracking-widest">
+                     {ordersPeriod === 'week' ? 'This Week' : ordersPeriod === 'month' ? 'This Month' : 'Custom'}
+                   </span>
+                   <ChevronDown size={12} className={`text-indigo-600 transition-transform ${ordersDropdownOpen ? 'rotate-180' : ''}`} />
+                 </button>
+                 {ordersDropdownOpen && (
+                   <div className="absolute left-0 md:left-auto md:right-0 mt-2 w-56 bg-white border border-slate-100 rounded-2xl shadow-xl z-40 overflow-hidden">
+                     {ordersDropdownView === 'custom' ? (
+                       <div className="p-4 flex flex-col gap-3">
+                         <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Custom Range</h3>
+                         
+                         <div>
+                           <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">From</label>
+                           <input
+                             type="date"
+                             value={ordersCustomFrom}
+                             onChange={(e) => setOrdersCustomFrom(e.target.value)}
+                             className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500 transition-colors"
+                           />
+                         </div>
+                         
+                         <div>
+                           <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">To</label>
+                           <input
+                             type="date"
+                             value={ordersCustomTo}
+                             onChange={(e) => setOrdersCustomTo(e.target.value)}
+                             className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500 transition-colors"
+                           />
+                         </div>
+                         
+                         <button
+                           onClick={() => { setOrdersPeriod('custom'); setOrdersDropdownOpen(false); }}
+                           className="w-full bg-slate-700 hover:bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest py-2.5 rounded-xl transition-colors mt-2"
+                         >
+                           Apply
+                         </button>
+                         
+                         <button
+                           onClick={() => setOrdersDropdownView('main')}
+                           className="w-full text-center text-slate-400 hover:text-slate-600 text-[9px] font-black uppercase tracking-widest py-1 transition-colors flex items-center justify-center gap-1"
+                         >
+                           &larr; Back
+                         </button>
+                       </div>
+                     ) : (
+                       <>
+                         <button
+                           onClick={() => { setOrdersPeriod('week'); setOrdersDropdownOpen(false); }}
+                           className={`w-full text-left px-4 py-3 text-xs font-bold transition-colors ${ordersPeriod === 'week' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                         >
+                           This Week
+                         </button>
+                         <button
+                           onClick={() => { setOrdersPeriod('month'); setOrdersDropdownOpen(false); }}
+                           className={`w-full text-left px-4 py-3 text-xs font-bold transition-colors ${ordersPeriod === 'month' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                         >
+                           This Month
+                         </button>
+                         <button
+                           onClick={() => setOrdersDropdownView('custom')}
+                           className={`w-full text-left px-4 py-3 text-xs font-bold transition-colors ${ordersPeriod === 'custom' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                         >
+                           Custom Date
+                         </button>
+                       </>
+                     )}
+                   </div>
+                 )}
+               </div>
+             </div>
+             <div className="mt-4 flex items-baseline gap-3">
+                <span className="text-4xl lg:text-5xl font-black text-slate-900 tracking-tighter uppercase leading-none">
+                  <StatValue value={ordersTotal} isLoading={ordersLoading} />
+                </span>
+                <span className="text-[10px] lg:text-xs font-black text-indigo-400 uppercase tracking-widest  mb-1">Total Processed</span>
              </div>
           </div>
 
@@ -335,7 +478,7 @@ export const DashboardView = ({ activeOrders, tableCount, onTabChange }) => {
                 <div>
                    <h3 className="text-[9px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 ">Aggregate Revenue</h3>
                    <span className="text-2xl lg:text-3xl font-black text-slate-900 tracking-tighter uppercase leading-none block">
-                      ₹{Math.round(salesData?.totalRevenue || 0).toLocaleString('en-IN')}
+                      <StatValue value={Math.round(salesData?.totalRevenue || 0)} isLoading={loading} prefix="₹" />
                    </span>
                 </div>
                 <div className="mt-4 lg:mt-6 pt-4 lg:pt-6 border-t border-slate-50">
@@ -359,7 +502,7 @@ export const DashboardView = ({ activeOrders, tableCount, onTabChange }) => {
                 <div>
                    <h3 className="text-[9px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 ">Avg Order Price</h3>
                    <span className="text-2xl lg:text-3xl font-black text-slate-900 tracking-tighter uppercase leading-none block">
-                      ₹{Math.round(salesData?.avgOrderValue || 0).toLocaleString('en-IN')}
+                      <StatValue value={Math.round(salesData?.avgOrderValue || 0)} isLoading={loading} prefix="₹" />
                    </span>
                 </div>
                 <div className="mt-4 flex items-center gap-2">
