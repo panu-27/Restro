@@ -1,9 +1,8 @@
-require('dotenv').config();
 const mongoose = require('mongoose');
-const Order = require('./models/Order');
-const Notification = require('./models/Notification');
+const Order = require('./server/models/Order');
+const Notification = require('./server/models/Notification');
 
-mongoose.connect(process.env.MONGODB_URI)
+mongoose.connect('mongodb://127.0.0.1:27017/restro')
   .then(async () => {
     console.log("Connected to DB");
     const lastOrder = await Order.findOne().sort({ createdAt: -1 });
