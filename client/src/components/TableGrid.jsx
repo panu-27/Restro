@@ -63,7 +63,7 @@ const STATUS = {
   Reserved:  { label: 'Reserved',  text: 'text-blue-500',     bg: 'bg-blue-50 border-blue-100' },
 };
 
-const TableGrid = ({ activeOrders, onTableClick }) => {
+const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
   const [tables, setTables] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -424,12 +424,14 @@ const TableGrid = ({ activeOrders, onTableClick }) => {
             <h1 className="text-lg lg:text-[1.7rem] font-black text-slate-900 tracking-tight uppercase">Tables</h1>
             <p className="text-[8px] lg:text-[10px] font-semibold text-slate-400 uppercase tracking-[0.1em] mt-1">Floor Management</p>
           </div>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex md:hidden items-center gap-1.5 px-4 py-2.5 bg-[#FF5A36] hover:bg-orange-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-orange-200"
-          >
-            <Plus size={14} strokeWidth={3}/> Add
-          </button>
+          {!readOnly && (
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex md:hidden items-center gap-1.5 px-4 py-2.5 bg-[#FF5A36] hover:bg-orange-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-orange-200"
+            >
+              <Plus size={14} strokeWidth={3}/> Add
+            </button>
+          )}
         </div>
 
         <div className="flex items-center justify-between gap-2 lg:gap-4 w-full md:w-auto">
@@ -456,7 +458,7 @@ const TableGrid = ({ activeOrders, onTableClick }) => {
                       >
                         {area}
                       </button>
-                      {area.toLowerCase() !== 'main floor' && (
+                      {!readOnly && area.toLowerCase() !== 'main floor' && (
                         <button
                           onClick={(e) => { e.stopPropagation(); handleRemoveArea(area); }}
                           className={cn(
@@ -471,12 +473,14 @@ const TableGrid = ({ activeOrders, onTableClick }) => {
                     </div>
                   ))}
                 </div>
-                <button
-                  onClick={() => { setShowAddAreaModal(true); setAreaMenuOpen(false); }}
-                  className="w-full px-3 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-[#FF5A36] border-t border-slate-100 hover:bg-orange-50"
-                >
-                  + Add Floor / Room
-                </button>
+                {!readOnly && (
+                  <button
+                    onClick={() => { setShowAddAreaModal(true); setAreaMenuOpen(false); }}
+                    className="w-full px-3 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-[#FF5A36] border-t border-slate-100 hover:bg-orange-50"
+                  >
+                    + Add Floor / Room
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -496,12 +500,14 @@ const TableGrid = ({ activeOrders, onTableClick }) => {
             </div>
           </div>
 
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="hidden md:flex items-center gap-2 px-5 py-3 bg-[#FF5A36] hover:bg-orange-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest transition-all shadow-lg shadow-orange-200 active:scale-95 shrink-0"
-          >
-            <Plus size={16} strokeWidth={3}/> Add Table
-          </button>
+          {!readOnly && (
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="hidden md:flex items-center gap-2 px-5 py-3 bg-[#FF5A36] hover:bg-orange-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest transition-all shadow-lg shadow-orange-200 active:scale-95 shrink-0"
+            >
+              <Plus size={16} strokeWidth={3}/> Add Table
+            </button>
+          )}
         </div>
       </div>
 
@@ -539,33 +545,34 @@ const TableGrid = ({ activeOrders, onTableClick }) => {
                 {cfg.label}
               </div>
 
-              {/* Admin menu */}
-              <div className="absolute top-1 lg:top-1.5 left-1 lg:left-1.5 z-20" onClick={e => e.stopPropagation()}>
-                <button
-                  onClick={() => setOpenMenuId(isMenuOpen ? null : table.tableId)}
-                  className="w-4 h-4 lg:w-5 lg:h-5 flex items-center justify-center rounded-md text-slate-300 hover:text-slate-500 hover:bg-slate-50 transition-colors"
-                >
-                  <MoreVertical size={13} className="w-[10px] h-[10px] lg:w-[13px] lg:h-[13px]"/>
-                </button>
-                {isMenuOpen && (
-                  <div className="absolute left-0 mt-1 w-44 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 animate-in fade-in zoom-in-95 duration-150">
-                    <div className="p-1 space-y-0.5">
-                      <button
-                        onClick={() => { setShowEditModal(table); setOpenMenuId(null); }}
-                        className="w-full flex items-center gap-2 px-2.5 py-2 text-left text-[10px] font-black text-slate-600 hover:bg-slate-50 rounded-lg uppercase tracking-wider"
-                      >
-                        <Users size={11} className="text-slate-400"/> Change Seats
-                      </button>
-                      <button
-                        onClick={() => { handleRemoveTable(table.tableId); setOpenMenuId(null); }}
-                        className="w-full flex items-center gap-2 px-2.5 py-2 text-left text-[10px] font-black text-rose-500 hover:bg-rose-50 rounded-lg uppercase tracking-wider"
-                      >
-                        <Trash2 size={11}/> Remove
-                      </button>
+              {!readOnly && (
+                <div className="absolute top-1 lg:top-1.5 left-1 lg:left-1.5 z-20" onClick={e => e.stopPropagation()}>
+                  <button
+                    onClick={() => setOpenMenuId(isMenuOpen ? null : table.tableId)}
+                    className="w-4 h-4 lg:w-5 lg:h-5 flex items-center justify-center rounded-md text-slate-300 hover:text-slate-500 hover:bg-slate-50 transition-colors"
+                  >
+                    <MoreVertical size={13} className="w-[10px] h-[10px] lg:w-[13px] lg:h-[13px]"/>
+                  </button>
+                  {isMenuOpen && (
+                    <div className="absolute left-0 mt-1 w-44 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 animate-in fade-in zoom-in-95 duration-150">
+                      <div className="p-1 space-y-0.5">
+                        <button
+                          onClick={() => { setShowEditModal(table); setOpenMenuId(null); }}
+                          className="w-full flex items-center gap-2 px-2.5 py-2 text-left text-[10px] font-black text-slate-600 hover:bg-slate-50 rounded-lg uppercase tracking-wider"
+                        >
+                          <Users size={11} className="text-slate-400"/> Change Seats
+                        </button>
+                        <button
+                          onClick={() => { handleRemoveTable(table.tableId); setOpenMenuId(null); }}
+                          className="w-full flex items-center gap-2 px-2.5 py-2 text-left text-[10px] font-black text-rose-500 hover:bg-rose-50 rounded-lg uppercase tracking-wider"
+                        >
+                          <Trash2 size={11}/> Remove
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
 
               {/* Clickable area */}
               <div

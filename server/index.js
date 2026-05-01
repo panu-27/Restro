@@ -11,6 +11,7 @@ const Menu = require('./models/Menu');
 const Order = require('./models/Order');
 const Table = require('./models/Table');
 const Subscription = require('./models/Subscription');
+const Notification = require('./models/Notification');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -38,7 +39,11 @@ const auth = (req, res, next) => {
   if (!header) return res.status(401).json({ error: 'No token provided' });
   const token = header.replace('Bearer ', '');
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    // For staff (Waiter/Kitchen), ownerId resolves to the parent admin's ID
+    // For Admin, ownerId is their own ID
+    req.user.ownerId = decoded.ownerId || decoded.id;
     next();
   } catch (e) {
     res.status(401).json({ error: 'Invalid or expired token' });
@@ -46,14 +51,23 @@ const auth = (req, res, next) => {
 };
 
 const adminOnly = (req, res, next) => {
-  if (req.user?.role !== 'Admin') return res.status(403).json({ error: 'Admin access required' });
-  next();
+  // Accept both 'Admin' (new) and 'Staff' (legacy owner accounts)
+  if (req.user?.role === 'Admin' || req.user?.role === 'Staff') return next();
+  res.status(403).json({ error: 'Admin access required' });
+};
+
+// Allows Waiter + Admin + Staff(legacy) to place orders
+const canPlaceOrders = (req, res, next) => {
+  if (['Admin', 'Waiter', 'Staff'].includes(req.user?.role)) return next();
+  res.status(403).json({ error: 'Not authorized to place orders' });
 };
 
 // --- SUBSCRIPTION MIDDLEWARE ---
 const requireSubscription = async (req, res, next) => {
   try {
-    const sub = await Subscription.findOne({ userId: req.user.id });
+    // Staff uses owner's subscription
+    const subUserId = req.user.ownerId || req.user.id;
+    const sub = await Subscription.findOne({ userId: subUserId });
     if (!sub) {
       return res.status(403).json({ error: 'No subscription found', code: 'NO_SUBSCRIPTION' });
     }
@@ -75,6 +89,20 @@ const requireSubscription = async (req, res, next) => {
 // =====================
 // AUTH ROUTES
 // =====================
+
+// POST /api/auth/fix-role — Upgrade legacy 'Staff' owners to 'Admin' (self-service)
+app.post('/api/auth/fix-role', auth, async (req, res) => {
+  try {
+    // Only upgrade if they are a legacy owner (Staff role with no parentUserId)
+    if (req.user.role === 'Staff' && !req.user.ownerId) {
+      await ArcheUser.findByIdAndUpdate(req.user.id, { role: 'Admin' });
+      return res.json({ message: 'Role upgraded to Admin', role: 'Admin' });
+    }
+    res.json({ message: 'No change needed', role: req.user.role });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // POST /api/auth/register
 app.post('/api/auth/register', async (req, res) => {
@@ -124,8 +152,13 @@ app.post('/api/auth/login', async (req, res) => {
     const match = await user.comparePassword(password);
     if (!match) return res.status(401).json({ error: 'Invalid mobile number or password' });
 
-    const token = jwt.sign({ id: user._id, name: user.name, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, user: { id: user._id, name: user.name, mobileNumber: user.mobileNumber, role: user.role } });
+    // For staff, include ownerId (parentUserId) so data is scoped to the admin's account
+    const tokenPayload = { id: user._id, name: user.name, role: user.role };
+    if (user.parentUserId) {
+      tokenPayload.ownerId = user.parentUserId;
+    }
+    const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: { id: user._id, name: user.name, mobileNumber: user.mobileNumber, role: user.role, parentUserId: user.parentUserId || null } });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: err.message });
@@ -159,7 +192,25 @@ app.get('/api/auth/me', auth, async (req, res) => {
   try {
     const user = await ArcheUser.findById(req.user.id).select('-password').populate('subscription');
     if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json(user);
+
+    const userData = user.toObject();
+    // For staff users, also include the owner's restaurant config
+    if (user.parentUserId) {
+      const owner = await ArcheUser.findById(user.parentUserId).select('restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber taxEnabled taxes menuCategories tableCount tableAreas');
+      if (owner) {
+        userData.restaurantName = owner.restaurantName;
+        userData.restaurantAddress = owner.restaurantAddress;
+        userData.restaurantPhone = owner.restaurantPhone;
+        userData.gstNumber = owner.gstNumber;
+        userData.fssaiNumber = owner.fssaiNumber;
+        userData.taxEnabled = owner.taxEnabled;
+        userData.taxes = owner.taxes;
+        userData.menuCategories = owner.menuCategories;
+        userData.tableCount = owner.tableCount;
+        userData.tableAreas = owner.tableAreas;
+      }
+    }
+    res.json(userData);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -386,7 +437,7 @@ app.patch('/api/settings', auth, async (req, res) => {
 
 app.get('/api/menu', auth, async (req, res) => {
   try {
-    const items = await Menu.find({ userId: req.user.id }).sort('category name');
+    const items = await Menu.find({ userId: req.user.ownerId }).sort('category name');
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -441,7 +492,7 @@ app.patch('/api/menu/:id/toggle', auth, adminOnly, async (req, res) => {
 
 app.get('/api/orders/active', auth, async (req, res) => {
   try {
-    const orders = await Order.find({ userId: req.user.id, status: { $nin: ['Paid', 'Cancelled'] } }).sort('-createdAt');
+    const orders = await Order.find({ userId: req.user.ownerId, status: { $nin: ['Paid', 'Cancelled'] } }).sort('-createdAt');
     res.json(orders);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -451,7 +502,7 @@ app.get('/api/orders/active', auth, async (req, res) => {
 // GET /api/orders/stats — Accurate order counts
 app.get('/api/orders/stats', auth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user.ownerId;
     const [running, completed, cancelled] = await Promise.all([
       Order.countDocuments({ userId, status: { $nin: ['Paid', 'Cancelled'] } }),
       Order.countDocuments({ userId, status: 'Paid' }),
@@ -471,7 +522,7 @@ app.get('/api/orders', auth, async (req, res) => {
     const search = req.query.search || '';
     const type = req.query.type || 'All';
     
-    const query = { userId: req.user.id };
+    const query = { userId: req.user.ownerId };
     if (type !== 'All') query.orderType = type;
     if (search) {
       query.$or = [
@@ -501,7 +552,7 @@ app.get('/api/orders', auth, async (req, res) => {
 // GET /api/orders/:id — Specific order detail
 app.get('/api/orders/:id', auth, async (req, res) => {
   try {
-    const order = await Order.findOne({ _id: req.params.id, userId: req.user.id });
+    const order = await Order.findOne({ _id: req.params.id, userId: req.user.ownerId });
     if (!order) return res.status(404).json({ error: 'Order not found' });
     res.json(order);
   } catch (err) {
@@ -509,9 +560,10 @@ app.get('/api/orders/:id', auth, async (req, res) => {
   }
 });
 
-app.post('/api/orders', auth, async (req, res) => {
+app.post('/api/orders', auth, canPlaceOrders, async (req, res) => {
   try {
-    const user = await ArcheUser.findById(req.user.id);
+    const ownerId = req.user.ownerId;
+    const user = await ArcheUser.findById(ownerId);
     const orderData = { ...req.body };
     
     // Server-side calculation if items are provided but totals are missing or need validation
@@ -538,30 +590,30 @@ app.post('/api/orders', auth, async (req, res) => {
     }
 
     // AUTO-NUMBERING (Per-account monotonic sequence, no daily reset)
-    // Ensure legacy users are initialized from their max existing order number once.
     if (!user?.lastOrderNumber || user.lastOrderNumber < 1) {
-      const maxExistingOrder = await Order.findOne({ userId: req.user.id })
+      const maxExistingOrder = await Order.findOne({ userId: ownerId })
         .sort({ orderNumber: -1 })
         .select('orderNumber');
       const seedNumber = maxExistingOrder?.orderNumber || 0;
       await ArcheUser.updateOne(
-        { _id: req.user.id, $or: [{ lastOrderNumber: { $exists: false } }, { lastOrderNumber: { $lt: 1 } }] },
+        { _id: ownerId, $or: [{ lastOrderNumber: { $exists: false } }, { lastOrderNumber: { $lt: 1 } }] },
         { $set: { lastOrderNumber: seedNumber } }
       );
     }
 
     const seqUser = await ArcheUser.findByIdAndUpdate(
-      req.user.id,
+      ownerId,
       { $inc: { lastOrderNumber: 1 } },
       { new: true, projection: { lastOrderNumber: 1 } }
     );
     orderData.orderNumber = seqUser?.lastOrderNumber || 1;
-    orderData.userId = req.user.id;
+    orderData.userId = ownerId;
+    orderData.createdBy = req.user.id; // Track who placed the order
 
     // Default formatting for quick parcels
     if (orderData.orderType === 'Parcel' && !orderData.customerName) {
       orderData.customerName = `Parcel #${orderData.orderNumber}`;
-      orderData.partLabel = `#${orderData.orderNumber}`; // Compact identifier
+      orderData.partLabel = `#${orderData.orderNumber}`;
     }
 
     const order = new Order(orderData);
@@ -570,11 +622,24 @@ app.post('/api/orders', auth, async (req, res) => {
     // Sync table state for Dine-in orders
     if (order.orderType === 'Dine-in' && order.tableId) {
       await Table.findOneAndUpdate(
-        { tableId: order.tableId, userId: req.user.id },
+        { tableId: order.tableId, userId: ownerId },
         { status: 'Occupied', currentOrderId: order._id, lastUpdated: new Date() },
-        { upsert: true } // Wait, upsert true with userId might be tricky if it doesn't exist, but it should exist.
+        { upsert: true }
       );
     }
+
+    // Create notification for owner + kitchen if placed by waiter
+    if (req.user.role === 'Waiter') {
+      const itemsSummary = orderData.items?.slice(0, 3).map(i => i.name).join(', ') || 'items';
+      const notifMsg = `New order${order.tableId ? ' at ' + order.tableId : ''} by ${req.user.name}: ${itemsSummary}`;
+      await Notification.create({
+        userId: ownerId,
+        type: 'new_order',
+        orderId: order._id,
+        message: notifMsg
+      });
+    }
+
     res.status(201).json(order);
   } catch (err) {
     console.error('Create order error:', err);
@@ -583,13 +648,13 @@ app.post('/api/orders', auth, async (req, res) => {
 });
 
 // PATCH /api/orders/:id/add-items — Add items to existing order (new round)
-app.patch('/api/orders/:id/add-items', auth, async (req, res) => {
+app.patch('/api/orders/:id/add-items', auth, canPlaceOrders, async (req, res) => {
   try {
     const { items } = req.body;
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
-    const user = await ArcheUser.findById(req.user.id);
+    const user = await ArcheUser.findById(req.user.ownerId);
     const newRound = (order.currentRound || 1) + 1;
     const newItemsWithRound = items.map(i => ({ ...i, round: newRound }));
     
@@ -646,6 +711,27 @@ app.patch('/api/orders/:id/status', auth, async (req, res) => {
         { upsert: true }
       );
     }
+
+    // Trigger notification when order is Served
+    if (status === 'Served') {
+      // Always notify the owner
+      await Notification.create({
+        userId: order.userId, // owner always gets notified
+        type: 'order_update',
+        orderId: order._id,
+        message: `Order #${order.orderNumber} is ready to serve! ${order.tableId ? '(Table ' + order.tableId + ')' : ''}`
+      });
+
+      // If a waiter placed the order, also notify the waiter specifically
+      if (order.createdBy && order.createdBy.toString() !== order.userId.toString()) {
+        await Notification.create({
+          userId: order.createdBy,
+          type: 'order_update',
+          orderId: order._id,
+          message: `Order #${order.orderNumber} is ready to serve! ${order.tableId ? '(Table ' + order.tableId + ')' : ''}`
+        });
+      }
+    }
     res.json(order);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -658,7 +744,7 @@ app.patch('/api/orders/:id/status', auth, async (req, res) => {
 
 app.get('/api/table-areas', auth, async (req, res) => {
   try {
-    const user = await ArcheUser.findById(req.user.id).select('tableAreas');
+    const user = await ArcheUser.findById(req.user.ownerId).select('tableAreas');
     const areas = Array.isArray(user?.tableAreas) && user.tableAreas.length
       ? user.tableAreas
       : ['Main Floor'];
@@ -668,37 +754,37 @@ app.get('/api/table-areas', auth, async (req, res) => {
   }
 });
 
-app.post('/api/table-areas', auth, async (req, res) => {
+app.post('/api/table-areas', auth, adminOnly, async (req, res) => {
   try {
     const name = String(req.body?.name || '').trim();
     if (!name) return res.status(400).json({ error: 'Area name is required' });
 
-    const user = await ArcheUser.findById(req.user.id).select('tableAreas');
+    const user = await ArcheUser.findById(req.user.ownerId).select('tableAreas');
     const current = Array.isArray(user?.tableAreas) ? user.tableAreas : ['Main Floor'];
     const exists = current.some(a => a.toLowerCase() === name.toLowerCase());
     const next = exists ? current : [...current, name];
 
-    await ArcheUser.findByIdAndUpdate(req.user.id, { tableAreas: next });
+    await ArcheUser.findByIdAndUpdate(req.user.ownerId, { tableAreas: next });
     res.status(201).json(next);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.delete('/api/table-areas/:name', auth, async (req, res) => {
+app.delete('/api/table-areas/:name', auth, adminOnly, async (req, res) => {
   try {
     const name = String(req.params.name || '').trim();
     if (!name) return res.status(400).json({ error: 'Area name is required' });
     if (name.toLowerCase() === 'main floor') return res.status(400).json({ error: 'Cannot delete Main Floor' });
 
-    const user = await ArcheUser.findById(req.user.id).select('tableAreas');
+    const user = await ArcheUser.findById(req.user.ownerId).select('tableAreas');
     const current = Array.isArray(user?.tableAreas) ? user.tableAreas : ['Main Floor'];
     const next = current.filter(a => a.toLowerCase() !== name.toLowerCase());
 
-    await ArcheUser.findByIdAndUpdate(req.user.id, { tableAreas: next });
+    await ArcheUser.findByIdAndUpdate(req.user.ownerId, { tableAreas: next });
     
     // Optionally delete tables in this area
-    await Table.deleteMany({ userId: req.user.id, area: new RegExp('^' + name + '$', 'i') });
+    await Table.deleteMany({ userId: req.user.ownerId, area: new RegExp('^' + name + '$', 'i') });
     
     res.json({ message: 'Area deleted successfully', tableAreas: next });
   } catch (err) {
@@ -708,7 +794,7 @@ app.delete('/api/table-areas/:name', auth, async (req, res) => {
 
 app.get('/api/tables', auth, async (req, res) => {
   try {
-    const tables = await Table.find({ userId: req.user.id }).sort('tableId');
+    const tables = await Table.find({ userId: req.user.ownerId }).sort('tableId');
     res.json(tables);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -716,7 +802,7 @@ app.get('/api/tables', auth, async (req, res) => {
 });
 
 // POST /api/tables — Add a new table
-app.post('/api/tables', auth, async (req, res) => {
+app.post('/api/tables', auth, adminOnly, async (req, res) => {
   try {
     const { tableId, seats, area } = req.body;
     const normalizedArea = (area || 'Main Floor').trim();
@@ -724,11 +810,11 @@ app.post('/api/tables', auth, async (req, res) => {
       tableId,
       seats: seats || 4,
       area: normalizedArea,
-      userId: req.user.id
+      userId: req.user.ownerId
     });
     await table.save();
     await ArcheUser.findByIdAndUpdate(
-      req.user.id,
+      req.user.ownerId,
       { $addToSet: { tableAreas: normalizedArea } }
     );
     res.status(201).json(table);
@@ -738,7 +824,7 @@ app.post('/api/tables', auth, async (req, res) => {
 });
 
 // PATCH /api/tables/:tableId — Update table seats or other metadata
-app.patch('/api/tables/:tableId', auth, async (req, res) => {
+app.patch('/api/tables/:tableId', auth, adminOnly, async (req, res) => {
   try {
     const { seats, status, area } = req.body;
     const update = {};
@@ -747,7 +833,7 @@ app.patch('/api/tables/:tableId', auth, async (req, res) => {
     if (area !== undefined) update.area = (area || 'Main Floor').trim();
     update.lastUpdated = new Date();
 
-    const table = await Table.findOneAndUpdate({ tableId: req.params.tableId, userId: req.user.id }, update, { new: true });
+    const table = await Table.findOneAndUpdate({ tableId: req.params.tableId, userId: req.user.ownerId }, update, { new: true });
     if (!table) return res.status(404).json({ error: 'Table not found' });
     res.json(table);
   } catch (err) {
@@ -756,9 +842,9 @@ app.patch('/api/tables/:tableId', auth, async (req, res) => {
 });
 
 // DELETE /api/tables/:tableId — Remove a table
-app.delete('/api/tables/:tableId', auth, async (req, res) => {
+app.delete('/api/tables/:tableId', auth, adminOnly, async (req, res) => {
   try {
-    const table = await Table.findOneAndDelete({ tableId: req.params.tableId, userId: req.user.id });
+    const table = await Table.findOneAndDelete({ tableId: req.params.tableId, userId: req.user.ownerId });
     if (!table) return res.status(404).json({ error: 'Table not found' });
     res.json({ message: 'Table removed', tableId: req.params.tableId });
   } catch (err) {
@@ -766,11 +852,11 @@ app.delete('/api/tables/:tableId', auth, async (req, res) => {
   }
 });
 
-app.patch('/api/tables/:tableId/section', auth, async (req, res) => {
+app.patch('/api/tables/:tableId/section', auth, adminOnly, async (req, res) => {
   try {
     const { section, status } = req.body;
     const update = { [`sections.${section}.status`]: status, lastUpdated: new Date() };
-    const table = await Table.findOneAndUpdate({ tableId: req.params.tableId, userId: req.user.id }, update, { new: true, upsert: true });
+    const table = await Table.findOneAndUpdate({ tableId: req.params.tableId, userId: req.user.ownerId }, update, { new: true, upsert: true });
     res.json(table);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -842,7 +928,7 @@ app.get('/api/analytics/sales', auth, async (req, res) => {
     }
 
     const orders = await Order.find({
-      userId: req.user.id,
+      userId: req.user.ownerId,
       status: 'Paid',
       createdAt: { $gte: start, $lte: end }
     }).sort('-createdAt');
@@ -939,9 +1025,9 @@ app.get('/api/analytics/summary', auth, async (req, res) => {
     today.setHours(0, 0, 0, 0);
 
     const [todayOrders, allPaidOrders, activeOrders] = await Promise.all([
-      Order.find({ userId: req.user.id, status: 'Paid', createdAt: { $gte: today } }),
-      Order.countDocuments({ userId: req.user.id, status: 'Paid' }),
-      Order.countDocuments({ userId: req.user.id, status: { $ne: 'Paid' } })
+      Order.find({ userId: req.user.ownerId, status: 'Paid', createdAt: { $gte: today } }),
+      Order.countDocuments({ userId: req.user.ownerId, status: 'Paid' }),
+      Order.countDocuments({ userId: req.user.ownerId, status: { $ne: 'Paid' } })
     ]);
 
     const todayRevenue = todayOrders.reduce((sum, o) => sum + o.totalAmount, 0);
@@ -973,7 +1059,7 @@ app.get('/api/analytics/export', auth, async (req, res) => {
     }
 
     const orders = await Order.find({
-      userId: req.user.id,
+      userId: req.user.ownerId,
       status: 'Paid',
       createdAt: { $gte: start, $lte: end }
     }).sort('createdAt');
@@ -1003,6 +1089,130 @@ app.get('/api/analytics/export', auth, async (req, res) => {
 
 
 // =====================
+// STAFF MANAGEMENT ROUTES
+// =====================
+
+// GET /api/staff — List all staff for current admin
+app.get('/api/staff', auth, adminOnly, async (req, res) => {
+  try {
+    const staff = await ArcheUser.find({ parentUserId: req.user.id })
+      .select('name mobileNumber role notificationsEnabled createdAt')
+      .sort('-createdAt');
+    res.json(staff);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/staff — Create a new staff member (Waiter or Kitchen)
+app.post('/api/staff', auth, adminOnly, async (req, res) => {
+  try {
+    const { name, mobileNumber, password, role } = req.body;
+    if (!name || !mobileNumber || !password) {
+      return res.status(400).json({ error: 'Name, mobile number and password are required' });
+    }
+    if (!['Waiter', 'Kitchen'].includes(role)) {
+      return res.status(400).json({ error: 'Role must be Waiter or Kitchen' });
+    }
+
+    const exists = await ArcheUser.findOne({ mobileNumber });
+    if (exists) return res.status(400).json({ error: 'An account with this mobile number already exists' });
+
+    const staffUser = new ArcheUser({
+      name,
+      mobileNumber,
+      password,
+      role,
+      parentUserId: req.user.id
+    });
+    await staffUser.save();
+    res.status(201).json({
+      _id: staffUser._id,
+      name: staffUser.name,
+      mobileNumber: staffUser.mobileNumber,
+      role: staffUser.role,
+      createdAt: staffUser.createdAt
+    });
+  } catch (err) {
+    console.error('Create staff error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/staff/:id — Update staff details
+app.patch('/api/staff/:id', auth, adminOnly, async (req, res) => {
+  try {
+    const staff = await ArcheUser.findOne({ _id: req.params.id, parentUserId: req.user.id });
+    if (!staff) return res.status(404).json({ error: 'Staff member not found' });
+
+    const { name, mobileNumber, password } = req.body;
+    if (name) staff.name = name;
+    if (mobileNumber) {
+      // Check uniqueness
+      const exists = await ArcheUser.findOne({ mobileNumber, _id: { $ne: staff._id } });
+      if (exists) return res.status(400).json({ error: 'Mobile number already in use' });
+      staff.mobileNumber = mobileNumber;
+    }
+    if (password) staff.password = password; // pre-save hook will hash it
+
+    await staff.save();
+    res.json({ _id: staff._id, name: staff.name, mobileNumber: staff.mobileNumber, role: staff.role });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/staff/:id — Remove a staff member
+app.delete('/api/staff/:id', auth, adminOnly, async (req, res) => {
+  try {
+    const staff = await ArcheUser.findOneAndDelete({ _id: req.params.id, parentUserId: req.user.id });
+    if (!staff) return res.status(404).json({ error: 'Staff member not found' });
+    res.json({ message: 'Staff member removed', id: req.params.id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =====================
+// NOTIFICATION ROUTES
+// =====================
+
+// GET /api/notifications — Fetch unread notifications for the specific user
+app.get('/api/notifications', auth, async (req, res) => {
+  try {
+    const notifications = await Notification.find({ userId: req.user.id })
+      .sort('-createdAt')
+      .limit(50);
+    res.json(notifications);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/notifications/read — Mark all as read
+app.patch('/api/notifications/read', auth, async (req, res) => {
+  try {
+    await Notification.updateMany(
+      { userId: req.user.id, read: false },
+      { $set: { read: true } }
+    );
+    res.json({ message: 'All notifications marked as read' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/notifications/:id/read — Mark single as read
+app.patch('/api/notifications/:id/read', auth, async (req, res) => {
+  try {
+    await Notification.findByIdAndUpdate(req.params.id, { read: true });
+    res.json({ message: 'Notification marked as read' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =====================
 // HEALTH CHECK
 // =====================
 app.get('/api/health', (req, res) => {
@@ -1024,6 +1234,8 @@ app.listen(PORT, () => {
   console.log('  [MENU]         GET   /api/menu, POST /api/menu');
   console.log('  [ORDERS]       POST  /api/orders, GET /api/orders, GET /api/orders/active');
   console.log('  [TABLES]       GET   /api/tables, PATCH /api/tables/:id/section');
+  console.log('  [STAFF]        GET   /api/staff, POST /api/staff, PATCH/DELETE /api/staff/:id');
+  console.log('  [NOTIF]        GET   /api/notifications, PATCH /api/notifications/read');
   console.log('  [ANALYTICS]    GET   /api/analytics/sales, /api/analytics/summary');
   console.log('  [HEALTH]       GET   /api/health\n');
 });

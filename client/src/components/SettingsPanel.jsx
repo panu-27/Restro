@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { Plus, Trash2, Edit3, Save, X, Check, ToggleLeft, ToggleRight, Store, Hash, Utensils, CreditCard, Shield, Leaf, Flame, Coffee, IceCream, Search, MapPin, Phone, FileText, Receipt, Percent } from 'lucide-react';
+import { Plus, Trash2, Edit3, Save, X, Check, ToggleLeft, ToggleRight, Store, Hash, Utensils, CreditCard, Shield, Leaf, Flame, Coffee, IceCream, Search, MapPin, Phone, FileText, Receipt, Percent, Users, Eye, EyeOff, ChefHat, UserPlus, Key, LogOut } from 'lucide-react';
 
 const DEFAULT_MENU_CATEGORIES = ['Veg', 'Non-Veg', 'Beverage', 'Dessert'];
 
-const SettingsPanel = ({ user, subscription, onSettingsUpdate }) => {
+const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, onLogout }) => {
   const [activeSection, setActiveSection] = useState('restaurant');
 
   // Restaurant settings
@@ -38,6 +38,29 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate }) => {
   const [editItem, setEditItem] = useState({ name: '', category: DEFAULT_MENU_CATEGORIES[0], price: '' });
 
   useEffect(() => { fetchMenu(); }, []);
+
+  // Staff management
+  const [staffList, setStaffList] = useState([]);
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [showAddStaff, setShowAddStaff] = useState(false);
+  const [newStaff, setNewStaff] = useState({ name: '', mobileNumber: '', password: '', role: 'Waiter' });
+  const [editingStaffId, setEditingStaffId] = useState(null);
+  const [editStaff, setEditStaff] = useState({ name: '', mobileNumber: '', password: '' });
+  const [showStaffPw, setShowStaffPw] = useState({});
+  const [staffError, setStaffError] = useState('');
+
+  const fetchStaff = async () => {
+    setStaffLoading(true);
+    try {
+      const res = await axios.get('/api/staff');
+      setStaffList(res.data);
+    } catch (err) { console.error('Error fetching staff:', err); }
+    finally { setStaffLoading(false); }
+  };
+
+  useEffect(() => {
+    fetchStaff();
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -191,13 +214,30 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate }) => {
     { id: 'taxes', icon: Percent, label: 'Taxes' },
     { id: 'menu', icon: Utensils, label: 'Menu Builder' },
     { id: 'billing', icon: CreditCard, label: 'Subscription' },
+    { id: 'staff', icon: Users, label: 'Staff' },
   ];
 
   return (
     <div className="p-4 lg:p-6 pb-24 lg:pb-8 space-y-5 lg:space-y-6 animate-in fade-in duration-500">
-      <header>
-        <h1 className="text-lg lg:text-[1.7rem] font-black text-slate-900 tracking-tight uppercase">Settings</h1>
-        <p className="text-[8px] lg:text-[10px] font-semibold text-slate-400 uppercase tracking-[0.1em] mt-1">Manage your restaurant profile, taxes, menu, and subscription.</p>
+      <header className="flex justify-between items-start">
+        <div>
+          <h1 className="text-lg lg:text-[1.7rem] font-black text-slate-900 tracking-tight uppercase">Settings</h1>
+          <p className="text-[8px] lg:text-[10px] font-semibold text-slate-400 uppercase tracking-[0.1em] mt-1">Manage your restaurant profile, taxes, menu, and subscription.</p>
+        </div>
+        <div className="flex gap-2">
+          {onShowPassword && (
+            <button onClick={onShowPassword} className="p-2.5 lg:px-4 lg:py-2.5 bg-white border border-gray-100 rounded-xl lg:rounded-2xl flex items-center gap-2 hover:border-orange-200 hover:text-orange-500 hover:bg-orange-50 transition-all shadow-sm text-gray-500" title="Change Password">
+              <Key size={16} />
+              <span className="hidden lg:block text-xs font-black uppercase tracking-widest">Password</span>
+            </button>
+          )}
+          {onLogout && (
+            <button onClick={onLogout} className="p-2.5 lg:px-4 lg:py-2.5 bg-white border border-gray-100 rounded-xl lg:rounded-2xl flex items-center gap-2 hover:border-rose-200 hover:text-rose-500 hover:bg-rose-50 transition-all shadow-sm text-gray-500" title="Logout">
+              <LogOut size={16} />
+              <span className="hidden lg:block text-xs font-black uppercase tracking-widest">Logout</span>
+            </button>
+          )}
+        </div>
       </header>
 
       {/* Section Tabs */}
@@ -599,6 +639,190 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate }) => {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ===================== STAFF SECTION ===================== */}
+      {activeSection === 'staff' && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          <div className="bg-white border border-gray-50 rounded-3xl lg:rounded-[2.5rem] p-6 lg:p-10 shadow-sm space-y-6 lg:space-y-8">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-xl font-black text-slate-900 mb-1">Staff Management</h3>
+                <p className="text-sm text-gray-400 font-medium">Create credentials for waiters and manage your kitchen account.</p>
+              </div>
+              <button
+                onClick={() => { setShowAddStaff(!showAddStaff); setStaffError(''); }}
+                className="bg-emerald-500 text-white px-4 lg:px-6 py-2.5 lg:py-3 rounded-full font-bold text-xs lg:text-sm flex items-center gap-2 hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-200 active:scale-95 shrink-0"
+              >
+                <UserPlus size={16} strokeWidth={3} /> Add Staff
+              </button>
+            </div>
+
+            {/* Add Staff Form */}
+            {showAddStaff && (
+              <div className="bg-gray-50/50 rounded-2xl p-6 space-y-4 animate-in slide-in-from-top-4 duration-300 border border-gray-100">
+                <div className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-2">New Staff Member</div>
+                {staffError && (
+                  <div className="bg-red-50 text-red-600 text-xs font-bold p-3 rounded-xl border border-red-100">{staffError}</div>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 ml-1">Name</label>
+                    <input type="text" value={newStaff.name} onChange={e => setNewStaff({ ...newStaff, name: e.target.value })}
+                      placeholder="e.g. Raju" className="w-full bg-white border border-gray-100 rounded-full py-3 px-5 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 ml-1">Mobile Number</label>
+                    <input type="tel" value={newStaff.mobileNumber} onChange={e => setNewStaff({ ...newStaff, mobileNumber: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                      placeholder="9876543210" maxLength={10} className="w-full bg-white border border-gray-100 rounded-full py-3 px-5 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 ml-1">Password</label>
+                    <input type="text" value={newStaff.password} onChange={e => setNewStaff({ ...newStaff, password: e.target.value })}
+                      placeholder="Min 4 characters" className="w-full bg-white border border-gray-100 rounded-full py-3 px-5 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 ml-1">Role</label>
+                    <select value={newStaff.role} onChange={e => setNewStaff({ ...newStaff, role: e.target.value })}
+                      className="w-full bg-white border border-gray-100 rounded-full py-3 px-5 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400 appearance-none cursor-pointer">
+                      <option value="Waiter">Waiter</option>
+                      <option value="Kitchen">Kitchen</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button onClick={() => { setShowAddStaff(false); setStaffError(''); }} className="px-5 py-2.5 bg-gray-100 text-gray-400 rounded-full text-xs font-bold uppercase hover:text-rose-500 hover:bg-rose-50 transition-all">Cancel</button>
+                  <button
+                    onClick={async () => {
+                      setStaffError('');
+                      if (!newStaff.name || !newStaff.mobileNumber || !newStaff.password) {
+                        setStaffError('All fields are required.'); return;
+                      }
+                      if (newStaff.mobileNumber.length < 10) { setStaffError('Enter a valid 10-digit mobile number.'); return; }
+                      if (newStaff.password.length < 4) { setStaffError('Password must be at least 4 characters.'); return; }
+                      try {
+                        await axios.post('/api/staff', newStaff);
+                        setNewStaff({ name: '', mobileNumber: '', password: '', role: 'Waiter' });
+                        setShowAddStaff(false);
+                        fetchStaff();
+                      } catch (err) {
+                        setStaffError(err.response?.data?.error || 'Failed to create staff.');
+                      }
+                    }}
+                    className="px-6 py-2.5 bg-emerald-500 text-white rounded-full text-xs font-bold uppercase flex items-center gap-2 hover:bg-emerald-600 transition-all shadow-md shadow-emerald-200"
+                  >
+                    <Check size={14} /> Create
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Staff List */}
+            <div className="space-y-3">
+              {staffLoading ? (
+                <div className="p-12 text-center text-gray-300 font-bold animate-pulse">Loading staff...</div>
+              ) : staffList.length === 0 ? (
+                <div className="p-12 text-center">
+                  <Users size={40} className="mx-auto mb-4 text-gray-200" />
+                  <p className="text-sm font-bold text-gray-300">No staff members yet</p>
+                  <p className="text-xs text-gray-300 mt-1">Add waiters or kitchen staff to get started.</p>
+                </div>
+              ) : (
+                staffList.map(s => (
+                  <div key={s._id} className="bg-gray-50/50 rounded-2xl p-5 border border-gray-100 transition-all hover:border-gray-200">
+                    {editingStaffId === s._id ? (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <input value={editStaff.name} onChange={e => setEditStaff({ ...editStaff, name: e.target.value })}
+                            placeholder="Name" className="bg-white border border-gray-200 rounded-full py-2.5 px-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400" />
+                          <input type="tel" value={editStaff.mobileNumber} onChange={e => setEditStaff({ ...editStaff, mobileNumber: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                            placeholder="Mobile" maxLength={10} className="bg-white border border-gray-200 rounded-full py-2.5 px-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400" />
+                          <input type="text" value={editStaff.password} onChange={e => setEditStaff({ ...editStaff, password: e.target.value })}
+                            placeholder="New password (optional)" className="bg-white border border-gray-200 rounded-full py-2.5 px-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400" />
+                        </div>
+                        <div className="flex gap-2 justify-end">
+                          <button onClick={() => setEditingStaffId(null)} className="px-4 py-2 bg-gray-100 text-gray-400 rounded-xl text-xs font-black uppercase">Cancel</button>
+                          <button
+                            onClick={async () => {
+                              try {
+                                const payload = { name: editStaff.name, mobileNumber: editStaff.mobileNumber };
+                                if (editStaff.password) payload.password = editStaff.password;
+                                await axios.patch(`/api/staff/${s._id}`, payload);
+                                setEditingStaffId(null);
+                                fetchStaff();
+                              } catch (err) {
+                                alert(err.response?.data?.error || 'Failed to update.');
+                              }
+                            }}
+                            className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 hover:bg-emerald-600"
+                          >
+                            <Check size={14} /> Save
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 ${
+                            s.role === 'Kitchen' ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'
+                          }`}>
+                            {s.role === 'Kitchen' ? <ChefHat size={20} /> : <Users size={20} />}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-sm text-slate-900">{s.name}</span>
+                              <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                                s.role === 'Kitchen' ? 'bg-amber-50 text-amber-600 border border-amber-100' : 'bg-blue-50 text-blue-600 border border-blue-100'
+                              }`}>{s.role}</span>
+                            </div>
+                            <div className="flex items-center gap-3 mt-1">
+                              <span className="text-xs text-gray-400 font-medium flex items-center gap-1">
+                                <Phone size={10} /> {s.mobileNumber}
+                              </span>
+                              <span className="text-[10px] text-gray-300">
+                                Added {new Date(s.createdAt).toLocaleDateString('en-IN')}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={() => { setEditingStaffId(s._id); setEditStaff({ name: s.name, mobileNumber: s.mobileNumber, password: '' }); }}
+                            className="bg-white text-gray-400 p-2.5 rounded-xl hover:text-blue-500 hover:bg-blue-50 transition-all border border-gray-100"
+                          ><Edit3 size={14} /></button>
+                          <button
+                            onClick={async () => {
+                              if (!window.confirm(`Remove ${s.name} (${s.role})?`)) return;
+                              try {
+                                await axios.delete(`/api/staff/${s._id}`);
+                                fetchStaff();
+                              } catch (err) {
+                                alert(err.response?.data?.error || 'Failed to delete.');
+                              }
+                            }}
+                            className="bg-white text-gray-400 p-2.5 rounded-xl hover:text-rose-500 hover:bg-rose-50 transition-all border border-gray-100"
+                          ><Trash2 size={14} /></button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Staff count footer */}
+            {staffList.length > 0 && (
+              <div className="flex justify-between items-center px-1 py-2">
+                <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">
+                  {staffList.filter(s => s.role === 'Waiter').length} waiters
+                </span>
+                <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">
+                  {staffList.filter(s => s.role === 'Kitchen').length} kitchen
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

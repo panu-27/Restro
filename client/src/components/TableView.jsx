@@ -298,10 +298,9 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
     const hasWA = mode === 'wa' || mode === 'both';
     const doPrint = mode === 'print' || mode === 'both';
     const phone = phoneOf(partId).replace(/\D/g, '');
-    const requiresPhoneForPrint = user?.printMobileRequired !== false;
-    const requiresPhone = hasWA || (doPrint && requiresPhoneForPrint);
-    if (requiresPhone && phone.length < 10) {
-      alert('Please enter a valid 10-digit customer mobile number.');
+    // Mobile number is required only for WhatsApp and Both; optional for Print
+    if (hasWA && phone.length < 10) {
+      alert('Please enter a valid 10-digit customer mobile number for WhatsApp.');
       return;
     }
 
@@ -784,7 +783,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                      type="tel"
                      value={phoneOf(currentPartId)}
                      onChange={e => setPartPhones(prev => ({ ...prev, [currentPartId]: e.target.value }))}
-                     placeholder={user?.printMobileRequired ? "10-digit mobile number (required)" : "10-digit mobile number (required for WhatsApp)"}
+                     placeholder="10-digit mobile number (optional for print)"
                      className="w-full bg-white border border-slate-200 rounded-xl py-3.5 pl-10 pr-4 outline-none text-sm text-slate-700 placeholder:text-slate-500 focus:border-[#ff5a36] transition-colors"
                      maxLength={10}
                    />
