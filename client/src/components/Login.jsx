@@ -3,642 +3,574 @@ import axios from 'axios';
 import {
   Send, AlertCircle, Fingerprint, Phone, Lock, Eye, EyeOff,
   X, ChefHat, ClipboardList, Receipt, BarChart3, Wifi, Shield,
-  Check, ChevronDown, Star, Zap, Users, Coffee
+  ArrowLeft, ArrowRight, Zap, ChevronDown, Check, Star, Play,
+  User, Plus, ChevronLeft, ChevronRight
 } from 'lucide-react';
 
-/* ─────────────────────────────────────────────
-   AUTH MODAL  (original logic, zero changes)
-───────────────────────────────────────────── */
-const AuthModal = ({ mode, onClose, onLoginSuccess }) => {
+/* ─── Google Font Import Only ─── */
+const FontLink = () => (
+  <style>{`
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Serif+Display:ital@0;1&display=swap');
+  `}</style>
+);
+
+/* ─── FAQ ─── */
+const FAQ = ({ q, a }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border-b border-[#E5E5E5]/60 group">
+      <button
+        className="w-full bg-transparent border-none cursor-pointer flex justify-between items-center py-6 gap-4 text-left font-inherit group-hover:text-[#FF5A36] transition-colors"
+        onClick={() => setOpen(p => !p)}
+      >
+        <span className="text-[16px] font-medium text-[#111111] group-hover:text-[#FF5A36] transition-colors">{q}</span>
+        <ChevronDown size={18} className={`text-[#888888] shrink-0 transition-transform duration-300 ${open ? 'rotate-180 text-[#111111]' : ''}`} />
+      </button>
+      <div className={`grid transition-all duration-300 ease-in-out ${open ? 'grid-rows-[1fr] opacity-100 pb-6' : 'grid-rows-[0fr] opacity-0'}`}>
+        <p className="text-[15px] text-[#555555] leading-[1.8] overflow-hidden">{a}</p>
+      </div>
+    </div>
+  );
+};
+
+/* ─── AUTH PAGE ─── */
+const AuthPage = ({ mode, onBack, onLoginSuccess }) => {
   const [isRegister, setIsRegister] = useState(mode === 'register');
   const [name, setName] = useState('');
-  const [mobileNumber, setMobileNumber] = useState('');
+  const [mobile, setMobile] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     setIsRegister(mode === 'register');
-    setName(''); setMobileNumber(''); setPassword(''); setError('');
+    setName(''); setMobile(''); setPassword(''); setError('');
   }, [mode]);
 
   const switchMode = () => {
     setIsRegister(p => !p);
-    setName(''); setMobileNumber(''); setPassword(''); setError(''); setShowPassword(false);
+    setName(''); setMobile(''); setPassword(''); setError(''); setShowPw(false);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (mobileNumber.length < 10) { setError('Please enter a valid 10-digit mobile number.'); return; }
+    if (mobile.length < 10) { setError('Enter a valid 10-digit mobile number.'); return; }
     if (password.length < 4) { setError('Password must be at least 4 characters.'); return; }
-    if (isRegister && name.trim().length < 2) { setError('Please enter your full name.'); return; }
+    if (isRegister && name.trim().length < 2) { setError('Enter your full name.'); return; }
     setLoading(true);
     const endpoint = isRegister ? '/api/auth/register' : '/api/auth/login';
     const payload = isRegister
-      ? { name: name.trim(), mobileNumber: mobileNumber.trim(), password }
-      : { mobileNumber: mobileNumber.trim(), password };
+      ? { name: name.trim(), mobileNumber: mobile.trim(), password }
+      : { mobileNumber: mobile.trim(), password };
     try {
       const res = await axios.post(endpoint, payload);
-      if (!res.data.token || !res.data.user) throw new Error('Invalid response from server. Please try again.');
+      if (!res.data.token || !res.data.user) throw new Error('Invalid response. Try again.');
       onLoginSuccess(res.data.token, res.data.user);
-      onClose();
     } catch (err) {
-      setError(err.response?.data?.error || err.message || 'Authentication failed. Please check your connection and try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const inp = {
-    width: '100%', padding: '10px 0', background: 'transparent', border: 'none',
-    borderBottom: '1.5px solid #e5e7eb', fontSize: '0.92rem', color: '#1a1a1a',
-    outline: 'none', fontFamily: 'inherit', transition: 'border-color 0.2s', fontWeight: 500,
+      setError(err.response?.data?.error || err.message || 'Authentication failed.');
+    } finally { setLoading(false); }
   };
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 9999,
-      background: 'rgba(10,6,2,0.6)', backdropFilter: 'blur(6px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px',
-    }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: '#fff', borderRadius: '24px', padding: '48px 44px',
-        width: '100%', maxWidth: '420px', position: 'relative',
-        boxShadow: '0 32px 80px rgba(0,0,0,0.2)',
-        animation: 'modalIn 0.3s cubic-bezier(0.16,1,0.3,1)',
-      }}>
-        <button onClick={onClose} style={{
-          position: 'absolute', top: 16, right: 16, background: '#f3f4f6',
-          border: 'none', borderRadius: '50%', width: 32, height: 32,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          cursor: 'pointer', color: '#6b7280',
-        }}><X size={16} /></button>
+    <div className="min-h-screen flex flex-col font-['DM_Sans',sans-serif] bg-white text-[#111111] antialiased">
+      <FontLink />
+      <div className="h-20 flex items-center px-8 lg:px-12">
+        <button
+          className="flex items-center gap-2 bg-transparent border-none cursor-pointer font-inherit text-[14px] font-medium text-[#888888] transition-colors hover:text-[#111111] p-0"
+          onClick={onBack}
+        >
+          <ArrowLeft size={16} /> Return to website
+        </button>
+      </div>
 
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <div style={{
-            width: 52, height: 52, background: '#FEF3C7', borderRadius: '50%',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            margin: '0 auto 16px', fontSize: 24,
-          }}>🍽️</div>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#111', marginBottom: 4 }}>
-            {isRegister ? 'Create Account' : 'Welcome back'}
-          </h2>
-          <p style={{ color: '#9ca3af', fontSize: '0.88rem' }}>
-            {isRegister ? 'Join Annapurna to get started' : 'Sign in to your restaurant dashboard'}
-          </p>
-        </div>
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-2">
+        {/* Form side */}
+        {/* Form side (Left) */}
+        <div className="flex items-center justify-center p-8 lg:p-16 bg-white rounded-tr-3xl lg:rounded-none lg:rounded-r-3xl shadow-sm z-10">
+          <div className="w-full max-w-[400px]">
+            <h1 className="font-['DM_Serif_Display',serif] text-[40px] leading-tight text-[#111111] mb-3">
+              {isRegister ? 'Create an account' : 'Welcome back'}
+            </h1>
+            <p className="text-[15px] text-[#555555] mb-10 leading-relaxed">
+              {isRegister
+                ? 'Join hundreds of modern restaurants optimizing their operations today.'
+                : 'Enter your details to access your restaurant dashboard.'}
+            </p>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {isRegister && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <label style={{ fontSize: '0.7rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Full Name</label>
-              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                <Fingerprint size={15} style={{ position: 'absolute', left: 0, color: '#d1d5db' }} />
-                <input type="text" required placeholder="Ramesh Kumar" className="modal-input"
-                  style={{ ...inp, paddingLeft: 26 }} value={name}
-                  onChange={e => { setName(e.target.value); setError(''); }} autoComplete="name" />
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {isRegister && (
+                <div>
+                  <label className="block text-[13px] font-medium text-[#111111] mb-2">Full Name</label>
+                  <div className="relative flex items-center">
+                    <Fingerprint size={16} className="absolute left-4 text-[#888888] pointer-events-none" />
+                    <input
+                      type="text" required placeholder="Ramesh Kumar"
+                      value={name} onChange={e => { setName(e.target.value); setError(''); }}
+                      className="w-full bg-[#F7F7F5] border border-transparent rounded-lg py-3.5 pl-11 pr-4 font-inherit text-[15px] text-[#111111] outline-none transition-all focus:border-[#FF5A36] focus:bg-white placeholder-[#A3A3A3]"
+                    />
+                  </div>
+                </div>
+              )}
+              <div>
+                <label className="block text-[13px] font-medium text-[#111111] mb-2">Mobile Number</label>
+                <div className="relative flex items-center">
+                  <Phone size={16} className="absolute left-4 text-[#888888] pointer-events-none" />
+                  <input
+                    type="tel" required placeholder="9876543210"
+                    value={mobile}
+                    onChange={e => { setMobile(e.target.value.replace(/\D/g, '').slice(0, 10)); setError(''); }}
+                    className="w-full bg-[#F7F7F5] border border-transparent rounded-lg py-3.5 pl-11 pr-4 font-inherit text-[15px] text-[#111111] outline-none transition-all focus:border-[#FF5A36] focus:bg-white placeholder-[#A3A3A3]"
+                  />
+                </div>
               </div>
-            </div>
-          )}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <label style={{ fontSize: '0.7rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Mobile Number</label>
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <Phone size={15} style={{ position: 'absolute', left: 0, color: '#d1d5db' }} />
-              <input type="tel" required placeholder="9876543210" className="modal-input"
-                style={{ ...inp, paddingLeft: 26 }} value={mobileNumber}
-                onChange={e => { setMobileNumber(e.target.value.replace(/\D/g, '').slice(0, 10)); setError(''); }}
-                autoComplete="tel" inputMode="numeric" />
+              <div>
+                <label className="block text-[13px] font-medium text-[#111111] mb-2">Password</label>
+                <div className="relative flex items-center">
+                  <Lock size={16} className="absolute left-4 text-[#888888] pointer-events-none" />
+                  <input
+                    type={showPw ? 'text' : 'password'} required placeholder="••••••••"
+                    value={password} onChange={e => { setPassword(e.target.value); setError(''); }}
+                    className="w-full bg-[#F7F7F5] border border-transparent rounded-lg py-3.5 pl-11 pr-11 font-inherit text-[15px] text-[#111111] outline-none transition-all focus:border-[#FF5A36] focus:bg-white placeholder-[#A3A3A3]"
+                  />
+                  <button type="button" className="absolute right-4 bg-transparent border-none cursor-pointer text-[#888888] flex items-center transition-colors hover:text-[#111111] p-0" onClick={() => setShowPw(p => !p)} tabIndex={-1}>
+                    {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              {error && (
+                <div className="flex items-center gap-2 bg-[#FEF2F2] text-[#DC2626] text-[14px] px-4 py-3 rounded-lg">
+                  <AlertCircle size={16} className="shrink-0" /> {error}
+                </div>
+              )}
+
+              <button type="submit" className="w-full bg-[#FF5A36] text-white border-none cursor-pointer font-inherit text-[15px] font-semibold py-3.5 rounded-lg flex items-center justify-center gap-2 transition-all hover:bg-[#D94420] disabled:opacity-60 disabled:cursor-not-allowed mt-2" disabled={loading}>
+                {loading ? (
+                  <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Processing...</>
+                ) : (
+                  <>{isRegister ? 'Create Account' : 'Sign In'} <ArrowRight size={16} /></>
+                )}
+              </button>
+            </form>
+
+            <div className="mt-8 pt-8 border-t border-[#E5E5E5]/60 text-center">
+              <p className="text-[14px] text-[#555555]">
+                {isRegister ? 'Already have an account? ' : 'Need an account? '}
+                <button className="bg-transparent border-none cursor-pointer font-inherit text-[14px] text-[#111111] font-semibold p-0 hover:text-[#FF5A36] transition-colors" onClick={switchMode}>
+                  {isRegister ? 'Sign in' : 'Register now'}
+                </button>
+              </p>
             </div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <label style={{ fontSize: '0.7rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Password</label>
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <Lock size={15} style={{ position: 'absolute', left: 0, color: '#d1d5db' }} />
-              <input type={showPassword ? 'text' : 'password'} required placeholder="••••••••" className="modal-input"
-                style={{ ...inp, paddingLeft: 26, paddingRight: 32 }} value={password}
-                onChange={e => { setPassword(e.target.value); setError(''); }}
-                autoComplete={isRegister ? 'new-password' : 'current-password'} />
-              <button type="button" onClick={() => setShowPassword(p => !p)} style={{
-                position: 'absolute', right: 0, background: 'none', border: 'none',
-                cursor: 'pointer', color: '#d1d5db', padding: 4, display: 'flex', alignItems: 'center',
-              }} tabIndex={-1}>{showPassword ? <EyeOff size={15} /> : <Eye size={15} />}</button>
-            </div>
-          </div>
-
-          {error && (
-            <div key={error} style={{
-              background: '#fef2f2', color: '#ef4444', padding: '10px 14px',
-              borderRadius: 10, fontSize: '0.83rem', fontWeight: 600,
-              display: 'flex', alignItems: 'center', gap: 8,
-              animation: 'shake 0.4s',
-            }}><AlertCircle size={14} />{error}</div>
-          )}
-
-          <button type="submit" disabled={loading} style={{
-            background: '#C8860A', color: '#fff', border: 'none',
-            padding: '13px 24px', fontSize: '0.95rem', fontWeight: 700,
-            cursor: loading ? 'not-allowed' : 'pointer', borderRadius: 100,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            transition: 'all 0.2s', marginTop: 4, opacity: loading ? 0.7 : 1,
-            boxShadow: '0 6px 20px rgba(200,134,10,0.35)',
-          }}>
-            {loading ? (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: 'spin 1s linear infinite' }}>
-                  <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-                </svg>
-                {isRegister ? 'Creating...' : 'Signing in...'}
-              </span>
-            ) : (
-              <>{isRegister ? 'Create Account' : 'Login'} <Send size={14} /></>
-            )}
-          </button>
-        </form>
-
-        <div style={{ marginTop: 20, textAlign: 'center' }}>
-          <button onClick={switchMode} style={{
-            background: 'transparent', border: 'none', color: '#C8860A',
-            fontSize: '0.87rem', fontWeight: 600, cursor: 'pointer',
-          }}>
-            {isRegister ? 'Already have an account? Login' : 'Need an account? Register now'}
-          </button>
         </div>
+
+
       </div>
     </div>
   );
 };
 
-/* ─────────────────────────────────────────────
-   FAQ ITEM
-───────────────────────────────────────────── */
-const FAQ = ({ q, a }) => {
-  const [open, setOpen] = useState(false);
-  return (
-    <div style={{
-      borderBottom: '1px solid #f0ede0', padding: '20px 0',
-    }}>
-      <button onClick={() => setOpen(p => !p)} style={{
-        background: 'none', border: 'none', width: '100%', textAlign: 'left',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        cursor: 'pointer', gap: 16,
-      }}>
-        <span style={{ fontWeight: 600, fontSize: '0.97rem', color: '#1a1a1a' }}>{q}</span>
-        <ChevronDown size={18} style={{ color: '#C8860A', flexShrink: 0, transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'rotate(0)' }} />
-      </button>
-      {open && (
-        <p style={{ margin: '12px 0 0', color: '#6b7280', fontSize: '0.9rem', lineHeight: 1.65, animation: 'fadeDown 0.2s ease' }}>{a}</p>
-      )}
-    </div>
-  );
-};
-
-/* ─────────────────────────────────────────────
-   MAIN PAGE
-───────────────────────────────────────────── */
+/* ─── LANDING ─── */
 const AnnapurnaLanding = ({ onLoginSuccess }) => {
-  const [modal, setModal] = useState(null); // 'login' | 'register' | null
+  const [authMode, setAuthMode] = useState(null);
+
+  if (authMode) {
+    return (
+      <AuthPage
+        mode={authMode}
+        onBack={() => setAuthMode(null)}
+        onLoginSuccess={onLoginSuccess}
+      />
+    );
+  }
 
   const features = [
     { icon: <ClipboardList size={22} />, title: 'Table Management', desc: 'Assign orders to tables in real time. Track occupancy, split bills, and merge tables seamlessly.' },
-    { icon: <Receipt size={22} />, title: 'Smart Billing', desc: 'Generate GST-compliant bills instantly. Print, WhatsApp, or email receipts with one tap.' },
-    { icon: <ChefHat size={22} />, title: 'KOT System', desc: 'Kitchen order tickets auto-print the moment a waiter places an order. No more shouting.' },
-    { icon: <BarChart3 size={22} />, title: 'Live Reports', desc: 'Daily sales, item-wise revenue, peak hour analysis — all inside your dashboard.' },
-    { icon: <Wifi size={22} />, title: 'Works Offline', desc: 'Power cut? No internet? Annapurna keeps running. Syncs automatically when you\'re back online.' },
-    { icon: <Shield size={22} />, title: 'Role-based Access', desc: 'Give waiters, cashiers, and managers exactly the permissions they need. Nothing more.' },
+    { icon: <Receipt size={22} />, title: 'Smart Billing', desc: 'Generate GST-compliant bills instantly. Print, WhatsApp, or email receipts with a single tap.' },
+    { icon: <ChefHat size={22} />, title: 'KOT System', desc: 'Kitchen order tickets auto-print the moment a waiter places an order. No more verbal confusion.' },
+    { icon: <BarChart3 size={22} />, title: 'Live Reports', desc: 'Daily sales, item-wise revenue, peak hour analysis — all visible beautifully inside your dashboard.' },
+    { icon: <Wifi size={22} />, title: 'Works Offline', desc: 'Power cut or no internet? The system keeps running and syncs automatically when back online.' },
+    { icon: <Shield size={22} />, title: 'Role-based Access', desc: 'Give waiters, cashiers, and managers exactly the permissions they need — nothing more.' },
   ];
 
-  const plans = [
-    {
-      name: 'Starter', price: '₹999', period: '/month', color: '#f9f5eb',
-      badge: null,
-      features: ['1 outlet', 'Up to 20 tables', 'Billing & KOT', 'WhatsApp receipts', 'Basic reports', 'Email support'],
-    },
-    {
-      name: 'Pro', price: '₹2,499', period: '/month', color: '#1A0A00',
-      badge: 'Most Popular',
-      features: ['3 outlets', 'Unlimited tables', 'Advanced billing + GST', 'KOT + display screens', 'Full analytics dashboard', 'Inventory tracking', 'Priority support'],
-      highlight: true,
-    },
-    {
-      name: 'Enterprise', price: 'Custom', period: '', color: '#f9f5eb',
-      badge: null,
-      features: ['Unlimited outlets', 'White-label branding', 'API access', 'Dedicated onboarding', 'SLA guarantee', '24/7 phone support'],
-    },
+  const steps = [
+    { n: '01', title: 'Register', desc: 'Create your account in under a minute.' },
+    { n: '02', title: 'Set Up Menu', desc: 'Add categories, items, and pricing.' },
+    { n: '03', title: 'Configure Tables', desc: 'Map your floor layout digitally.' },
+    { n: '04', title: 'Train Staff', desc: 'Onboard your team with simple roles.' },
+    { n: '05', title: 'Go Live', desc: 'Start billing on day one.' },
   ];
 
   const faqs = [
-    { q: 'Does Annapurna work without internet?', a: 'Yes. The app works fully offline — billing, KOT, table management. Data syncs to the cloud the moment connectivity is restored.' },
-    { q: 'Is it compatible with existing billing hardware?', a: 'Annapurna supports most 58mm and 80mm thermal printers via USB, Bluetooth, or LAN. Works with ESC/POS-compatible devices.' },
-    { q: 'Can multiple staff use the system at once?', a: 'Absolutely. You can have waiters on tablets, cashiers at the counter, and the kitchen display running — all synced in real time.' },
-    { q: 'How does the free trial work?', a: '14 days fully free, no credit card needed. All Pro features unlocked. After trial, choose a plan or downgrade to Starter.' },
-    { q: 'Is my data secure?', a: 'All data is encrypted at rest and in transit. Daily backups to Indian data centres. We are fully compliant with IT Act 2000.' },
-    { q: 'Do you provide onboarding support?', a: 'Every new account gets a 30-minute onboarding call with our team. We help you set up menus, tables, and printers before you go live.' },
+    { q: 'Does the system work offline?', a: 'Yes. Billing, KOT, and table management work fully offline. Data syncs automatically once connectivity is restored so you never lose a beat.' },
+    { q: 'Is it compatible with my existing printers?', a: 'It supports most standard 58mm and 80mm thermal printers via USB, Bluetooth, or LAN. Plug and play for most models.' },
+    { q: 'Can multiple staff use it simultaneously?', a: 'Absolutely — waiters on mobile, cashiers at the counter, and kitchen staff viewing KOTs, all working in real time without lag.' },
+    { q: 'Is there a free trial?', a: 'Yes. You get a fully functional trial period to test every feature before committing to a plan. No credit card required.' },
   ];
 
   const testimonials = [
-    { name: 'Rajesh Iyer', role: 'Owner, Saraswati Lunch Home', stars: 5, text: 'Billing time dropped from 5 minutes to under 30 seconds. My cashier loves it.' },
-    { name: 'Priya Nair', role: 'Manager, Spice Garden Restaurant', stars: 5, text: 'The offline mode saved us during a power cut on a Saturday night. Absolute lifesaver.' },
-    { name: 'Arun Mehta', role: 'Owner, Mehta Family Dhaba', stars: 5, text: 'Setup took 20 minutes. The WhatsApp bill feature is a huge hit with customers.' },
+    { text: 'Our billing time dropped by 40% in the first week. The KOT system alone is worth it.', name: 'Priya Nair', role: 'Owner, Spice Garden' },
+    { text: 'Finally a POS that works during power cuts. We never miss an order now.', name: 'Ravi Sharma', role: 'Manager, Hotel Annapoorna' },
+    { text: 'Setup was done in a day. Staff adapted in hours. Clean UI makes all the difference.', name: 'Meera Joshi', role: 'Owner, Café Mithas' },
   ];
 
   return (
-    <div style={{ fontFamily: "'DM Sans', 'Segoe UI', sans-serif", background: '#FDFAF3', color: '#1a1a1a', overflowX: 'hidden' }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@700;800&display=swap');
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
-        @keyframes modalIn { from{opacity:0;transform:scale(0.94) translateY(16px)} to{opacity:1;transform:scale(1) translateY(0)} }
-        @keyframes fadeDown { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
-        @keyframes fadeUp { from{opacity:0;transform:translateY(30px)} to{opacity:1;transform:translateY(0)} }
-        .hero-animate { animation: fadeUp 0.8s ease both; }
-        .hero-animate-2 { animation: fadeUp 0.8s 0.15s ease both; }
-        .hero-animate-3 { animation: fadeUp 0.8s 0.3s ease both; }
-        .modal-input:focus { border-bottom-color: #C8860A !important; }
-        .nav-link { color: #5a4a2f; font-size: 0.9rem; font-weight: 500; text-decoration: none; cursor: pointer; transition: color 0.15s; background: none; border: none; }
-        .nav-link:hover { color: #C8860A; }
-        .feature-card { background: #fff; border-radius: 16px; padding: 28px; border: 1px solid #f0ede0; transition: transform 0.2s, box-shadow 0.2s; }
-        .feature-card:hover { transform: translateY(-4px); box-shadow: 0 16px 40px rgba(200,134,10,0.1); }
-        .plan-card { border-radius: 20px; padding: 36px 32px; border: 1.5px solid #f0ede0; transition: transform 0.2s; }
-        .plan-card:hover { transform: translateY(-4px); }
-        .btn-primary { background: #C8860A; color: #fff; border: none; padding: 13px 28px; font-size: 0.95rem; font-weight: 700; cursor: pointer; border-radius: 100px; transition: all 0.2s; box-shadow: 0 6px 20px rgba(200,134,10,0.3); font-family: inherit; }
-        .btn-primary:hover { background: #a86e06; transform: translateY(-2px); box-shadow: 0 10px 28px rgba(200,134,10,0.4); }
-        .btn-ghost { background: transparent; color: #1a1a1a; border: 1.5px solid #e5e7eb; padding: 12px 24px; font-size: 0.9rem; font-weight: 600; cursor: pointer; border-radius: 100px; transition: all 0.2s; font-family: inherit; }
-        .btn-ghost:hover { border-color: #C8860A; color: #C8860A; }
-        .stat-pill { background: #fff; border-radius: 100px; padding: 10px 20px; border: 1px solid #f0ede0; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); animation: float 5s ease-in-out infinite; }
-        section { padding: 90px 24px; }
-        .wrap { max-width: 1100px; margin: 0 auto; }
-        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
-        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
-        .section-label { font-size: 0.75rem; font-weight: 700; color: #C8860A; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 12px; }
-        .section-title { font-family: 'Playfair Display', serif; font-size: clamp(2rem, 3.5vw, 2.8rem); font-weight: 800; color: #1a1a1a; line-height: 1.15; margin-bottom: 16px; }
-        .section-sub { font-size: 1rem; color: #6b7280; line-height: 1.65; max-width: 560px; }
-        @media(max-width: 900px) {
-          .grid-2, .grid-3 { grid-template-columns: 1fr; }
-          .hero-grid { grid-template-columns: 1fr !important; }
-          .hide-mobile { display: none !important; }
-        }
-      `}</style>
+    <div className="font-['DM_Sans',sans-serif] bg-white text-[#111111] antialiased scroll-smooth selection:bg-[#FF5A36] selection:text-white">
+      <FontLink />
 
-      {/* ── NAV ── */}
-      <nav style={{
-        position: 'sticky', top: 0, zIndex: 100,
-        background: 'rgba(253,250,243,0.92)', backdropFilter: 'blur(12px)',
-        borderBottom: '1px solid #f0ede0',
-        padding: '0 24px', height: 64,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{
-            width: 36, height: 36, background: '#1A0A00', borderRadius: '50%',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18,
-          }}>🍽️</div>
-          <div>
-            <div style={{ fontFamily: "'Playfair Display', serif", fontWeight: 800, fontSize: '1.1rem', color: '#1A0A00', lineHeight: 1 }}>अन्नपूर्णा</div>
-            <div style={{ fontSize: '0.6rem', color: '#C8860A', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>by ArcheArc</div>
+      {/* NAV */}
+      <nav className="fixed top-0 inset-x-0 z-[100] h-20 bg-white/90 backdrop-blur-xl flex items-center border-b border-[#E5E5E5]/60 transition-all">
+        <div className="max-w-[1280px] w-full mx-auto px-6 sm:px-8 flex items-center justify-between">
+          <img src="/brand-logo.png" alt="Restro Logo" className="h-10 sm:h-12 object-contain" />
+          <div className="hidden lg:flex items-center gap-10">
+            <a href="#features" className="text-[15px] font-medium text-[#555555] no-underline transition-colors hover:text-[#111111]">Features</a>
+            <a href="#how-it-works" className="text-[15px] font-medium text-[#555555] no-underline transition-colors hover:text-[#111111]">How it works</a>
+            <a href="#faqs" className="text-[15px] font-medium text-[#555555] no-underline transition-colors hover:text-[#111111]">FAQ</a>
           </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 28 }} className="hide-mobile">
-          {['Features', 'Pricing', 'FAQs'].map(l => (
-            <a key={l} href={`#${l.toLowerCase()}`} className="nav-link">{l}</a>
-          ))}
-        </div>
-
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button className="btn-ghost" onClick={() => setModal('login')}>Login</button>
-          <button className="btn-primary" onClick={() => setModal('register')}>Get Started →</button>
+          <div className="flex items-center gap-3 sm:gap-6">
+            <button className="bg-transparent border-none cursor-pointer text-[14px] sm:text-[15px] font-medium text-[#111111] transition-colors hover:text-[#FF5A36] p-0" onClick={() => setAuthMode('login')}>Log in</button>
+            <button className="bg-[#111111] text-white border-none cursor-pointer font-inherit text-[13px] sm:text-[14px] font-medium px-5 py-2.5 sm:px-6 sm:py-3 rounded-full transition-all hover:bg-[#FF5A36] hover:shadow-lg hover:shadow-[#FF5A36]/20 active:scale-95" onClick={() => setAuthMode('register')}>
+              Get started
+            </button>
+          </div>
         </div>
       </nav>
 
-      {/* ── HERO ── */}
-      <section style={{ paddingTop: 80, paddingBottom: 80, background: '#FDFAF3' }}>
-        <div className="wrap">
-          <div className="hero-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 60, alignItems: 'center' }}>
-            {/* Left */}
-            <div>
-              <div className="hero-animate" style={{
-                display: 'inline-flex', alignItems: 'center', gap: 8,
-                background: '#FEF3C7', borderRadius: 100, padding: '6px 16px',
-                marginBottom: 24, fontSize: '0.82rem', fontWeight: 600, color: '#92400E',
-              }}>
-                <Zap size={13} /> Made for Indian restaurants
-              </div>
-
-              <h1 className="hero-animate-2" style={{
-                fontFamily: "'Playfair Display', serif",
-                fontSize: 'clamp(2.4rem, 4.5vw, 3.8rem)',
-                fontWeight: 800, lineHeight: 1.1, color: '#1A0A00', marginBottom: 20,
-              }}>
-                Everything your<br />
-                <span style={{ color: '#C8860A' }}>restaurant needs,</span><br />
-                one place.
-              </h1>
-
-              <p className="hero-animate-3" style={{ fontSize: '1.05rem', color: '#6b7280', lineHeight: 1.7, marginBottom: 36, maxWidth: 440 }}>
-                Orders, tables, billing, KOT, reports — built for the way Indian kitchens actually work. No training required.
-              </p>
-
-              <div className="hero-animate-3" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 48 }}>
-                <button className="btn-primary" style={{ fontSize: '1rem', padding: '14px 32px' }} onClick={() => setModal('register')}>
-                  Start free trial →
-                </button>
-                <button className="btn-ghost" style={{ fontSize: '1rem', padding: '14px 24px' }} onClick={() => setModal('login')}>
-                  Sign in
-                </button>
-              </div>
-
-              <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
-                {[['500+', 'Restaurants'], ['₹2Cr+', 'Billed daily'], ['4.9★', 'Rating']].map(([n, l]) => (
-                  <div key={l}>
-                    <div style={{ fontFamily: "'Playfair Display', serif", fontSize: '1.6rem', fontWeight: 800, color: '#1A0A00' }}>{n}</div>
-                    <div style={{ fontSize: '0.8rem', color: '#9ca3af', fontWeight: 500 }}>{l}</div>
-                  </div>
-                ))}
-              </div>
+      {/* HERO */}
+      <section className="pt-[180px] pb-24 px-8 max-w-[1280px] mx-auto overflow-hidden">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-center">
+          <div className="relative z-20">
+            <div className="inline-flex items-center gap-2 bg-white text-[#111111] text-[12px] font-medium px-4 py-2 rounded-full border border-[#E5E5E5] shadow-sm mb-8">
+              <span className="w-2 h-2 rounded-full bg-[#FF5A36] animate-pulse"></span>
+              India's Modern Restaurant POS
+            </div>
+            <h1 className="font-['DM_Serif_Display',serif] text-[clamp(40px,5vw,64px)] leading-[1.08] tracking-tight text-[#111111] mb-6">
+              Manage your<br />
+              restaurant <em className="text-[#FF5A36] italic not-italic">beautifully.</em>
+            </h1>
+            <p className="text-[16px] leading-[1.7] text-[#555555] max-w-[480px] mb-10">
+              Orders, tables, billing, KOT, and advanced reports — stripped of clutter and built for fast-paced Indian kitchens.
+            </p>
+            <div className="flex flex-wrap items-center gap-4 mb-14">
+              <button className="bg-[#FF5A36] text-white border-none cursor-pointer font-inherit text-[15px] font-medium px-8 py-4 rounded-full flex items-center gap-2 transition-all hover:bg-[#D94420] hover:shadow-xl hover:shadow-[#FF5A36]/20 active:scale-95" onClick={() => setAuthMode('register')}>
+                Start free trial <ArrowRight size={16} />
+              </button>
+              <button className="bg-white border border-[#E5E5E5] cursor-pointer font-inherit text-[15px] font-medium text-[#111111] px-8 py-4 rounded-full flex items-center gap-2 transition-all hover:border-[#111111] hover:shadow-sm" onClick={() => setAuthMode('login')}>
+                <Play size={16} className="fill-current" /> Watch Demo
+              </button>
             </div>
 
-            {/* Right – visual */}
-            <div style={{ position: 'relative' }} className="hide-mobile">
-              {/* Main dashboard card */}
-              <div style={{
-                background: '#1A0A00', borderRadius: 24, padding: 28,
-                boxShadow: '0 40px 80px rgba(26,10,0,0.25)',
-                position: 'relative', zIndex: 2,
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                  <span style={{ color: '#C8860A', fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.1em' }}>LIVE ORDERS</span>
-                  <span style={{ background: '#2d1800', color: '#C8860A', borderRadius: 100, padding: '3px 10px', fontSize: '0.72rem', fontWeight: 600 }}>● Live</span>
+            <div className="flex items-center gap-12 pt-8 border-t border-[#E5E5E5]/60">
+              <div>
+                <div className="font-['DM_Serif_Display',serif] text-[36px] text-[#111111] leading-none mb-1">500+</div>
+                <div className="text-[14px] text-[#555555] font-medium">Active outlets</div>
+              </div>
+              <div>
+                <div className="font-['DM_Serif_Display',serif] text-[36px] text-[#111111] leading-none mb-1">₹2Cr+</div>
+                <div className="text-[14px] text-[#555555] font-medium">Daily volume</div>
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT SIDE: REFINED VISUALS */}
+          <div className="relative w-full max-w-[600px] mx-auto lg:ml-auto mt-16 lg:mt-0 perspective-1000">
+            {/* Main Feature Image - Cleaner & More Focused */}
+            <div className="relative group">
+              <div className="absolute -inset-4 bg-gradient-to-tr from-[#FF5A36]/10 to-transparent rounded-[40px] blur-2xl opacity-50 group-hover:opacity-80 transition-opacity duration-700" />
+              <img
+                src="https://images.unsplash.com/photo-1552566626-52f8b828add9?w=1200&auto=format&fit=crop&q=90"
+                alt="Restaurant Ambience"
+                className="relative w-full h-[500px] object-cover rounded-[40px] border border-zinc-100 shadow-2xl transition-all duration-700 group-hover:scale-[1.01] group-hover:rotate-1"
+              />
+            </div>
+
+            {/* Premium Glass UI Card - Floating & Sharp */}
+            <div className="absolute -bottom-6 -left-6 md:-left-12 z-30 bg-white/80 backdrop-blur-3xl border border-white/50 rounded-[32px] p-8 w-[90%] max-w-[380px] shadow-[0_40px_80px_-15px_rgba(0,0,0,0.15)] animate-in fade-in slide-in-from-bottom-8 duration-1000">
+              <div className="flex justify-between items-center mb-8 pb-6 border-b border-zinc-950/5">
+                <div>
+                  <div className="text-[18px] font-bold text-zinc-900 tracking-tight">Live Orders</div>
+                  <div className="text-[13px] text-zinc-500 mt-1 font-medium">Real-time KDS Sync</div>
                 </div>
+                <div className="flex items-center gap-2 bg-zinc-900 text-white text-[11px] font-bold px-4 py-2 rounded-full shadow-lg shadow-zinc-900/20">
+                  <span className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse" /> LIVE
+                </div>
+              </div>
+
+              <div className="space-y-4">
                 {[
-                  { table: 'T-04', items: 'Dal Makhani, Roti ×4', status: 'Ready', color: '#22c55e' },
-                  { table: 'T-07', items: 'Paneer Tikka, Lassi ×2', status: 'Cooking', color: '#f59e0b' },
-                  { table: 'T-11', items: 'Thali ×3, Papad', status: 'New', color: '#3b82f6' },
-                  { table: 'T-02', items: 'Biryani ×2, Raita', status: 'Billed', color: '#8b5cf6' },
-                ].map(o => (
-                  <div key={o.table} style={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    background: '#2d1800', borderRadius: 10, padding: '10px 14px', marginBottom: 8,
-                  }}>
+                  { t: 'Table 04', items: 'Dal Makhani, Roti ×4', status: 'Ready', cls: 'text-[#10B981] bg-[#10B981]/8' },
+                  { t: 'Table 07', items: 'Paneer Tikka, Lassi ×2', status: 'Cooking', cls: 'text-[#FF5A36] bg-[#FF5A36]/8' },
+                  { t: 'Table 11', items: 'Thali ×3, Papad', status: 'New', cls: 'text-zinc-400 bg-zinc-100' },
+                ].map((o, idx) => (
+                  <div
+                    className="flex justify-between items-center p-4 rounded-2xl hover:bg-white transition-all border border-transparent hover:border-zinc-100 group/item"
+                    key={o.t}
+                    style={{ animationDelay: `${idx * 150}ms` }}
+                  >
                     <div>
-                      <div style={{ color: '#F5D78E', fontSize: '0.83rem', fontWeight: 700 }}>{o.table}</div>
-                      <div style={{ color: '#9ca3af', fontSize: '0.72rem' }}>{o.items}</div>
+                      <div className="text-[15px] font-bold text-zinc-900 mb-0.5">{o.t}</div>
+                      <div className="text-[12px] text-zinc-500 font-medium">{o.items}</div>
                     </div>
-                    <span style={{ background: o.color + '22', color: o.color, borderRadius: 100, padding: '3px 10px', fontSize: '0.7rem', fontWeight: 700 }}>{o.status}</span>
+                    <span className={`text-[11px] font-bold px-3 py-1.5 rounded-lg tracking-wide uppercase ${o.cls}`}>
+                      {o.status}
+                    </span>
                   </div>
                 ))}
-
-                <div style={{ borderTop: '1px solid #3a2000', paddingTop: 16, marginTop: 8, display: 'flex', justifyContent: 'space-between' }}>
-                  <div style={{ color: '#9ca3af', fontSize: '0.78rem' }}>Today's revenue</div>
-                  <div style={{ color: '#F5D78E', fontSize: '0.95rem', fontWeight: 700 }}>₹18,430</div>
-                </div>
-              </div>
-
-              {/* Floating pills */}
-              <div className="stat-pill" style={{ position: 'absolute', top: -20, right: -20, animationDelay: '0s' }}>
-                <span style={{ fontSize: 20 }}>🧾</span>
-                <div><div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1a1a1a' }}>Bill in 12 sec</div><div style={{ fontSize: '0.68rem', color: '#9ca3af' }}>avg. billing time</div></div>
-              </div>
-              <div className="stat-pill" style={{ position: 'absolute', bottom: -20, left: -20, animationDelay: '2s' }}>
-                <span style={{ fontSize: 20 }}>📶</span>
-                <div><div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1a1a1a' }}>Works offline</div><div style={{ fontSize: '0.68rem', color: '#9ca3af' }}>no internet needed</div></div>
               </div>
             </div>
+
+            {/* Decorative "Fast Tech" Element */}
+            <div className="absolute -top-8 -right-8 w-32 h-32 bg-[#FF5A36]/10 rounded-full blur-3xl animate-pulse" />
           </div>
         </div>
       </section>
 
-      {/* ── LOGOS / TRUST ── */}
-      <div style={{ background: '#f9f5eb', borderTop: '1px solid #f0ede0', borderBottom: '1px solid #f0ede0', padding: '18px 24px' }}>
-        <div className="wrap" style={{ display: 'flex', alignItems: 'center', gap: 32, flexWrap: 'wrap', justifyContent: 'center' }}>
-          <span style={{ fontSize: '0.78rem', color: '#9ca3af', fontWeight: 500, whiteSpace: 'nowrap' }}>Trusted by restaurants across India</span>
-          {['Pune', 'Mumbai', 'Bangalore', 'Hyderabad', 'Chennai', 'Ahmedabad'].map(c => (
-            <span key={c} style={{ fontSize: '0.82rem', fontWeight: 600, color: '#5a4a2f', background: '#fff', borderRadius: 100, padding: '4px 14px', border: '1px solid #f0ede0' }}>{c}</span>
-          ))}
+      {/* TRUSTED BY */}
+      <div className="py-8 px-8 bg-white border-y border-zinc-100">
+        <div className="max-w-[1280px] mx-auto flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8">
+          <span className="text-[14px] text-zinc-500 font-semibold tracking-widest uppercase">Trusted by top restaurants</span>
+          <div className="hidden md:block w-1.5 h-1.5 rounded-full bg-[#FF5A36]" />
+          <div className="flex items-center gap-3">
+            <div className="flex gap-1">
+              {[...Array(5)].map((_, i) => <Star key={i} size={16} className="text-[#FF5A36]" fill="#FF5A36" />)}
+            </div>
+            <span className="text-[14px] font-bold text-zinc-900">4.9 / 5 rating</span>
+          </div>
         </div>
       </div>
 
-      {/* ── FEATURES ── */}
-      <section id="features" style={{ background: '#fff' }}>
-        <div className="wrap">
-          <div style={{ textAlign: 'center', marginBottom: 56 }}>
-            <div className="section-label">Features</div>
-            <h2 className="section-title" style={{ margin: '0 auto 16px' }}>Built for real kitchens</h2>
-            <p className="section-sub" style={{ margin: '0 auto' }}>Every feature designed around how Indian restaurants actually work — chaotic, fast, and full of heart.</p>
+      {/* FEATURES */}
+      <section id="features" className="py-32 px-8 bg-white relative overflow-hidden">
+        {/* Very subtle glow - barely there */}
+        <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-[#FF5A36]/5 rounded-full blur-[120px] -translate-y-1/2 translate-x-1/3" />
+
+        <div className="max-w-[1280px] mx-auto relative z-10">
+          <div className="text-center max-w-[600px] mx-auto mb-16">
+            <h2 className="font-['DM_Serif_Display',serif] text-[40px] text-zinc-900 leading-[1.08] tracking-tight mb-6">
+              Everything you need.<br />
+              <span className="text-[#FF5A36]">Nothing you don't.</span>
+            </h2>
+            <p className="text-[16px] text-zinc-600 leading-[1.7]">
+              A complete system purpose-built for restaurant operations. No bloat, no unnecessary complexity.
+            </p>
           </div>
-          <div className="grid-3">
-            {features.map(f => (
-              <div key={f.title} className="feature-card">
-                <div style={{ width: 44, height: 44, background: '#FEF3C7', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#C8860A', marginBottom: 16 }}>
+
+          {/* Minimalist Feature Image */}
+          <div className="mb-24 rounded-[2rem] overflow-hidden border border-zinc-100 shadow-xl shadow-zinc-200/50 h-[300px] md:h-[450px] relative group">
+            <img
+              src="https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=1600&q=80"
+              alt="Restaurant operations"
+              className="w-full h-full object-cover grayscale opacity-90 transition-all duration-700 group-hover:grayscale-0 group-hover:scale-105 group-hover:opacity-100"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-12 gap-y-16">
+            {features.map((f, i) => (
+              <div className="group" key={i}>
+                <div className="w-12 h-12 rounded-xl bg-zinc-50 border border-zinc-100 flex items-center justify-center text-[#FF5A36] mb-6 group-hover:border-[#FF5A36]/30 transition-all duration-300">
                   {f.icon}
                 </div>
-                <h3 style={{ fontWeight: 700, fontSize: '1rem', marginBottom: 8, color: '#1a1a1a' }}>{f.title}</h3>
-                <p style={{ fontSize: '0.88rem', color: '#6b7280', lineHeight: 1.65 }}>{f.desc}</p>
+                <div className="text-[18px] font-['DM_Serif_Display',serif] text-zinc-900 mb-3">{f.title}</div>
+                <p className="text-[15px] leading-[1.7] text-zinc-500">{f.desc}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── HOW IT WORKS ── */}
-      <section style={{ background: '#FDFAF3' }}>
-        <div className="wrap">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 80, alignItems: 'center' }} className="hero-grid">
-            <div>
-              <div className="section-label">How it works</div>
-              <h2 className="section-title">From setup to first order in under 20 minutes</h2>
-              <p className="section-sub" style={{ marginBottom: 36 }}>No IT team required. No complicated configurations. Just open, set up your menu and tables, and go live.</p>
-              {[
-                ['1', 'Add your restaurant', 'Set up your outlet, tables, and menu in minutes.'],
-                ['2', 'Train your team', 'Waiters learn the app in one shift — it\'s that simple.'],
-                ['3', 'Start taking orders', 'KOT prints instantly, billing is one tap, reports update live.'],
-              ].map(([n, t, d]) => (
-                <div key={n} style={{ display: 'flex', gap: 16, marginBottom: 24 }}>
-                  <div style={{ width: 36, height: 36, background: '#1A0A00', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#C8860A', fontFamily: "'Playfair Display', serif", fontWeight: 800, fontSize: '1rem', flexShrink: 0 }}>{n}</div>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: 4, color: '#1a1a1a' }}>{t}</div>
-                    <div style={{ fontSize: '0.87rem', color: '#6b7280', lineHeight: 1.6 }}>{d}</div>
-                  </div>
+      {/* HOW IT WORKS */}
+      <section id="how-it-works" className="py-40 px-8 bg-white border-t border-zinc-100">
+        <div className="max-w-[1280px] mx-auto">
+          <div className="max-w-[800px] mb-24">
+            <h2 className="font-['DM_Serif_Display',serif] text-[40px] leading-[1.08] tracking-tight text-zinc-900 mb-8">
+              Your digital presence,<br />
+              <span className="text-[#FF5A36]">perfected in minutes.</span>
+            </h2>
+            <p className="text-[16px] text-zinc-500 leading-[1.7] max-w-[500px]">
+              We’ve stripped away the complexity. Five intentional steps to transition your restaurant into the digital age.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-16 lg:gap-12 mb-24">
+            {steps.map((s, i) => (
+              <div className="relative group" key={i}>
+                <div className="text-[48px] font-['DM_Serif_Display',serif] text-zinc-100 group-hover:text-[#FF5A36]/10 transition-colors duration-500 leading-none mb-4">
+                  {s.n}
                 </div>
+                <div className="text-[16px] font-bold mb-2 text-zinc-900 flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-[#FF5A36]" />
+                  {s.title}
+                </div>
+                <p className="text-[15px] text-zinc-500 leading-[1.7]">{s.desc}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* LIVE PREVIEW CTA */}
+          <div className="bg-zinc-950 rounded-[2.5rem] p-12 md:p-20 overflow-hidden relative group">
+            <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-[#FF5A36]/10 rounded-full blur-[100px] translate-x-1/4 -translate-y-1/4" />
+
+            <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-12">
+              <div className="max-w-[500px]">
+                <h3 className="font-['DM_Serif_Display',serif] text-[28px] text-white leading-tight mb-6">
+                  Curious how your <span className="text-[#FF5A36]">menu</span> will look?
+                </h3>
+                <p className="text-zinc-400 text-[16px] mb-8">
+                  Experience the lightning-fast interface your customers will love. Mobile-optimized, visual-first, and high-conversion.
+                </p>
+                <a
+                  href="/preview"
+                  className="inline-flex items-center gap-3 bg-[#FF5A36] text-white px-8 py-4 rounded-full font-bold hover:bg-white hover:text-zinc-950 transition-all duration-300 group"
+                >
+                  View Demo Menu
+                  <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
+                </a>
+              </div>
+
+              {/* Abstract Phone/Menu Mockup Element */}
+              <div className="w-full md:w-1/3 aspect-[9/16] bg-zinc-900 rounded-[2rem] border-[6px] border-zinc-800 shadow-2xl relative overflow-hidden transform rotate-6 group-hover:rotate-3 transition-transform duration-700">
+                <div className="absolute inset-0 bg-gradient-to-b from-transparent to-zinc-950/80 z-10" />
+                <img
+                  src="https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+                  className="w-full h-full object-cover opacity-60"
+                  alt="Digital menu preview"
+                />
+                <div className="absolute bottom-6 left-6 right-6 z-20">
+                  <div className="h-4 w-2/3 bg-white/20 rounded-full mb-3" />
+                  <div className="h-4 w-1/2 bg-white/10 rounded-full" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* TESTIMONIALS */}
+      <section className="py-24 px-8 bg-white border-t border-zinc-100">
+        <div className="max-w-[1280px] mx-auto">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-12">
+            <div>
+              <h2 className="font-['DM_Serif_Display',serif] text-[40px] text-zinc-900 leading-tight">
+                What our users say.
+              </h2>
+              <p className="text-[15px] text-zinc-500 mt-2">Smart restaurant management · India</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex gap-0.5">
+                {[...Array(5)].map((_, i) => (
+                  <Star key={i} size={15} className="text-[#FF5A36]" fill="#FF5A36" />
+                ))}
+              </div>
+              <span className="text-[14px] font-semibold text-zinc-700">4.9 / 5 <span className="text-zinc-400 font-normal">· 130 reviews</span></span>
+            </div>
+          </div>
+
+          {/* Review Card */}
+          <div className="rounded-[24px] bg-zinc-50 border border-zinc-100 px-8 md:px-16 py-12">
+            <div className="flex gap-1 mb-6">
+              {[...Array(5)].map((_, i) => (
+                <Star key={i} size={16} className="text-[#FF5A36]" fill="#FF5A36" />
               ))}
             </div>
-            <div className="hide-mobile" style={{ background: '#1A0A00', borderRadius: 24, padding: 32, position: 'relative' }}>
-              {/* Mini KOT ticket */}
-              <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginBottom: 16, fontFamily: 'monospace' }}>
-                <div style={{ textAlign: 'center', borderBottom: '1px dashed #e5e7eb', paddingBottom: 12, marginBottom: 12 }}>
-                  <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>🍽️ KOT — Table 7</div>
-                  <div style={{ fontSize: '0.72rem', color: '#9ca3af' }}>12:34 PM · Token #042</div>
-                </div>
-                {[['Paneer Butter Masala', '×2'], ['Garlic Naan', '×4'], ['Mango Lassi', '×2'], ['Papad', '×1 (extra crispy)']].map(([item, qty]) => (
-                  <div key={item} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: 6 }}>
-                    <span>{item}</span><span style={{ fontWeight: 700 }}>{qty}</span>
-                  </div>
-                ))}
-                <div style={{ borderTop: '1px dashed #e5e7eb', marginTop: 12, paddingTop: 10, textAlign: 'center', fontSize: '0.7rem', color: '#9ca3af' }}>** KITCHEN COPY **</div>
+            <p className="text-[20px] leading-[1.5] text-zinc-800 font-['DM_Serif_Display',serif] mb-8 max-w-[800px]">
+              "{testimonials[0].text}"
+            </p>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-zinc-200 flex items-center justify-center">
+                <User size={18} className="text-zinc-400" />
               </div>
-              {/* Bill card */}
-              <div style={{ background: '#2d1800', borderRadius: 12, padding: 20 }}>
-                <div style={{ color: '#F5D78E', fontWeight: 700, fontSize: '0.88rem', marginBottom: 12 }}>Bill Preview</div>
-                {[['Subtotal', '₹640'], ['CGST 2.5%', '₹16'], ['SGST 2.5%', '₹16'], ['Total', '₹672']].map(([l, v], i) => (
-                  <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: i === 3 ? '0.95rem' : '0.82rem', fontWeight: i === 3 ? 700 : 400, color: i === 3 ? '#C8860A' : '#d1d5db', marginBottom: 6 }}>
-                    <span>{l}</span><span>{v}</span>
-                  </div>
-                ))}
+              <div>
+                <div className="text-[14px] font-bold text-zinc-900">{testimonials[0].name}</div>
+                <div className="text-[13px] text-zinc-500">{testimonials[0].role}</div>
               </div>
             </div>
           </div>
-        </div>
-      </section>
 
-      {/* ── TESTIMONIALS ── */}
-      <section style={{ background: '#fff' }}>
-        <div className="wrap">
-          <div style={{ textAlign: 'center', marginBottom: 56 }}>
-            <div className="section-label">Testimonials</div>
-            <h2 className="section-title">Loved by restaurant owners</h2>
-          </div>
-          <div className="grid-3">
-            {testimonials.map(t => (
-              <div key={t.name} style={{ background: '#FDFAF3', borderRadius: 20, padding: 28, border: '1px solid #f0ede0' }}>
-                <div style={{ display: 'flex', gap: 2, marginBottom: 16 }}>
-                  {Array.from({ length: t.stars }).map((_, i) => (
-                    <Star key={i} size={14} fill="#C8860A" color="#C8860A" />
-                  ))}
-                </div>
-                <p style={{ fontSize: '0.93rem', color: '#374151', lineHeight: 1.7, marginBottom: 20 }}>"{t.text}"</p>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ width: 38, height: 38, background: '#FEF3C7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#C8860A', fontWeight: 700, fontSize: '0.9rem' }}>
-                    {t.name[0]}
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#1a1a1a' }}>{t.name}</div>
-                    <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{t.role}</div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── PRICING ── */}
-      <section id="pricing" style={{ background: '#FDFAF3' }}>
-        <div className="wrap">
-          <div style={{ textAlign: 'center', marginBottom: 56 }}>
-            <div className="section-label">Pricing</div>
-            <h2 className="section-title">Simple, honest pricing</h2>
-            <p className="section-sub" style={{ margin: '0 auto' }}>No hidden fees. No per-transaction cuts. Pay once a month and keep everything you earn.</p>
-          </div>
-          <div className="grid-3">
-            {plans.map(p => (
-              <div key={p.name} className="plan-card" style={{
-                background: p.highlight ? '#1A0A00' : '#fff',
-                position: 'relative',
-              }}>
-                {p.badge && (
-                  <div style={{
-                    position: 'absolute', top: -14, left: '50%', transform: 'translateX(-50%)',
-                    background: '#C8860A', color: '#fff', borderRadius: 100,
-                    padding: '4px 16px', fontSize: '0.72rem', fontWeight: 700, whiteSpace: 'nowrap',
-                  }}>{p.badge}</div>
-                )}
-                <div style={{ marginBottom: 8 }}>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: p.highlight ? '#C8860A' : '#6b7280', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{p.name}</span>
-                </div>
-                <div style={{ marginBottom: 28 }}>
-                  <span style={{ fontFamily: "'Playfair Display', serif", fontSize: '2.4rem', fontWeight: 800, color: p.highlight ? '#F5D78E' : '#1a1a1a' }}>{p.price}</span>
-                  <span style={{ fontSize: '0.85rem', color: p.highlight ? '#9ca3af' : '#9ca3af' }}>{p.period}</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 32 }}>
-                  {p.features.map(f => (
-                    <div key={f} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                      <Check size={15} style={{ color: '#C8860A', flexShrink: 0, marginTop: 1 }} />
-                      <span style={{ fontSize: '0.87rem', color: p.highlight ? '#d1d5db' : '#4b5563' }}>{f}</span>
-                    </div>
-                  ))}
-                </div>
-                <button className="btn-primary" onClick={() => setModal('register')} style={{
-                  width: '100%', background: p.highlight ? '#C8860A' : '#1A0A00',
-                  boxShadow: p.highlight ? '0 6px 20px rgba(200,134,10,0.4)' : '0 6px 20px rgba(26,10,0,0.3)',
-                }}>
-                  {p.price === 'Custom' ? 'Contact us' : 'Start free trial'}
-                </button>
-              </div>
-            ))}
-          </div>
-          <p style={{ textAlign: 'center', color: '#9ca3af', fontSize: '0.85rem', marginTop: 24 }}>All plans include 14-day free trial. No credit card required.</p>
-        </div>
-      </section>
-
-      {/* ── FAQs ── */}
-      <section id="faqs" style={{ background: '#fff' }}>
-        <div className="wrap" style={{ maxWidth: 720 }}>
-          <div style={{ textAlign: 'center', marginBottom: 56 }}>
-            <div className="section-label">FAQs</div>
-            <h2 className="section-title">Common questions</h2>
-          </div>
-          {faqs.map(f => <FAQ key={f.q} q={f.q} a={f.a} />)}
-        </div>
-      </section>
-
-      {/* ── CTA BANNER ── */}
-      <section style={{ background: '#1A0A00', padding: '72px 24px' }}>
-        <div className="wrap" style={{ textAlign: 'center' }}>
-          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 'clamp(1.8rem, 3vw, 2.8rem)', fontWeight: 800, color: '#F5D78E', marginBottom: 16 }}>
-            Ready to transform your restaurant?
-          </h2>
-          <p style={{ color: '#9ca3af', fontSize: '1rem', marginBottom: 36, lineHeight: 1.7 }}>
-            Join 500+ restaurants already running smarter with Annapurna.
+          <p className="mt-8 text-[14px] text-zinc-400 leading-[1.7] max-w-[600px]">
+            Hundreds of restaurants across India trust Restro for their daily operations.
           </p>
-          <button className="btn-primary" style={{ fontSize: '1.05rem', padding: '15px 40px' }} onClick={() => setModal('register')}>
-            Start your free trial →
-          </button>
         </div>
       </section>
 
-      {/* ── FOOTER ── */}
-      <footer style={{ background: '#0f0600', padding: '52px 24px 32px', color: '#9ca3af' }}>
-        <div className="wrap">
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 48, marginBottom: 48, flexWrap: 'wrap' }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-                <span style={{ fontSize: 22 }}>🍽️</span>
-                <span style={{ fontFamily: "'Playfair Display', serif", fontWeight: 800, fontSize: '1.1rem', color: '#F5D78E' }}>अन्नपूर्णा</span>
-              </div>
-              <p style={{ fontSize: '0.87rem', lineHeight: 1.7, maxWidth: 280 }}>Restaurant management software built for Indian kitchens. Orders, billing, KOT — all in one place.</p>
-              <div style={{ marginTop: 16, fontSize: '0.8rem', color: '#5a4a2f' }}>Powered by ArcheArc</div>
-            </div>
-            {[
-              ['Product', ['Features', 'Pricing', 'Changelog', 'Roadmap']],
-              ['Support', ['Documentation', 'WhatsApp Support', 'Contact Us', 'Status']],
-              ['Legal', ['Privacy Policy', 'Terms of Service', 'Refund Policy']],
-            ].map(([head, links]) => (
-              <div key={head}>
-                <div style={{ color: '#F5D78E', fontWeight: 700, fontSize: '0.85rem', marginBottom: 16, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{head}</div>
-                {links.map(l => (
-                  <div key={l} style={{ marginBottom: 10 }}>
-                    <a href="#" style={{ color: '#9ca3af', textDecoration: 'none', fontSize: '0.87rem', transition: 'color 0.15s' }}
-                      onMouseOver={e => e.currentTarget.style.color = '#C8860A'}
-                      onMouseOut={e => e.currentTarget.style.color = '#9ca3af'}>{l}</a>
+      {/* FAQs */}
+      <section id="faqs" className="py-24 px-8 bg-zinc-50 border-t border-zinc-100">
+        <div className="max-w-[900px] mx-auto">
+          <h2 className="font-['DM_Serif_Display',serif] text-[40px] text-zinc-900 mb-2">
+            Common questions.
+          </h2>
+          <p className="text-[15px] text-zinc-500 mb-12">Everything you need to know before getting started.</p>
+
+          <div className="space-y-3">
+            {faqs.map((f, i) => (
+              <details key={i} className="group bg-white rounded-2xl border border-zinc-100 overflow-hidden">
+                <summary className="flex justify-between items-center px-7 py-5 cursor-pointer list-none select-none">
+                  <span className="text-[15px] font-semibold text-zinc-900 pr-4">{f.q}</span>
+                  <div className="shrink-0 w-7 h-7 rounded-full bg-zinc-50 border border-zinc-100 flex items-center justify-center text-[#FF5A36] group-open:bg-[#FF5A36] group-open:text-white group-open:border-[#FF5A36] transition-all duration-200">
+                    <Plus size={16} className="group-open:rotate-45 transition-transform duration-200" />
                   </div>
-                ))}
-              </div>
+                </summary>
+                <div className="px-7 pb-6 text-[15px] text-zinc-500 leading-[1.7] border-t border-zinc-50 pt-4">
+                  {f.a}
+                </div>
+              </details>
             ))}
           </div>
-          <div style={{ borderTop: '1px solid #1a0e00', paddingTop: 24, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-            <span style={{ fontSize: '0.82rem' }}>© 2025 ArcheArc Technologies. All rights reserved.</span>
-            <span style={{ fontSize: '0.82rem' }}>Made with ❤️ in Pune, India</span>
+        </div>
+      </section>
+
+      {/* CTA */}
+      <div className="py-32 px-8 bg-white">
+        <div className="max-w-[1000px] mx-auto bg-[#FF5A36] rounded-[40px] p-12 md:p-20 text-center relative overflow-hidden">
+          <div className="relative z-10">
+            <h2 className="font-['DM_Serif_Display',serif] text-[40px] text-white leading-[1.08] tracking-tight mb-6">Ready to upgrade?</h2>
+            <p className="text-[16px] text-white/90 mb-10 max-w-[500px] mx-auto">Join the new standard of restaurant operations today.</p>
+            <button className="bg-white text-[#111111] border-none cursor-pointer font-inherit text-[15px] font-medium px-10 py-5 rounded-full transition-transform hover:scale-105" onClick={() => setAuthMode('register')}>
+              Create free account
+            </button>
           </div>
+        </div>
+      </div>
+
+      {/* FOOTER */}
+      <footer className="bg-white pt-20 pb-10 px-8 border-t border-[#E5E5E5]/60">
+        <div className="max-w-[1280px] mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr] gap-12 pb-16 border-b border-[#E5E5E5]/60 mb-8">
+          <div>
+            <img src="/brand-logo.png" alt="Restro Logo" className="h-10 object-contain mb-6" />
+            <p className="text-[15px] text-[#555555] leading-[1.6] max-w-[300px]">
+              The modern restaurant management platform built for speed, reliability, and growth.
+            </p>
+          </div>
+          <div>
+            <p className="text-[12px] font-bold tracking-widest uppercase text-[#111111] mb-6">Product</p>
+            <div className="flex flex-col gap-4">
+              <a href="#features" className="text-[15px] text-[#555555] no-underline transition-colors hover:text-[#FF5A36]">Features</a>
+              <a href="#" className="text-[15px] text-[#555555] no-underline transition-colors hover:text-[#FF5A36]">Pricing</a>
+              <a href="#" className="text-[15px] text-[#555555] no-underline transition-colors hover:text-[#FF5A36]">Changelog</a>
+            </div>
+          </div>
+          <div>
+            <p className="text-[12px] font-bold tracking-widest uppercase text-[#111111] mb-6">Support</p>
+            <div className="flex flex-col gap-4">
+              <a href="#faqs" className="text-[15px] text-[#555555] no-underline transition-colors hover:text-[#FF5A36]">FAQ</a>
+              <a href="#" className="text-[15px] text-[#555555] no-underline transition-colors hover:text-[#FF5A36]">Help Center</a>
+              <a href="#" className="text-[15px] text-[#555555] no-underline transition-colors hover:text-[#FF5A36]">Contact</a>
+            </div>
+          </div>
+          <div>
+            <p className="text-[12px] font-bold tracking-widest uppercase text-[#111111] mb-6">Legal</p>
+            <div className="flex flex-col gap-4">
+              <a href="#" className="text-[15px] text-[#555555] no-underline transition-colors hover:text-[#FF5A36]">Privacy Policy</a>
+              <a href="#" className="text-[15px] text-[#555555] no-underline transition-colors hover:text-[#FF5A36]">Terms of Service</a>
+            </div>
+          </div>
+        </div>
+        <div className="max-w-[1280px] mx-auto flex flex-col md:flex-row justify-between text-[14px] text-[#888888] gap-4">
+          <span>© {new Date().getFullYear()} Annapurna POS. All rights reserved.</span>
+          <span>Designed with care</span>
         </div>
       </footer>
-
-      {/* ── AUTH MODAL ── */}
-      {modal && (
-        <AuthModal mode={modal} onClose={() => setModal(null)} onLoginSuccess={onLoginSuccess} />
-      )}
     </div>
   );
 };
