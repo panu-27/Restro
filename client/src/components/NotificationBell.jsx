@@ -1,10 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { Bell, X, Check, CheckCheck, Clock, ShoppingBag, ArrowLeft, ChefHat } from 'lucide-react';
 
-const NotificationBell = () => {
+const NotificationBell = ({ desktopOffset }) => {
   const [notifications, setNotifications] = useState([]);
   const [showDropdown, setShowDropdown] = useState(false);
+
+  useEffect(() => {
+    const handleClose = () => setShowDropdown(false);
+    window.addEventListener('close-notifications', handleClose);
+    return () => window.removeEventListener('close-notifications', handleClose);
+  }, []);
 
   // Track IDs we've already seen so we only beep for truly NEW ones
   const seenIdsRef = useRef(null); // null = "not yet initialized"
@@ -128,8 +135,10 @@ const NotificationBell = () => {
         )}
       </button>
 
-      {showDropdown && (
-        <div className="fixed inset-0 z-[100] bg-white flex flex-col animate-in fade-in zoom-in-95 duration-300">
+      {showDropdown && createPortal(
+        <div className={`fixed z-[100] flex flex-col animate-in fade-in duration-300 inset-0 ${
+          desktopOffset ? 'lg:pl-[248px] bg-[#F3F5F8]' : 'bg-white'
+        }`}>
           {/* Header */}
           <div className="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between border-b border-gray-100 bg-gray-50/80 gap-4 shrink-0">
             <button 
@@ -155,7 +164,7 @@ const NotificationBell = () => {
           </div>
 
           {/* Body */}
-          <div className="flex-1 overflow-y-auto bg-[#F3F5F8] p-4 sm:p-8 flex flex-col md:flex-row gap-6">
+          <div className="flex-1 overflow-y-auto bg-[#F3F5F8] p-4 sm:p-8 flex flex-col md:flex-row gap-6 pb-24 lg:pb-8">
             
             {/* Image / Illustration Section */}
             <div className="hidden md:flex flex-col items-center justify-center w-1/3 bg-white rounded-3xl p-8 border border-gray-100 shadow-sm relative overflow-hidden">
@@ -229,7 +238,8 @@ const NotificationBell = () => {
             </div>
 
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

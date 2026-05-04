@@ -237,7 +237,7 @@ function App() {
       </div>
 
       {/* ── Desktop Sidebar ─────────────────────────────────────────────────────────── */}
-      <aside className="hidden lg:flex w-56 bg-white rounded-3xl flex-col py-5 px-3.5 shrink-0 transition-all duration-500 z-20 border border-slate-100">
+      <aside className="hidden lg:flex w-56 bg-white rounded-3xl flex-col py-5 px-3.5 shrink-0 transition-all duration-500 z-[110] border border-slate-100">
         {/* Logo */}
         <div className="flex items-center justify-center lg:justify-start pl-1 pr-1.5 mb-3 mt-1">
           <div className="shrink-0 h-10 w-full flex items-center justify-center lg:justify-start">
@@ -253,7 +253,10 @@ function App() {
             {navTabs.filter(t => t.id !== 'settings').map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  window.dispatchEvent(new Event('close-notifications'));
+                }}
                 className={`w-full flex items-center justify-start gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-300 text-[11px] font-bold uppercase tracking-[0.02em] ${
                   activeTab === tab.id
                     ? 'bg-[#FF5A36] text-white'
@@ -272,7 +275,10 @@ function App() {
             {navTabs.filter(t => t.id === 'settings').map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  window.dispatchEvent(new Event('close-notifications'));
+                }}
                 className={`w-full flex items-center justify-start gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-300 text-[11px] font-bold uppercase tracking-[0.02em] ${
                   activeTab === tab.id
                     ? 'bg-[#FF5A36] text-white'
@@ -306,7 +312,7 @@ function App() {
                 <p className="text-[10px] text-gray-400 font-medium capitalize">{user?.role || 'Admin'}</p>
               </div>
             </div>
-            <NotificationBell />
+            <NotificationBell desktopOffset={true} />
           </div>
         </div>
       </aside>
@@ -455,13 +461,16 @@ function App() {
       </main>
 
       {/* ── Mobile Bottom Nav ───────────────────────────────────────────────────────── */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 flex justify-around items-center h-[72px] z-30 pb-safe px-2 transition-transform duration-300">
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 flex justify-around items-center h-[72px] z-[110] pb-safe px-2 transition-transform duration-300">
         {navTabs.map((tab) => {
           const isActive = activeTab === tab.id;
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                setActiveTab(tab.id);
+                window.dispatchEvent(new Event('close-notifications'));
+              }}
               className={`flex flex-col items-center justify-center w-full h-full gap-1 transition-all duration-300 ${
                 isActive ? 'text-[#FF5A36]' : 'text-gray-400 hover:text-gray-900'
               }`}

@@ -536,38 +536,60 @@ export const DashboardView = ({ activeOrders, tableCount, onTabChange }) => {
                     <th className="px-3 md:px-6 py-3 md:py-4 text-[9px] md:text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Order ID</th>
                     <th className="px-3 md:px-6 py-3 md:py-4 text-[9px] md:text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Date & Time</th>
                     <th className="px-3 md:px-6 py-3 md:py-4 text-[9px] md:text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Status</th>
+                    <th className="px-3 md:px-6 py-3 md:py-4 text-[9px] md:text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Mode</th>
                     <th className="hidden sm:table-cell px-3 md:px-6 py-3 md:py-4 text-[9px] md:text-xs font-black text-slate-400 uppercase tracking-widest text-center whitespace-nowrap">Items</th>
                     <th className="px-3 md:px-6 py-3 md:py-4 text-[9px] md:text-xs font-black text-slate-400 uppercase tracking-widest text-right whitespace-nowrap">Amount</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {recentOrders.map((order) => {
-                    const isPaid = order.status === 'Paid' || order.status === 'Completed';
-                    const isCancelled = order.status === 'Cancelled';
-                    return (
-                      <tr key={order._id} className="group hover:bg-slate-50/30 transition-colors">
-                        <td className="px-3 md:px-6 py-4 md:py-5">
-                          <span className="text-sm font-black text-slate-900 tracking-tight">#{order.orderNumber ? formatOrderNumber(order.orderNumber) : '----'}</span>
-                        </td>
-                        <td className="px-3 md:px-6 py-4 md:py-5">
-                          <div className="flex flex-col">
-                            <span className="text-[10px] md:text-xs font-bold text-slate-500 uppercase whitespace-nowrap">
-                              {new Date(order.createdAt).toLocaleDateString([], { month: 'short', day: '2-digit' })}
+                    {recentOrders.map((order) => {
+                      const isPaid = order.status === 'Paid' || order.status === 'Completed';
+                      const isCancelled = order.status === 'Cancelled';
+                      const isGuest = order.paymentType === 'Guest';
+                      return (
+                        <tr key={order._id} className={cn(
+                          "group transition-all duration-300",
+                          isGuest ? "bg-orange-50/30 hover:bg-orange-50/50" : "hover:bg-slate-50/30"
+                        )}>
+                          <td className="px-3 md:px-6 py-4 md:py-5">
+                            <div className="flex items-center gap-2">
+                              {isGuest && <Users size={14} className="text-orange-500" />}
+                              <span className="text-sm font-black text-slate-900 tracking-tight">#{order.orderNumber ? formatOrderNumber(order.orderNumber) : '----'}</span>
+                            </div>
+                          </td>
+                          <td className="px-3 md:px-6 py-4 md:py-5">
+                            <div className="flex flex-col">
+                              <span className="text-[10px] md:text-xs font-bold text-slate-500 uppercase whitespace-nowrap">
+                                {new Date(order.createdAt).toLocaleDateString([], { month: 'short', day: '2-digit' })}
+                              </span>
+                              <span className="text-[9px] md:text-[11px] text-slate-300 font-bold uppercase whitespace-nowrap">
+                                {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-3 md:px-6 py-4 md:py-5">
+                            <span className={cn(
+                              "px-2 md:px-3 py-1.5 rounded-lg text-[9px] md:text-[11px] font-black uppercase tracking-widest whitespace-nowrap",
+                              isCancelled ? "bg-rose-50 text-rose-500" :
+                                (isPaid || isGuest) ? "bg-emerald-50 text-emerald-500" : "bg-amber-50 text-amber-500"
+                            )}>
+                              {isCancelled ? 'Cancelled' : (isPaid || isGuest) ? 'Completed' : 'Active'}
                             </span>
-                            <span className="text-[9px] md:text-[11px] text-slate-300 font-bold uppercase whitespace-nowrap">
-                              {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-3 md:px-6 py-4 md:py-5">
-                          <span className={cn(
-                            "px-2 md:px-3 py-1.5 rounded-lg text-[9px] md:text-[11px] font-black uppercase tracking-widest whitespace-nowrap",
-                            isCancelled ? "bg-rose-50 text-rose-500" :
-                              isPaid ? "bg-emerald-50 text-emerald-500" : "bg-amber-50 text-amber-500"
-                          )}>
-                            {isCancelled ? 'Cancelled' : isPaid ? 'Completed' : 'Active'}
-                          </span>
-                        </td>
+                          </td>
+                          <td className="px-3 md:px-6 py-4 md:py-5">
+                            {isGuest ? (
+                              <span className="text-[9px] md:text-[11px] font-black uppercase tracking-widest text-orange-500">Guest</span>
+                            ) : isPaid && order.paymentMode ? (
+                              <span className={cn(
+                                "text-[9px] md:text-[11px] font-black uppercase tracking-widest whitespace-nowrap",
+                                order.paymentMode === 'Online' ? "text-emerald-500" : "text-slate-500"
+                              )}>
+                                {order.paymentMode}
+                              </span>
+                            ) : (
+                              <span className="text-[9px] md:text-[11px] text-slate-300">-</span>
+                            )}
+                          </td>
                         <td className="hidden sm:table-cell px-3 md:px-6 py-4 md:py-5 text-center">
                           <span className="text-[10px] md:text-xs font-black text-slate-600 uppercase whitespace-nowrap">
                             {order.items?.length || 0} items
@@ -583,7 +605,7 @@ export const DashboardView = ({ activeOrders, tableCount, onTabChange }) => {
                   })}
                   {recentOrders.length === 0 && (
                     <tr>
-                      <td colSpan="5" className="py-20 text-center text-slate-300 font-black uppercase tracking-widest text-xs">
+                      <td colSpan="6" className="py-20 text-center text-slate-300 font-black uppercase tracking-widest text-xs">
                         No recent orders found
                       </td>
                     </tr>

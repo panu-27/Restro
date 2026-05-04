@@ -6,6 +6,7 @@ const { auth } = require('../middleware/auth');
 router.get('/active', auth, orderController.getActiveOrders);
 router.post('/', auth, orderController.createOrder);
 router.patch('/:id/status', auth, orderController.updateOrderStatus);
+router.patch('/:id/transfer', auth, orderController.transferOrder);
 router.get('/', auth, orderController.getAllOrders);
 
 module.exports = router;

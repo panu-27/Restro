@@ -521,9 +521,17 @@ app.get('/api/orders', auth, async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const search = req.query.search || '';
     const type = req.query.type || 'All';
+    const paymentType = req.query.paymentType || 'All';
     
     const query = { userId: req.user.ownerId };
-    if (type !== 'All') query.orderType = type;
+    if (type !== 'All' && type !== '') query.orderType = type;
+    
+    if (paymentType === 'Guest') {
+      query.paymentType = 'Guest';
+    } else if (paymentType === 'Paid') {
+      query.paymentType = { $ne: 'Guest' };
+    }
+    // If 'All', we don't add paymentType filter (shows everything)
     if (search) {
       query.$or = [
         { customerName: { $regex: search, $options: 'i' } },
@@ -692,9 +700,12 @@ app.patch('/api/orders/:id/add-items', auth, canPlaceOrders, async (req, res) =>
 
 app.patch('/api/orders/:id/status', auth, async (req, res) => {
   try {
-    const { status, customerPhone } = req.body;
+    const { status, customerPhone, paymentMode, paymentType, guestNote } = req.body;
     const updateData = { status };
     if (customerPhone) updateData.customerPhone = customerPhone;
+    if (paymentMode) updateData.paymentMode = paymentMode;
+    if (paymentType) updateData.paymentType = paymentType;
+    if (guestNote !== undefined) updateData.guestNote = guestNote;
     
     const order = await Order.findByIdAndUpdate(req.params.id, updateData, { new: true });
     if (!order) return res.status(404).json({ error: 'Order not found' });
@@ -732,6 +743,50 @@ app.patch('/api/orders/:id/status', auth, async (req, res) => {
         });
       }
     }
+    res.json(order);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/orders/:id/transfer', auth, async (req, res) => {
+  try {
+    const { newTableId } = req.body;
+    if (!newTableId) {
+      return res.status(400).json({ error: 'newTableId is required' });
+    }
+
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const oldTableId = order.tableId;
+    
+    // Update order with new table
+    order.tableId = newTableId;
+    await order.save();
+
+    // Check if old table still has active orders
+    if (oldTableId && oldTableId !== newTableId) {
+      const activeOrdersOnOldTable = await Order.countDocuments({
+        tableId: oldTableId,
+        status: { $nin: ['Paid', 'Cancelled'] }
+      });
+
+      if (activeOrdersOnOldTable === 0) {
+        await Table.findOneAndUpdate(
+          { tableId: oldTableId },
+          { status: 'Available', currentOrderId: null, lastUpdated: new Date() }
+        );
+      }
+    }
+
+    // Update new table status
+    await Table.findOneAndUpdate(
+      { tableId: newTableId },
+      { status: 'Occupied', currentOrderId: order._id, lastUpdated: new Date() },
+      { upsert: true }
+    );
+
     res.json(order);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -933,23 +988,43 @@ app.get('/api/analytics/sales', auth, async (req, res) => {
       createdAt: { $gte: start, $lte: end }
     }).sort('-createdAt');
 
-    const totalRevenue = orders.reduce((sum, o) => sum + o.totalAmount, 0);
-    const dineInOrders = orders.filter(o => o.orderType === 'Dine-in');
-    const parcelOrders = orders.filter(o => o.orderType === 'Parcel');
+    const paidOrders = orders.filter(o => o.paymentType !== 'Guest');
+    const guestOrders = orders.filter(o => o.paymentType === 'Guest');
+
+    const totalRevenue = paidOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+    const guestOrdersValue = guestOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+    const guestOrdersCount = guestOrders.length;
+    
+    const dineInOrders = paidOrders.filter(o => o.orderType === 'Dine-in');
+    const parcelOrders = paidOrders.filter(o => o.orderType === 'Parcel');
     const dineInRevenue = dineInOrders.reduce((sum, o) => sum + o.totalAmount, 0);
     const parcelRevenue = parcelOrders.reduce((sum, o) => sum + o.totalAmount, 0);
-    const avgOrderValue = orders.length > 0 ? totalRevenue / orders.length : 0;
+    const avgOrderValue = paidOrders.length > 0 ? totalRevenue / paidOrders.length : 0;
 
-    // Top items
+    // Top items & All Inventory (including items with 0 sales)
+    const menuItems = await Menu.find({ userId: req.user.ownerId });
     const itemMap = {};
+    
+    // Initialize with all menu items
+    menuItems.forEach(mi => {
+      itemMap[mi.name] = { name: mi.name, quantity: 0, revenue: 0 };
+    });
+
+    // Add sales data
     orders.forEach(o => {
       o.items.forEach(item => {
-        if (!itemMap[item.name]) itemMap[item.name] = { name: item.name, quantity: 0, revenue: 0 };
+        if (!itemMap[item.name]) {
+          // In case item name was changed in menu but exists in old orders
+          itemMap[item.name] = { name: item.name, quantity: 0, revenue: 0 };
+        }
         itemMap[item.name].quantity += item.quantity;
         itemMap[item.name].revenue += item.price * item.quantity;
       });
     });
-    const topItems = Object.values(itemMap).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+
+    const sortedItems = Object.values(itemMap).sort((a, b) => b.revenue - a.revenue);
+    const topItems = sortedItems.filter(i => i.revenue > 0).slice(0, 5);
+    const allItemsSold = sortedItems;
 
     // Daily breakdown
     const dailyMap = {};
@@ -964,13 +1039,17 @@ app.get('/api/analytics/sales', auth, async (req, res) => {
       }
     }
     
+    // We count total orders for dailyMap, but revenue only from paidOrders
     orders.forEach(o => {
       const day = new Date(o.createdAt).toISOString().split('T')[0];
       if (!dailyMap[day]) dailyMap[day] = { date: day, orders: 0, dineIn: 0, parcel: 0, total: 0, avgOrder: 0 };
       dailyMap[day].orders++;
-      dailyMap[day].total += o.totalAmount;
-      if (o.orderType === 'Dine-in') dailyMap[day].dineIn += o.totalAmount;
-      else dailyMap[day].parcel += o.totalAmount;
+      
+      if (o.paymentType !== 'Guest') {
+        dailyMap[day].total += o.totalAmount;
+        if (o.orderType === 'Dine-in') dailyMap[day].dineIn += o.totalAmount;
+        else dailyMap[day].parcel += o.totalAmount;
+      }
     });
     // compute avgOrder per day
     Object.values(dailyMap).forEach(d => { d.avgOrder = d.orders > 0 ? Math.round(d.total / d.orders) : 0; });
@@ -984,9 +1063,12 @@ app.get('/api/analytics/sales', auth, async (req, res) => {
       orders.forEach(o => {
         const h = new Date(o.createdAt).getHours();
         hourlyMap[h].orders++;
-        hourlyMap[h].total += o.totalAmount;
-        if (o.orderType === 'Dine-in') hourlyMap[h].dineIn += o.totalAmount;
-        else hourlyMap[h].parcel += o.totalAmount;
+        
+        if (o.paymentType !== 'Guest') {
+          hourlyMap[h].total += o.totalAmount;
+          if (o.orderType === 'Dine-in') hourlyMap[h].dineIn += o.totalAmount;
+          else hourlyMap[h].parcel += o.totalAmount;
+        }
       });
       // Only include hours from first order to current hour + 1
       const currentHour = new Date().getHours();
@@ -1001,13 +1083,16 @@ app.get('/api/analytics/sales', auth, async (req, res) => {
       period,
       dateRange: { start, end },
       totalRevenue,
-      totalOrders: orders.length,
-      dineInOrders: dineInOrders.length,
-      parcelOrders: parcelOrders.length,
+      totalOrders: orders.length, // Include guest in total order count
+      guestOrdersValue,
+      guestOrdersCount,
+      dineInOrders: dineInOrders.length, // only paid
+      parcelOrders: parcelOrders.length, // only paid
       dineInRevenue,
       parcelRevenue,
       avgOrderValue: Math.round(avgOrderValue * 100) / 100,
       topItems,
+      allItemsSold,
       dailyBreakdown,
       hourlyBreakdown
     });

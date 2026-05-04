@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Search, History, Calendar, ArrowUpRight, Package, Utensils, Clock } from 'lucide-react';
+import { Search, History, Calendar, ArrowUpRight, Package, Utensils, Clock, Users } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -13,6 +13,7 @@ const OrderHistory = ({ onOrderClick }) => {
   const [historyOrders, setHistoryOrders] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [filterType, setFilterType] = useState('All');
+  const [paymentFilter, setPaymentFilter] = useState('Paid');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalOrders, setTotalOrders] = useState(0);
@@ -20,16 +21,18 @@ const OrderHistory = ({ onOrderClick }) => {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchHistory(page, searchTerm, filterType);
+      fetchHistory(page, searchTerm, filterType, paymentFilter);
     }, searchTerm ? 500 : 0);
     return () => clearTimeout(timer);
-  }, [page, searchTerm, filterType]);
+  }, [page, searchTerm, filterType, paymentFilter]);
 
-  const fetchHistory = async (pageNumber = 1, search = '', type = 'All') => {
+  const fetchHistory = async (pageNumber = 1, search = '', type = 'All', pType = 'Paid') => {
     setLoadingHistory(true);
     setErrorMsg('');
     try {
-      const res = await axios.get(`/api/orders?page=${pageNumber}&search=${search}&type=${type === 'All' ? '' : type}`);
+      // paymentQuery will be 'Guest' or 'Paid' (server handles 'Paid' as non-guest)
+      const paymentQuery = pType === 'Guest' ? 'Guest' : 'Paid';
+      const res = await axios.get(`/api/orders?page=${pageNumber}&search=${search}&type=${type === 'All' ? '' : type}&paymentType=${paymentQuery}`);
       if (res.data && Array.isArray(res.data.orders)) {
         setHistoryOrders(res.data.orders);
         setTotalPages(res.data.pages || 1);
@@ -67,21 +70,37 @@ const OrderHistory = ({ onOrderClick }) => {
         {/* ── Search + Filter Combined Row ─────────────────────────── */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
           {/* Filter pills */}
-          <div className="flex gap-2 shrink-0">
-            {['All', 'Dine-in', 'Parcel'].map(type => (
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex gap-2 shrink-0 border-r border-slate-200 pr-2">
+              {['All', 'Dine-in', 'Parcel'].map(type => (
+                <button
+                  key={type}
+                  onClick={() => { setFilterType(type); setPage(1); }}
+                  className={cn(
+                    "px-4 py-2 rounded-md text-xs font-semibold transition-all whitespace-nowrap",
+                    filterType === type
+                      ? "bg-slate-900 text-white"
+                      : "bg-slate-50 border border-slate-100 text-slate-600 hover:bg-slate-100"
+                  )}
+                >
+                  {type}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2 shrink-0">
               <button
-                key={type}
-                onClick={() => { setFilterType(type); setPage(1); }}
+                onClick={() => { setPaymentFilter(prev => prev === 'Guest' ? 'Paid' : 'Guest'); setPage(1); }}
                 className={cn(
-                  "px-4 py-2 rounded-md text-xs font-semibold transition-all whitespace-nowrap",
-                  filterType === type
-                    ? "bg-slate-900 text-white"
+                  "px-4 py-2 rounded-md text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-2",
+                  paymentFilter === 'Guest'
+                    ? "bg-orange-500 text-white shadow-lg shadow-orange-100"
                     : "bg-slate-50 border border-slate-100 text-slate-600 hover:bg-slate-100"
                 )}
               >
-                {type}
+                <Users size={14} />
+                Guest Orders
               </button>
-            ))}
+            </div>
           </div>
 
           {/* Search bar - full width on mobile */}
@@ -145,15 +164,32 @@ const OrderHistory = ({ onOrderClick }) => {
                       return (
                         <div
                           key={order._id}
-                          className="bg-white border-b border-slate-100 py-3 active:bg-slate-50 transition-colors cursor-pointer"
+                          className={cn(
+                            "bg-white border-b border-slate-100 py-3 active:bg-slate-50 transition-all cursor-pointer relative",
+                            order.paymentType === 'Guest' && "bg-orange-50/20 border-l-4 border-orange-500/50"
+                          )}
                           onClick={() => onOrderClick && onOrderClick(order._id)}
                         >
                           <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              {order.paymentType === 'Guest' && <Users size={14} className="text-orange-500" />}
                               <span className="text-sm font-semibold text-slate-900">#{order.orderNumber ? formatOrderNumber(order.orderNumber) : '----'}</span>
                               <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-medium', statusColor)}>
                                 {isCancelled ? 'Cancelled' : isPaid ? 'Completed' : 'Running'}
                               </span>
+                              {order.paymentType === 'Guest' && (
+                                <div className="flex flex-col">
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 w-fit">Guest</span>
+                                  {order.guestNote && <span className="text-[9px] text-slate-400 italic">Category: {order.guestNote}</span>}
+                                </div>
+                              )}
+                              {isPaid && order.paymentType !== 'Guest' && order.paymentMode && (
+                                <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap', 
+                                  order.paymentMode === 'Online' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                                )}>
+                                  {order.paymentMode}
+                                </span>
+                              )}
                             </div>
                             <span className="text-sm font-semibold text-slate-900">₹{Math.round(order.totalAmount || 0)}</span>
                           </div>
@@ -185,6 +221,7 @@ const OrderHistory = ({ onOrderClick }) => {
                           <th className="px-4 py-3 text-xs font-semibold text-slate-500">Customer</th>
                           <th className="px-4 py-3 text-xs font-semibold text-slate-500">Mobile No.</th>
                           <th className="px-4 py-3 text-xs font-semibold text-slate-500">Status</th>
+                          <th className="px-4 py-3 text-xs font-semibold text-slate-500">Mode</th>
                           <th className="px-4 py-3 text-xs font-semibold text-slate-500 text-right">Amount</th>
                           <th className="px-4 py-3 text-xs font-semibold text-slate-500 text-center">Action</th>
                         </tr>
@@ -194,9 +231,17 @@ const OrderHistory = ({ onOrderClick }) => {
                           const isPaid = order.status === 'Paid' || order.status === 'Completed';
                           const isCancelled = order.status === 'Cancelled';
                           return (
-                            <tr key={order._id} className="group hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => onOrderClick && onOrderClick(order._id)}>
+                            <tr key={order._id} 
+                              className={cn(
+                                "group transition-colors cursor-pointer",
+                                order.paymentType === 'Guest' ? "bg-orange-50/30 hover:bg-orange-50/50" : "hover:bg-slate-50"
+                              )} 
+                              onClick={() => onOrderClick && onOrderClick(order._id)}>
                               <td className="px-4 py-3">
-                                <span className="text-sm font-semibold text-slate-900">#{order.orderNumber ? formatOrderNumber(order.orderNumber) : '----'}</span>
+                                <div className="flex items-center gap-2">
+                                  {order.paymentType === 'Guest' && <Users size={14} className="text-orange-500" />}
+                                  <span className="text-sm font-semibold text-slate-900">#{order.orderNumber ? formatOrderNumber(order.orderNumber) : '----'}</span>
+                                </div>
                               </td>
                               <td className="px-4 py-3">
                                 <div className="flex flex-col">
@@ -222,6 +267,20 @@ const OrderHistory = ({ onOrderClick }) => {
                                 )}>
                                   {isCancelled ? 'Cancelled' : isPaid ? 'Completed' : 'Running'}
                                 </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                {order.paymentType === 'Guest' ? (
+                                  <div className="flex flex-col">
+                                    <span className="text-[10px] font-black uppercase text-orange-600">Guest</span>
+                                    {order.guestNote && <span className="text-[9px] text-slate-400 italic truncate max-w-[80px]">Category: {order.guestNote}</span>}
+                                  </div>
+                                ) : isPaid && order.paymentMode ? (
+                                  <span className={cn("text-xs font-medium", order.paymentMode === 'Online' ? "text-emerald-600" : "text-slate-500")}>
+                                    {order.paymentMode}
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-slate-300">-</span>
+                                )}
                               </td>
                               <td className="px-4 py-3 text-right">
                                 <span className="text-sm font-semibold text-slate-900">₹{Math.round(order.totalAmount || 0)}</span>

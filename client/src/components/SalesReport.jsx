@@ -3,8 +3,13 @@ import axios from 'axios';
 import {
   TrendingUp, ShoppingBag, IndianRupee, BarChart3,
   Download, Calendar, Trophy, ChevronDown, X,
-  ArrowUpRight, Package, Utensils
+  ArrowUpRight, Package, Utensils, Search, Activity, Users
 } from 'lucide-react';
+
+import { clsx } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+const cn = (...inputs) => twMerge(clsx(inputs));
 
 /* ─── formatters ─────────────────────────────────────────────── */
 const fmt    = (n) => `₹${Math.round(n).toLocaleString('en-IN')}`;
@@ -350,6 +355,8 @@ const SalesReport = () => {
   const [csvOpen, setCsvOpen]       = useState(false);
   const [csvStep, setCsvStep]       = useState(null);
   const [activeCard, setActiveCard] = useState(null);
+  const [showAllItems, setShowAllItems] = useState(false);
+  const [itemSearch, setItemSearch] = useState('');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo]     = useState('');
   const csvRef = useRef(null);
@@ -361,6 +368,7 @@ const SalesReport = () => {
     { id: 'custom',  label: 'Custom Date' },
     { id: 'all',     label: 'All Time' },
   ];
+
 
   const csvPeriods = [
     { id: 'today',  label: 'Today' },
@@ -466,11 +474,18 @@ const SalesReport = () => {
         accent: '#f59e0b', chartTitle: period === 'today' ? 'Avg Order Value by Hour' : 'Avg Order Value by Day',
         chartKey: 'avg', chartColor: '#f59e0b', chartType: 'hbar',
       },
+      {
+        id: 'guest', label: 'Guest Orders',
+        value: fmt(salesData.guestOrdersValue || 0), sub: `${salesData.guestOrdersCount || 0} orders`,
+        icon: Users, color: 'text-orange-500', bg: 'bg-orange-50', border: 'border-orange-100',
+        accent: '#f97316', chartTitle: 'Guest Orders Over Time',
+        chartKey: 'revenue', chartColor: '#f97316', chartType: 'line',
+      },
     ];
   }, [salesData, period]);
 
   const activeCardData = statCards.find(c => c.id === activeCard);
-  const activePeriodLabel = periods.find(p => p.id === period)?.label;
+  const activePeriodLabel = periods.find(p => p.id === period)?.label || 'Sales';
 
   /* ─── Summary stats for chart footer ─────────────────── */
   const chartSummary = useMemo(() => {
@@ -598,7 +613,7 @@ const SalesReport = () => {
       ) : (
         <>
           {/* ── Stat Cards & Expandable Chart ──────────────── */}
-          <div className={`grid gap-5 transition-all duration-500 ease-in-out ${activeCard ? 'grid-cols-1' : 'grid-cols-2 lg:grid-cols-4'}`}>
+          <div className={`grid gap-5 transition-all duration-500 ease-in-out ${activeCard ? 'grid-cols-1' : 'grid-cols-2 lg:grid-cols-5'}`}>
             {statCards.map((card, i) => {
               if (activeCard && activeCard !== card.id) return null;
               const isActive = activeCard === card.id;
@@ -722,12 +737,20 @@ const SalesReport = () => {
                         <Trophy size={18} className="text-amber-400" />
                       </div>
                       <div>
-                        <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight leading-none">Leaderboard</h3>
-                        <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">Highest Grossing Items</p>
+                        <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight leading-none">Top Selling Items</h3>
+                        <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">Performance by Revenue</p>
                       </div>
                     </div>
-                    <div className="px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-100">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{salesData.topItems.length} Ranked</span>
+                    <div className="flex items-center gap-3">
+                      <button 
+                        onClick={() => setShowAllItems(true)}
+                        className="px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[10px] font-black text-slate-600 uppercase tracking-widest hover:bg-slate-100 transition-all"
+                      >
+                        View All
+                      </button>
+                      <div className="px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-100">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{salesData.topItems.length} Ranked</span>
+                      </div>
                     </div>
                   </div>
                   <div className="space-y-3 flex-1 flex flex-col justify-center">
@@ -849,8 +872,94 @@ const SalesReport = () => {
           )}
         </>
       )}
+
+      {/* ── View All Items Modal ─────────────────────────────── */}
+      {showAllItems && salesData && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col border border-white/20">
+            <div className="flex items-center justify-between px-10 py-8 border-b border-slate-50 shrink-0">
+              <div>
+                <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tight leading-none">Sales Inventory</h2>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">{activePeriodLabel} · {salesData.allItemsSold?.length || salesData.topItems?.length || 0} unique items</p>
+              </div>
+              <button onClick={() => { setShowAllItems(false); setItemSearch(''); }} className="w-12 h-12 flex items-center justify-center rounded-full bg-slate-50 hover:bg-slate-100 transition-colors">
+                <X size={20} className="text-slate-500"/>
+              </button>
+            </div>
+            
+            <div className="px-10 py-4 border-b border-slate-50 shrink-0">
+              <div className="relative">
+                <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input 
+                  type="text" 
+                  placeholder="Search items..." 
+                  value={itemSearch}
+                  onChange={(e) => setItemSearch(e.target.value)}
+                  className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-transparent rounded-2xl text-sm font-bold text-slate-700 focus:bg-white focus:border-orange-500/30 focus:ring-4 focus:ring-orange-500/5 outline-none transition-all"
+                />
+              </div>
+            </div>
+            
+            <div className="overflow-y-auto flex-1 px-10 py-6 no-scrollbar">
+              {!salesData.allItemsSold && (
+                <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-4 animate-pulse">
+                  <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center shrink-0">
+                    <Activity size={18} className="text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-black text-amber-800 uppercase tracking-tight">Full Inventory Loading...</p>
+                    <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mt-0.5">Please restart your backend server to see all menu items.</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-12 px-6 py-4 bg-slate-900 rounded-2xl mb-4 text-[10px] font-black text-white uppercase tracking-[0.2em] shadow-lg shadow-slate-200">
+                <span className="col-span-6">Item Name</span>
+                <span className="col-span-3 text-center">Qty Sold</span>
+                <span className="col-span-3 text-right">Revenue</span>
+              </div>
+              <div className="space-y-1.5 pb-8">
+                {(salesData.allItemsSold || salesData.topItems || [])
+                  .filter(item => item.name.toLowerCase().includes(itemSearch.toLowerCase()))
+                  .map((item, idx) => {
+                    const hasSales = item.quantity > 0;
+                    return (
+                      <div key={idx} className={cn(
+                        "grid grid-cols-12 px-6 py-5 items-center rounded-[1.5rem] transition-all group",
+                        hasSales ? "hover:bg-slate-50" : "opacity-40 grayscale"
+                      )}>
+                        <div className="col-span-6 flex flex-col">
+                          <span className={cn("text-[15px] font-bold transition-colors", hasSales ? "text-slate-800 group-hover:text-orange-500" : "text-slate-500")}>
+                            {item.name}
+                          </span>
+                          <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest mt-0.5">
+                            {hasSales ? 'Verified Sale' : 'No Sales Yet'}
+                          </span>
+                        </div>
+                        <span className={cn(
+                          "col-span-3 text-center text-[15px] font-black py-1 rounded-xl transition-colors",
+                          hasSales ? "text-slate-500 bg-slate-50 group-hover:bg-white" : "text-slate-400 bg-transparent"
+                        )}>
+                          {item.quantity}
+                        </span>
+                        <span className={cn(
+                          "col-span-3 text-right text-[17px] font-black tracking-tight",
+                          hasSales ? "text-slate-900" : "text-slate-300"
+                        )}>
+                          {fmtM(item.revenue)}
+                        </span>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+const fmtM = (n) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 
 export default SalesReport;
