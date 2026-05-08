@@ -14,7 +14,6 @@ import { DashboardView } from './components/DashboardView';
 import WaiterDashboard from './components/WaiterDashboard';
 import KitchenDashboard from './components/KitchenDashboard';
 import NotificationBell from './components/NotificationBell';
-import TopLoader, { topLoader } from './components/TopLoader';
 import { DashboardSkeleton } from './components/Skeleton';
 
 const BrandLogo = ({ className = '' }) => (
@@ -133,10 +132,7 @@ function App() {
 
   // ── useCallback hooks MUST be before any early returns (Rules of Hooks) ────────
   const handleTabChange = useCallback((tabId) => {
-    topLoader.flush();
-    topLoader.start();
     setActiveTab(tabId);
-    setTimeout(() => topLoader.done(), 300);
     window.dispatchEvent(new Event('close-notifications'));
   }, []);
 
@@ -162,7 +158,6 @@ function App() {
   if (subLoading || !user) {
     return (
       <div className="flex flex-col lg:flex-row h-[100dvh] bg-[#F3F5F8] lg:p-3 gap-2 lg:gap-3 overflow-hidden">
-        <TopLoader />
         {/* Sidebar skeleton */}
         <aside className="hidden lg:flex w-56 bg-white rounded-3xl flex-col py-5 px-3.5 shrink-0 border border-slate-100">
           <div className="sk-shimmer h-10 w-full rounded-xl mb-6 bg-slate-100" />
@@ -260,9 +255,6 @@ function App() {
 
   return (
     <div className="flex flex-col lg:flex-row h-[100dvh] bg-[#F3F5F8] lg:p-3 gap-2 lg:gap-3 overflow-hidden relative">
-      {/* ── YouTube-style top loader ── */}
-      <TopLoader />
-      
       {/* ── Mobile Top Bar ─────────────────────────────────────────────────────────── */}
       <div className="lg:hidden flex items-center justify-between bg-white px-4 py-3 z-20 mx-2 mt-2 border border-slate-100 rounded-2xl">
         <div className="flex items-center">
