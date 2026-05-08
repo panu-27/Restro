@@ -34,10 +34,13 @@ exports.createOrder = async (req, res) => {
 
 exports.updateOrderStatus = async (req, res) => {
   try {
-    const { status, customerPhone } = req.body;
+    const { status, customerPhone, paymentMode } = req.body;
     const updateFields = { status };
     if (customerPhone !== undefined && customerPhone !== '') {
       updateFields.customerPhone = customerPhone;
+    }
+    if (paymentMode !== undefined) {
+      updateFields.paymentMode = paymentMode;
     }
     const order = await Order.findByIdAndUpdate(req.params.id, updateFields, { new: true });
     if (!order) return res.status(404).json({ error: 'Order not found' });
@@ -96,6 +99,50 @@ exports.getAllOrders = async (req, res) => {
       .limit(limit);
 
     res.json({ orders, pages, total });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.transferOrder = async (req, res) => {
+  try {
+    const { newTableId } = req.body;
+    if (!newTableId) {
+      return res.status(400).json({ error: 'newTableId is required' });
+    }
+
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const oldTableId = order.tableId;
+    
+    // Update order with new table
+    order.tableId = newTableId;
+    await order.save();
+
+    // Check if old table still has active orders
+    if (oldTableId && oldTableId !== newTableId) {
+      const activeOrdersOnOldTable = await Order.countDocuments({
+        tableId: oldTableId,
+        status: { $nin: ['Paid', 'Cancelled'] }
+      });
+
+      if (activeOrdersOnOldTable === 0) {
+        await Table.findOneAndUpdate(
+          { tableId: oldTableId },
+          { status: 'Available', currentOrderId: null, lastUpdated: new Date() }
+        );
+      }
+    }
+
+    // Update new table status
+    await Table.findOneAndUpdate(
+      { tableId: newTableId },
+      { status: 'Occupied', currentOrderId: order._id, lastUpdated: new Date() },
+      { upsert: true }
+    );
+
+    res.json(order);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

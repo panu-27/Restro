@@ -3,7 +3,7 @@ import axios from 'axios';
 import {
   Search, Plus, X, Clock, ArrowUpRight,
   ShoppingBag, CheckCircle2, XCircle, Activity,
-  ChevronDown, ChevronUp, User, Phone, Utensils, Package
+  ChevronDown, ChevronUp, User, Users, Phone, Utensils, Package, Loader2
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -139,10 +139,16 @@ const OrderDetailModal = ({ order, onClose, onProceed, onCancel }) => {
 const POSInterface = ({ activeOrders, user, onOrderUpdate, onOrderClick }) => {
   const [searchTerm,    setSearchTerm]    = useState('');
   const [filterType,    setFilterType]    = useState('All');
+  const [paymentFilter, setPaymentFilter] = useState('Paid');
   const [detailOrder,   setDetailOrder]   = useState(null);
   const [isAdding,      setIsAdding]      = useState(false);
+  const [isAddingGuest, setIsAddingGuest] = useState(false);
   const [newParcel,     setNewParcel]     = useState({ name: '', phone: '' });
+  const [newGuest,      setNewGuest]      = useState({ name: '', note: '' });
   const [orderStats, setOrderStats] = useState({ total: 0, running: 0, completed: 0, cancelled: 0 });
+  const [statusFilter, setStatusFilter] = useState('Running');
+  const [historicalOrders, setHistoricalOrders] = useState([]);
+  const [histLoading, setHistLoading] = useState(false);
 
   // Fetch accurate stats from dedicated endpoint
   useEffect(() => {
@@ -151,12 +157,52 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onOrderClick }) => {
       .catch(() => {});
   }, [activeOrders]);
 
+  useEffect(() => {
+    if (statusFilter !== 'Running') {
+      fetchHistory();
+    }
+  }, [statusFilter, onOrderUpdate]);
+
+  const fetchHistory = async () => {
+    setHistLoading(true);
+    try {
+      let type = 'All';
+      if (statusFilter === 'Completed') type = 'Paid';
+      if (statusFilter === 'Cancelled') type = 'Cancelled';
+      
+      // We fetch a larger limit to show 'Total' properly
+      const res = await axios.get(`/api/orders?limit=50&paymentType=${paymentFilter}`);
+      let list = res.data.orders || [];
+      
+      if (statusFilter === 'Completed') list = list.filter(o => o.status === 'Paid');
+      if (statusFilter === 'Cancelled') list = list.filter(o => o.status === 'Cancelled');
+      
+      setHistoricalOrders(list);
+    } catch (err) {
+      console.error('Failed to fetch history:', err);
+    } finally {
+      setHistLoading(false);
+    }
+  };
+
   const stats = orderStats;
 
-  // Filtered running orders
+  // Filtered orders
   const filtered = useMemo(() => {
-    let list = (activeOrders || []).filter(o => o.status !== 'Paid' && o.status !== 'Cancelled');
+    let list = [];
+    if (statusFilter === 'Running') {
+      list = (activeOrders || []).filter(o => o.status !== 'Paid' && o.status !== 'Cancelled');
+    } else {
+      list = historicalOrders;
+    }
+
     if (filterType !== 'All') list = list.filter(o => o.orderType === filterType);
+    if (paymentFilter === 'Guest') {
+      list = list.filter(o => o.paymentType === 'Guest');
+    } else {
+      // Default view excludes Guest unless the filter is explicitly set
+      list = list.filter(o => o.paymentType !== 'Guest');
+    }
     if (searchTerm) {
       const q = searchTerm.toLowerCase();
       list = list.filter(o =>
@@ -167,7 +213,7 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onOrderClick }) => {
       );
     }
     return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }, [activeOrders, filterType, searchTerm]);
+  }, [activeOrders, historicalOrders, statusFilter, filterType, searchTerm]);
 
   const handleStatusUpdate = async (id, status, opts = {}) => {
     const { closeDetail = true } = opts;
@@ -194,6 +240,23 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onOrderClick }) => {
     } catch (err) { console.error(err); }
   };
 
+  const handleCreateGuest = async (e) => {
+    if (e) e.preventDefault();
+    try {
+      const res = await axios.post('/api/orders', {
+        orderType: 'Parcel', 
+        paymentType: 'Guest',
+        items: [], totalAmount: 0,
+        customerName: newGuest.name,
+        guestNote: newGuest.note
+      });
+      setIsAddingGuest(false);
+      setNewGuest({ name: '', note: '' });
+      onOrderUpdate();
+      if (onOrderClick) onOrderClick(res.data._id);
+    } catch (err) { console.error(err); }
+  };
+
   return (
     <div className="min-h-full bg-[#F8FAFC] p-4 lg:p-6 pb-24 lg:pb-6 space-y-4 lg:space-y-5 no-print">
 
@@ -203,24 +266,39 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onOrderClick }) => {
           <h1 className="text-lg lg:text-[1.7rem] font-black text-slate-900 tracking-tight uppercase">Orders</h1>
           <p className="text-[8px] lg:text-[10px] font-semibold text-slate-400 uppercase tracking-[0.1em] mt-1">Manage all orders of the restaurant.</p>
         </div>
-        <button
-          onClick={() => setIsAdding(true)}
-          className="flex items-center gap-1.5 lg:gap-2 px-3 py-2 lg:px-5 lg:py-2.5 bg-[#FF5A36] text-white rounded-lg lg:rounded-xl text-[9px] lg:text-xs font-black uppercase tracking-widest hover:bg-orange-600 transition-all shadow-lg shadow-orange-200 active:scale-95 shrink-0"
-        >
-          <Plus size={15} strokeWidth={3}/> <span className="hidden sm:inline">New Parcel</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsAddingGuest(true)}
+            className="flex items-center gap-1.5 lg:gap-2 px-3 py-2 lg:px-5 lg:py-2.5 bg-orange-100 text-orange-600 rounded-lg lg:rounded-xl text-[9px] lg:text-xs font-black uppercase tracking-widest hover:bg-orange-200 transition-all active:scale-95 shrink-0"
+          >
+            <Users size={15} strokeWidth={3}/> <span className="hidden sm:inline">Guest</span>
+          </button>
+          <button
+            onClick={() => setIsAdding(true)}
+            className="flex items-center gap-1.5 lg:gap-2 px-3 py-2 lg:px-5 lg:py-2.5 bg-[#FF5A36] text-white rounded-lg lg:rounded-xl text-[9px] lg:text-xs font-black uppercase tracking-widest hover:bg-orange-600 transition-all shadow-lg shadow-orange-200 active:scale-95 shrink-0"
+          >
+            <Plus size={15} strokeWidth={3}/> <span className="hidden sm:inline">New Parcel</span>
+          </button>
+        </div>
       </div>
 
       {/* ── Stats Strip ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 lg:gap-4">
         {[
-          { label: 'Total Orders',  value: stats.total,     valueClass: 'text-white',         card: 'bg-[#FF5A36] shadow-orange-200' },
-          { label: 'Running',       value: stats.running,   valueClass: 'text-blue-600',       card: 'bg-white border border-slate-100' },
-          { label: 'Completed',     value: stats.completed, valueClass: 'text-emerald-500',    card: 'bg-white border border-slate-100' },
-          { label: 'Cancelled',     value: stats.cancelled, valueClass: 'text-rose-500',       card: 'bg-white border border-slate-100' },
+          { id: 'Total',     label: 'Total Orders',  value: stats.total,     valueClass: statusFilter === 'Total' ? 'text-white' : 'text-slate-900',      card: statusFilter === 'Total' ? 'bg-[#FF5A36] shadow-orange-200' : 'bg-white border border-slate-100' },
+          { id: 'Running',   label: 'Running',       value: stats.running,   valueClass: statusFilter === 'Running' ? 'text-white' : 'text-blue-600',      card: statusFilter === 'Running' ? 'bg-blue-600 shadow-blue-200' : 'bg-white border border-slate-100' },
+          { id: 'Completed', label: 'Completed',     value: stats.completed, valueClass: statusFilter === 'Completed' ? 'text-white' : 'text-emerald-500', card: statusFilter === 'Completed' ? 'bg-emerald-500 shadow-emerald-200' : 'bg-white border border-slate-100' },
+          { id: 'Cancelled', label: 'Cancelled',     value: stats.cancelled, valueClass: statusFilter === 'Cancelled' ? 'text-white' : 'text-rose-500',    card: statusFilter === 'Cancelled' ? 'bg-rose-500 shadow-rose-200' : 'bg-white border border-slate-100' },
         ].map(s => (
-          <div key={s.label} className={cn('rounded-xl lg:rounded-2xl px-4 py-3 lg:px-6 lg:py-4 shadow-sm flex flex-col justify-center', s.card)}>
-            <p className={cn('text-[9px] lg:text-[10px] font-black uppercase tracking-widest mb-1', s.card.includes('FF5A36') ? 'text-orange-100' : 'text-slate-400')}>{s.label}</p>
+          <div 
+            key={s.label} 
+            onClick={() => setStatusFilter(s.id)}
+            className={cn(
+              'rounded-xl lg:rounded-2xl px-4 py-3 lg:px-6 lg:py-4 shadow-sm flex flex-col justify-center cursor-pointer transition-all active:scale-95 hover:shadow-md', 
+              s.card
+            )}
+          >
+            <p className={cn('text-[9px] lg:text-[10px] font-black uppercase tracking-widest mb-1', s.valueClass === 'text-white' ? 'opacity-80' : 'text-slate-400')}>{s.label}</p>
             <p className={cn('text-2xl lg:text-3xl font-black leading-none', s.valueClass)}>{s.value}</p>
           </div>
         ))}
@@ -229,13 +307,28 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onOrderClick }) => {
       {/* ── Filter + Search ──────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
         {/* Type filters */}
-        <div className="flex gap-2 overflow-x-auto no-scrollbar w-full sm:w-auto shrink-0 pb-1 sm:pb-0">
-          {['All', 'Dine-in', 'Parcel'].map(t => (
-            <button key={t} onClick={() => setFilterType(t)}
-              className={cn('px-3 lg:px-4 py-2 rounded-lg lg:rounded-xl text-[10px] lg:text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap',
-                filterType === t ? 'bg-slate-900 text-white' : 'bg-white border border-slate-100 text-slate-400 hover:bg-slate-50'
-              )}>{t}</button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 sm:pb-0 border-r border-slate-200 pr-2 mr-2">
+            {['All', 'Dine-in', 'Parcel'].map(t => (
+              <button key={t} onClick={() => setFilterType(t)}
+                className={cn('px-3 lg:px-4 py-2 rounded-lg lg:rounded-xl text-[10px] lg:text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap',
+                  filterType === t ? 'bg-slate-900 text-white' : 'bg-white border border-slate-100 text-slate-400 hover:bg-slate-50'
+                )}>{t}</button>
+            ))}
+          </div>
+          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
+            <button 
+              onClick={() => setPaymentFilter(prev => prev === 'Guest' ? 'Paid' : 'Guest')}
+              className={cn('px-3 lg:px-4 py-2 rounded-lg lg:rounded-xl text-[10px] lg:text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap flex items-center gap-2',
+                paymentFilter === 'Guest' 
+                  ? 'bg-orange-500 text-white shadow-lg shadow-orange-200' 
+                  : 'bg-white border border-slate-100 text-slate-400 hover:bg-slate-50'
+              )}
+            >
+              <Users size={14} />
+              Guest Orders
+            </button>
+          </div>
         </div>
 
         {/* Search */}
@@ -254,9 +347,14 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onOrderClick }) => {
       {filtered.length === 0 ? (
         <div className="bg-white rounded-xl lg:rounded-2xl border border-slate-100 shadow-sm py-20 lg:py-24 flex flex-col items-center gap-3 lg:gap-4">
           <div className="w-12 h-12 lg:w-16 lg:h-16 bg-slate-50 rounded-full flex items-center justify-center">
-            <Activity size={24} className="text-slate-200 lg:w-7 lg:h-7"/>
+            {histLoading 
+              ? <Loader2 size={24} className="text-orange-500 animate-spin" />
+              : <Activity size={24} className="text-slate-200 lg:w-7 lg:h-7" />
+            }
           </div>
-          <p className="text-[10px] lg:text-sm font-black text-slate-300 uppercase tracking-widest">No running orders</p>
+          <p className="text-[10px] lg:text-sm font-black text-slate-300 uppercase tracking-widest">
+            {histLoading ? 'Loading orders...' : `No ${statusFilter.toLowerCase()} orders`}
+          </p>
         </div>
       ) : (
         <>
@@ -280,7 +378,7 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onOrderClick }) => {
                     <div className="flex items-center gap-2.5">
                       <span className="text-sm font-black text-slate-900">#{order.orderNumber ? fmtOrderNo(order.orderNumber) : '—'}</span>
                       <span className={cn('px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest', statusColor)}>
-                        {order.status === 'Pending' ? 'Running' : order.status}
+                        {order.status === 'Paid' ? 'Completed' : order.status === 'Pending' ? 'Running' : order.status}
                       </span>
                     </div>
                     <span className="text-lg font-black text-slate-900 tracking-tight">₹{Math.round(order.totalAmount || 0)}</span>
@@ -332,10 +430,14 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onOrderClick }) => {
                 return (
                   <div
                     key={order._id}
-                    className="grid grid-cols-12 px-6 py-5 items-center hover:bg-slate-50/50 transition-colors cursor-pointer group"
+                    className={cn(
+                      "grid grid-cols-12 px-6 py-5 items-center hover:bg-slate-50/50 transition-all cursor-pointer group relative",
+                      order.paymentType === 'Guest' ? "bg-orange-50/30 border-l-4 border-orange-500/50" : "border-l-4 border-transparent"
+                    )}
                     onClick={() => setDetailOrder(order)}
                   >
-                    <div className="col-span-2">
+                    <div className="col-span-2 flex items-center gap-2">
+                      {order.paymentType === 'Guest' && <Users size={14} className="text-orange-500 animate-pulse" />}
                       <span className="text-sm font-black text-slate-900">#{order.orderNumber ? fmtOrderNo(order.orderNumber) : '—'}</span>
                     </div>
                     <div className="col-span-2">
@@ -352,16 +454,22 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onOrderClick }) => {
                       }
                       <span className="text-xs font-bold text-slate-600 truncate">{label}</span>
                     </div>
-                    <div className="col-span-2">
+                    <div className="col-span-2 flex flex-col gap-1">
                       <span className={cn(
-                        'px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest',
+                        'px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest w-fit',
                         order.status === 'Served'   ? 'bg-emerald-50 text-emerald-600' :
                         order.status === 'Pending'  ? 'bg-amber-50 text-amber-600' :
                         order.status === 'Preparing'? 'bg-blue-50 text-blue-600' :
                                                       'bg-orange-50 text-orange-600'
                       )}>
-                        {order.status === 'Pending' ? 'Running' : order.status}
+                        {order.status === 'Paid' ? 'Completed' : order.status === 'Pending' ? 'Running' : order.status}
                       </span>
+                      {order.paymentType === 'Guest' && (
+                        <span className="px-3 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest bg-orange-100 text-orange-600 w-fit">Guest</span>
+                      )}
+                      {order.paymentType === 'Paid' && order.status === 'Paid' && (
+                        <span className="px-3 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest bg-emerald-100 text-emerald-600 w-fit">Paid</span>
+                      )}
                     </div>
                     <div className="col-span-1 text-right">
                       <span className="text-sm font-black text-slate-900">₹{Math.round(order.totalAmount || 0)}</span>
@@ -392,7 +500,44 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onOrderClick }) => {
         />
       )}
 
-      {/* ── New Parcel Modal ─────────────────────────────────────────── */}
+      {/* ── New Guest Modal ─────────────────────────────────────────── */}
+      {isAddingGuest && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-7 py-5 border-b border-slate-100">
+              <h3 className="text-lg font-black text-slate-900">New Guest Order</h3>
+              <button onClick={() => setIsAddingGuest(false)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100">
+                <X size={18} className="text-slate-400" />
+              </button>
+            </div>
+            <form onSubmit={handleCreateGuest} className="p-7 space-y-5">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Guest Name</label>
+                <div className="relative">
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                  <input type="text" required value={newGuest.name}
+                    onChange={e => setNewGuest(prev => ({ ...prev, name: e.target.value }))}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-11 py-3.5 text-sm font-bold focus:bg-white focus:border-orange-500 transition-all outline-none"
+                    placeholder="Enter guest name..." />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Guest Note (Category)</label>
+                <div className="relative">
+                  <Users className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                  <input type="text" value={newGuest.note}
+                    onChange={e => setNewGuest(prev => ({ ...prev, note: e.target.value }))}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-11 py-3.5 text-sm font-bold focus:bg-white focus:border-orange-500 transition-all outline-none"
+                    placeholder="Friend, VIP, Staff, etc." />
+                </div>
+              </div>
+              <button type="submit" className="w-full py-4 bg-slate-900 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl shadow-slate-200 active:scale-95">
+                Proceed to Menu
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
       {isAdding && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">

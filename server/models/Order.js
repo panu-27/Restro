@@ -22,6 +22,9 @@ const orderSchema = new mongoose.Schema({
   taxAmount: { type: Number, default: 0 }, // Total tax applied
   taxBreakdown: [{ name: String, percentage: Number, amount: Number }], // Individual tax lines
   totalAmount: { type: Number, required: true, default: 0 }, // Final amount after tax
+  paymentType: { type: String, enum: ['Paid', 'Guest'], default: 'Paid' },
+  paymentMode: { type: String, enum: ['Cash', 'Online'], default: 'Online' },
+  guestNote: { type: String, default: '' },
   status: { type: String, enum: ['Pending', 'Served', 'Paid', 'Cancelled'], default: 'Pending' },
   currentRound: { type: Number, default: 1 }, // Track which round we're on
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'ArcheUser', default: null }, // Staff who placed this order
