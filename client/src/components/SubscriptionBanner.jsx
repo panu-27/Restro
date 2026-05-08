@@ -20,7 +20,7 @@ const SubscriptionBanner = ({ subscription, onDismiss }) => {
       {isExpired ? (
         <>
           <AlertTriangle size={18} />
-          <span>Your subscription has expired. Renew to continue using ArcheArc Restro.</span>
+          <span>Your subscription has expired. Renew to continue using Annapurna.</span>
         </>
       ) : (
         <>

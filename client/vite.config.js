@@ -9,8 +9,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['brand-logo.png', 'icon-512.png'],
       manifest: {
-        name: 'ArcheArc Restro',
-        short_name: 'Restro',
+        name: 'Annapurna',
+        short_name: 'Annapurna',
         description: 'Professional Dhaba & Restaurant Management System',
         theme_color: '#0f172a',
         background_color: '#ffffff',

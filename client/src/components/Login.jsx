@@ -178,7 +178,9 @@ const AnnapurnaLanding = ({ onLoginSuccess }) => {
   const [reviewIndex, setReviewIndex] = useState(0);
   const [reviewAnim, setReviewAnim] = useState(''); // 'slide-left' | 'slide-right'
   const [deferredPrompt, setDeferredPrompt] = useState(null);
-  const [pwaInstalled, setPwaInstalled] = useState(false);
+  const [pwaInstalled, setPwaInstalled] = useState(
+    () => window.matchMedia('(display-mode: standalone)').matches
+  );
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
   // Capture the PWA install prompt
@@ -261,11 +263,11 @@ const AnnapurnaLanding = ({ onLoginSuccess }) => {
           <div className="bg-white rounded-2xl border border-zinc-200 shadow-2xl shadow-black/15 p-4 flex items-center gap-3">
             {/* App Icon */}
             <div className="shrink-0 w-12 h-12 rounded-xl overflow-hidden border border-zinc-100">
-              <img src="/icon-192.png" alt="Restro" className="w-full h-full object-cover" />
+              <img src="/icon-192.png" alt="Annapurna" className="w-full h-full object-cover" />
             </div>
             {/* Text */}
             <div className="flex-1 min-w-0">
-              <p className="text-[13px] font-bold text-zinc-900 leading-tight">Install Restro</p>
+              <p className="text-[13px] font-bold text-zinc-900 leading-tight">Install Annapurna</p>
               <p className="text-[11px] text-zinc-500 mt-0.5 leading-tight">Add to home screen for quick access</p>
             </div>
             {/* Install button */}
@@ -289,7 +291,7 @@ const AnnapurnaLanding = ({ onLoginSuccess }) => {
       {/* NAV */}
       <nav className="fixed top-0 inset-x-0 z-[100] h-20 bg-white/90 backdrop-blur-xl flex items-center border-b border-[#E5E5E5]/60 transition-all">
         <div className="max-w-[1280px] w-full mx-auto px-6 sm:px-8 flex items-center justify-between">
-          <img src="/brand-logo.png" alt="Restro Logo" className="h-10 sm:h-12 object-contain" />
+          <img src="/brand-logo.png" alt="Annapurna Logo" className="h-10 sm:h-12 object-contain" />
           <div className="hidden lg:flex items-center gap-10">
             <a href="#features" className="text-[15px] font-medium text-[#555555] no-underline transition-colors hover:text-[#111111]">Features</a>
             <a href="#how-it-works" className="text-[15px] font-medium text-[#555555] no-underline transition-colors hover:text-[#111111]">How it works</a>
@@ -613,7 +615,7 @@ const AnnapurnaLanding = ({ onLoginSuccess }) => {
           </div>
 
           <p className="mt-8 text-[14px] text-zinc-400 leading-[1.7] max-w-[600px]">
-            Hundreds of restaurants across India trust Restro for their daily operations.
+            Hundreds of restaurants across India trust Annapurna for their daily operations.
           </p>
         </div>
       </section>
@@ -661,7 +663,7 @@ const AnnapurnaLanding = ({ onLoginSuccess }) => {
       <footer className="bg-white pt-20 pb-10 px-8 border-t border-[#E5E5E5]/60">
         <div className="max-w-[1280px] mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr] gap-12 pb-16 border-b border-[#E5E5E5]/60 mb-8">
           <div>
-            <img src="/brand-logo.png" alt="Restro Logo" className="h-10 object-contain mb-6" />
+            <img src="/brand-logo.png" alt="Annapurna Logo" className="h-10 object-contain mb-6" />
             <p className="text-[15px] text-[#555555] leading-[1.6] max-w-[300px]">
               The modern restaurant management platform built for speed, reliability, and growth.
             </p>
