@@ -7,7 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['brand-logo.png'],
+      includeAssets: ['brand-logo.png', 'icon-512.png'],
       manifest: {
         name: 'ArcheArc Restro',
         short_name: 'Restro',
@@ -20,13 +20,13 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            src: 'brand-logo.png',
+            src: 'icon-512.png',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any'
           },
           {
-            src: 'brand-logo.png',
+            src: 'icon-512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable'
