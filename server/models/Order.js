@@ -24,6 +24,7 @@ const orderSchema = new mongoose.Schema({
   totalAmount: { type: Number, required: true, default: 0 }, // Final amount after tax
   status: { type: String, enum: ['Pending', 'Served', 'Paid', 'Cancelled'], default: 'Pending' },
   currentRound: { type: Number, default: 1 }, // Track which round we're on
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'ArcheUser', default: null }, // Staff who placed this order
   createdAt: { type: Date, default: Date.now }
 });
 

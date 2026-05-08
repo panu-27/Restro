@@ -11,6 +11,10 @@ import SubscriptionBanner from './components/SubscriptionBanner';
 import SettingsPanel from './components/SettingsPanel';
 import SalesReport from './components/SalesReport';
 import { DashboardView } from './components/DashboardView';
+import WaiterDashboard from './components/WaiterDashboard';
+import KitchenDashboard from './components/KitchenDashboard';
+import NotificationBell from './components/NotificationBell';
+import { Loader2 } from 'lucide-react';
 
 const BrandLogo = ({ className = '' }) => (
   <img
@@ -126,10 +130,20 @@ function App() {
     fetchSubscription();
   };
 
-  // ── AUTH GATE ──────────────────────────────────────────────────────────────
+  // ── AUTH GATE ────────────────────────────────────────────────────────────────────
   if (!token) return <Login onLoginSuccess={handleLoginSuccess} />;
 
-  // ── SUBSCRIPTION GATE ──────────────────────────────────────────────────────
+  // ── ROLE-BASED DASHBOARD ROUTING ────────────────────────────────────────────────
+  // Staff (Waiter/Kitchen) skip subscription check — they use owner's subscription
+  const userRole = user?.role;
+  if (userRole === 'Waiter') {
+    return <WaiterDashboard user={user} onLogout={handleLogout} />;
+  }
+  if (userRole === 'Kitchen') {
+    return <KitchenDashboard user={user} onLogout={handleLogout} />;
+  }
+
+  // ── SUBSCRIPTION GATE (Admin only) ────────────────────────────────────────────
   if (!subLoading && (!subscription || !subscription.hasSubscription)) {
     return <ChoosePlan onPlanActivated={handlePlanActivated} />;
   }
@@ -137,11 +151,9 @@ function App() {
   // ── LOADING ────────────────────────────────────────────────────────────────
   if (subLoading || !user) {
     return (
-      <div className="flex items-center justify-center h-screen bg-white">
-        <div className="text-center">
-          <BrandLogo className="h-40 mx-auto mb-4 animate-pulse object-contain" />
-          <p className="text-gray-400 font-bold animate-pulse uppercase tracking-[0.2em] text-[10px]">Loading ArcheArc Restro...</p>
-        </div>
+      <div className="flex flex-col items-center justify-center h-screen bg-white">
+        <Loader2 className="w-12 h-12 text-orange-500 animate-spin mb-4" />
+        <p className="text-gray-400 font-bold uppercase tracking-[0.2em] text-[10px]">Loading ArcheArc Restro...</p>
       </div>
     );
   }
@@ -211,21 +223,16 @@ function App() {
       {/* ── Mobile Top Bar ─────────────────────────────────────────────────────────── */}
       <div className="lg:hidden flex items-center justify-between bg-white px-4 py-3 z-20 mx-2 mt-2 border border-slate-100 rounded-2xl">
         <div className="flex items-center">
-          <BrandLogo className="h-32 object-contain shrink-0" />
+          <BrandLogo className="h-10 sm:h-12 object-contain shrink-0" />
         </div>
         <div className="flex items-center gap-2">
           {subscription?.plan === 'trial' && subscription?.isValid && (
-            <div className="flex items-center gap-1.5 px-2 py-1 bg-amber-50 rounded-lg border border-amber-100 mr-2">
+            <div className="flex items-center gap-1.5 px-2 py-1 bg-amber-50 rounded-lg border border-amber-100">
               <Clock size={12} className="text-amber-500" />
               <span className="text-[10px] font-bold text-amber-600">Trial: {subscription.trialDaysRemaining}d</span>
             </div>
           )}
-          <button onClick={() => setShowPasswordModal(true)} className="p-2 text-gray-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors">
-            <Key size={18} />
-          </button>
-          <button onClick={handleLogout} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
-            <LogOut size={18} />
-          </button>
+          <NotificationBell />
         </div>
       </div>
 
@@ -233,8 +240,8 @@ function App() {
       <aside className="hidden lg:flex w-56 bg-white rounded-3xl flex-col py-5 px-3.5 shrink-0 transition-all duration-500 z-20 border border-slate-100">
         {/* Logo */}
         <div className="flex items-center justify-center lg:justify-start pl-1 pr-1.5 mb-3 mt-1">
-          <div className="shrink-0 h-32 w-full flex items-center justify-center lg:justify-start">
-            <BrandLogo className="h-32 object-contain shrink-0" />
+          <div className="shrink-0 h-10 w-full flex items-center justify-center lg:justify-start">
+            <BrandLogo className="h-10 object-contain shrink-0" />
           </div>
         </div>
 
@@ -296,17 +303,10 @@ function App() {
               </div>
               <div className="overflow-hidden">
                 <p className="text-[13px] font-semibold text-gray-900 truncate">{user?.name || 'User'}</p>
-                <p className="text-[10px] text-gray-400 font-medium capitalize">Admin</p>
+                <p className="text-[10px] text-gray-400 font-medium capitalize">{user?.role || 'Admin'}</p>
               </div>
             </div>
-            <div className="flex flex-col items-center gap-1">
-              <button onClick={() => setShowPasswordModal(true)} className="p-1 text-gray-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors" title="Change Password">
-                <Key size={12} />
-              </button>
-              <button onClick={handleLogout} className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Logout">
-                <LogOut size={12} />
-              </button>
-            </div>
+            <NotificationBell />
           </div>
         </div>
       </aside>
@@ -375,6 +375,8 @@ function App() {
                 user={user} 
                 subscription={subscription} 
                 onSettingsUpdate={handleSettingsUpdate} 
+                onShowPassword={() => setShowPasswordModal(true)}
+                onLogout={handleLogout}
               />
             </div>
           )}

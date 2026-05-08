@@ -5,7 +5,9 @@ const userSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   mobileNumber: { type: String, required: true, unique: true, trim: true },
   password: { type: String, required: true },
-  role: { type: String, enum: ['Admin', 'Staff'], default: 'Staff' },
+  role: { type: String, enum: ['Admin', 'Staff', 'Waiter', 'Kitchen'], default: 'Staff' },
+  parentUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'ArcheUser', default: null }, // Links staff to their owner
+  notificationsEnabled: { type: Boolean, default: true },
   subscription: { type: mongoose.Schema.Types.ObjectId, ref: 'Subscription', default: null },
   tableCount: { type: Number, default: 10, min: 10, max: 50 },
   restaurantName: { type: String, default: '', trim: true },
