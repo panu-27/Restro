@@ -175,6 +175,41 @@ const AuthPage = ({ mode, onBack, onLoginSuccess }) => {
 /* ─── LANDING ─── */
 const AnnapurnaLanding = ({ onLoginSuccess }) => {
   const [authMode, setAuthMode] = useState(null);
+  const [reviewIndex, setReviewIndex] = useState(0);
+  const [reviewAnim, setReviewAnim] = useState(''); // 'slide-left' | 'slide-right'
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [pwaInstalled, setPwaInstalled] = useState(false);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+
+  // Capture the PWA install prompt
+  useEffect(() => {
+    const handler = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    window.addEventListener('appinstalled', () => {
+      setPwaInstalled(true);
+      setDeferredPrompt(null);
+    });
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstallPWA = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') setPwaInstalled(true);
+    setDeferredPrompt(null);
+  };
+
+  const changeReview = (dir) => {
+    setReviewAnim(dir === 1 ? 'slide-left' : 'slide-right');
+    setTimeout(() => {
+      setReviewIndex(prev => (prev + dir + testimonials.length) % testimonials.length);
+      setReviewAnim('');
+    }, 220);
+  };
 
   if (authMode) {
     return (
@@ -220,6 +255,37 @@ const AnnapurnaLanding = ({ onLoginSuccess }) => {
     <div className="font-['DM_Sans',sans-serif] bg-white text-[#111111] antialiased scroll-smooth selection:bg-[#FF5A36] selection:text-white">
       <FontLink />
 
+      {/* ── Mobile PWA Install Banner (fixed bottom) ── */}
+      {deferredPrompt && !pwaInstalled && !bannerDismissed && (
+        <div className="sm:hidden fixed bottom-0 inset-x-0 z-[200] px-4 pb-6 pt-2 animate-in slide-in-from-bottom-4 duration-500">
+          <div className="bg-white rounded-2xl border border-zinc-200 shadow-2xl shadow-black/15 p-4 flex items-center gap-3">
+            {/* App Icon */}
+            <div className="shrink-0 w-12 h-12 rounded-xl overflow-hidden border border-zinc-100">
+              <img src="/icon-192.png" alt="Restro" className="w-full h-full object-cover" />
+            </div>
+            {/* Text */}
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-bold text-zinc-900 leading-tight">Install Restro</p>
+              <p className="text-[11px] text-zinc-500 mt-0.5 leading-tight">Add to home screen for quick access</p>
+            </div>
+            {/* Install button */}
+            <button
+              onClick={handleInstallPWA}
+              className="shrink-0 bg-[#FF5A36] text-white border-none cursor-pointer font-inherit text-[12px] font-bold px-4 py-2.5 rounded-xl transition-all hover:bg-[#D94420] active:scale-95"
+            >
+              Install
+            </button>
+            {/* Dismiss */}
+            <button
+              onClick={() => setBannerDismissed(true)}
+              className="shrink-0 w-7 h-7 rounded-full bg-zinc-100 border-none cursor-pointer flex items-center justify-center text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 transition-all"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* NAV */}
       <nav className="fixed top-0 inset-x-0 z-[100] h-20 bg-white/90 backdrop-blur-xl flex items-center border-b border-[#E5E5E5]/60 transition-all">
         <div className="max-w-[1280px] w-full mx-auto px-6 sm:px-8 flex items-center justify-between">
@@ -229,7 +295,16 @@ const AnnapurnaLanding = ({ onLoginSuccess }) => {
             <a href="#how-it-works" className="text-[15px] font-medium text-[#555555] no-underline transition-colors hover:text-[#111111]">How it works</a>
             <a href="#faqs" className="text-[15px] font-medium text-[#555555] no-underline transition-colors hover:text-[#111111]">FAQ</a>
           </div>
-          <div className="flex items-center gap-3 sm:gap-6">
+          <div className="flex items-center gap-3 sm:gap-4">
+            {deferredPrompt && !pwaInstalled && (
+              <button
+                onClick={handleInstallPWA}
+                className="hidden sm:flex items-center gap-2 bg-transparent border border-[#E5E5E5] cursor-pointer font-inherit text-[13px] font-medium text-[#555555] px-4 py-2 rounded-full transition-all hover:border-[#FF5A36] hover:text-[#FF5A36] hover:bg-[#FF5A36]/5"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Install App
+              </button>
+            )}
             <button className="bg-transparent border-none cursor-pointer text-[14px] sm:text-[15px] font-medium text-[#111111] transition-colors hover:text-[#FF5A36] p-0" onClick={() => setAuthMode('login')}>Log in</button>
             <button className="bg-[#111111] text-white border-none cursor-pointer font-inherit text-[13px] sm:text-[14px] font-medium px-5 py-2.5 sm:px-6 sm:py-3 rounded-full transition-all hover:bg-[#FF5A36] hover:shadow-lg hover:shadow-[#FF5A36]/20 active:scale-95" onClick={() => setAuthMode('register')}>
               Get started
@@ -448,6 +523,18 @@ const AnnapurnaLanding = ({ onLoginSuccess }) => {
       </section>
 
       {/* TESTIMONIALS */}
+      <style>{`
+        @keyframes reviewSlideLeft {
+          from { opacity: 1; transform: translateX(0); }
+          to   { opacity: 0; transform: translateX(-40px); }
+        }
+        @keyframes reviewSlideRight {
+          from { opacity: 1; transform: translateX(0); }
+          to   { opacity: 0; transform: translateX(40px); }
+        }
+        .review-anim-left  { animation: reviewSlideLeft  0.22s ease forwards; }
+        .review-anim-right { animation: reviewSlideRight 0.22s ease forwards; }
+      `}</style>
       <section className="py-24 px-8 bg-white border-t border-zinc-100">
         <div className="max-w-[1280px] mx-auto">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-12">
@@ -467,23 +554,60 @@ const AnnapurnaLanding = ({ onLoginSuccess }) => {
             </div>
           </div>
 
-          {/* Review Card */}
-          <div className="rounded-[24px] bg-zinc-50 border border-zinc-100 px-8 md:px-16 py-12">
-            <div className="flex gap-1 mb-6">
-              {[...Array(5)].map((_, i) => (
-                <Star key={i} size={16} className="text-[#FF5A36]" fill="#FF5A36" />
-              ))}
-            </div>
-            <p className="text-[20px] leading-[1.5] text-zinc-800 font-['DM_Serif_Display',serif] mb-8 max-w-[800px]">
-              "{testimonials[0].text}"
-            </p>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-zinc-200 flex items-center justify-center">
-                <User size={18} className="text-zinc-400" />
+          {/* Review Carousel */}
+          <div className="rounded-[24px] bg-zinc-50 border border-zinc-100 px-8 md:px-16 py-12 relative overflow-hidden">
+            {/* Content */}
+            <div className={reviewAnim === 'slide-left' ? 'review-anim-left' : reviewAnim === 'slide-right' ? 'review-anim-right' : ''}>
+              <div className="flex gap-1 mb-6">
+                {[...Array(5)].map((_, i) => (
+                  <Star key={i} size={16} className="text-[#FF5A36]" fill="#FF5A36" />
+                ))}
               </div>
-              <div>
-                <div className="text-[14px] font-bold text-zinc-900">{testimonials[0].name}</div>
-                <div className="text-[13px] text-zinc-500">{testimonials[0].role}</div>
+              <p className="text-[20px] leading-[1.5] text-zinc-800 font-['DM_Serif_Display',serif] mb-8 max-w-[800px]">
+                &ldquo;{testimonials[reviewIndex].text}&rdquo;
+              </p>
+              <div className="flex items-center justify-between gap-3">
+                {/* Avatar + truncated name/role */}
+                <div className="flex items-center gap-3 min-w-0 overflow-hidden">
+                  <div className="w-9 h-9 shrink-0 rounded-full bg-zinc-200 flex items-center justify-center">
+                    <User size={16} className="text-zinc-400" />
+                  </div>
+                  <div className="min-w-0 overflow-hidden">
+                    <div className="text-[13px] font-bold text-zinc-900 truncate">{testimonials[reviewIndex].name}</div>
+                    <div className="text-[12px] text-zinc-500 truncate max-w-[140px] sm:max-w-none">{testimonials[reviewIndex].role}</div>
+                  </div>
+                </div>
+
+                {/* Controls — always shrink-0 so they never wrap */}
+                <div className="flex items-center gap-3 shrink-0">
+                  {/* Dots */}
+                  <div className="flex items-center gap-1.5">
+                    {testimonials.map((_, i) => (
+                      <button
+                        key={i}
+                        onClick={() => { if (i !== reviewIndex) changeReview(i > reviewIndex ? 1 : -1); }}
+                        className={`rounded-full border-none cursor-pointer transition-all duration-300 p-0 ${
+                          i === reviewIndex ? 'w-4 h-1.5 bg-[#FF5A36]' : 'w-1.5 h-1.5 bg-zinc-300 hover:bg-zinc-400'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  {/* Arrows */}
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => changeReview(-1)}
+                      className="w-8 h-8 rounded-full border border-zinc-200 bg-white flex items-center justify-center text-zinc-500 hover:border-[#FF5A36] hover:text-[#FF5A36] hover:bg-[#FF5A36]/5 transition-all active:scale-90"
+                    >
+                      <ChevronLeft size={14} />
+                    </button>
+                    <button
+                      onClick={() => changeReview(1)}
+                      className="w-8 h-8 rounded-full border border-zinc-200 bg-white flex items-center justify-center text-zinc-500 hover:border-[#FF5A36] hover:text-[#FF5A36] hover:bg-[#FF5A36]/5 transition-all active:scale-90"
+                    >
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
