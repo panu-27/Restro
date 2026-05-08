@@ -76,11 +76,10 @@ const WaiterDashboard = ({ user, onLogout }) => {
       {/* Header */}
       <div className="bg-white px-4 py-3 flex items-center justify-between border-b border-gray-100 shrink-0 z-20">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
-            <ChefHat size={18} />
-          </div>
-          <div>
-            <p className="text-sm font-black text-slate-900">{user?.name || 'Waiter'}</p>
+          <img src="/brand-logo.png" alt="Restro" className="h-9 object-contain" />
+          <div className="w-px h-6 bg-slate-100 hidden sm:block" />
+          <div className="hidden sm:block">
+            <p className="text-xs font-black text-slate-900">{user?.name || 'Waiter'}</p>
             <p className="text-[9px] font-bold text-blue-500 uppercase tracking-widest">Waiter</p>
           </div>
         </div>

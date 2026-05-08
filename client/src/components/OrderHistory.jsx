@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Search, History, Calendar, ArrowUpRight, Package, Utensils, Clock, Users } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { Sk, SkeletonStyles } from './Skeleton';
 
 
 const cn = (...inputs) => twMerge(clsx(inputs));
@@ -141,11 +142,18 @@ const OrderHistory = ({ onOrderClick }) => {
 
               {/* Loading / Empty / Content */}
               {loadingHistory ? (
-                <div className="py-12 text-center border-b border-slate-100 mb-4">
-                  <div className="flex flex-col items-center gap-3">
-                    <div className="w-6 h-6 border-2 border-slate-900 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                    <p className="text-xs text-slate-500">Loading...</p>
-                  </div>
+                <div className="space-y-0 mb-4">
+                  <SkeletonStyles />
+                  {[...Array(5)].map((_, i) => (
+                    <div key={i} className="flex items-center gap-4 py-3.5 border-b border-slate-50 px-1">
+                      <Sk className="h-4 w-14 rounded" />
+                      <Sk className="h-4 w-28 rounded" />
+                      <Sk className="h-5 w-20 rounded-lg" />
+                      <Sk className="h-4 w-20 rounded" />
+                      <Sk className="h-4 w-10 ml-auto rounded" />
+                      <Sk className="h-5 w-16 rounded" />
+                    </div>
+                  ))}
                 </div>
               ) : sectionOrders.length === 0 ? (
                 <div className="py-12 text-center border-b border-slate-100 mb-4">

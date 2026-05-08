@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { LayoutGrid, ShoppingBag, History, Settings, LogOut, User, BarChart3, Clock, ChevronDown, MoreVertical, HelpCircle, Utensils, BookOpen, LineChart, Grid, Key, X } from 'lucide-react';
+import { LayoutGrid, ShoppingBag, History, Settings, LogOut, User, BarChart3, Clock, ChevronDown, MoreVertical, HelpCircle, Utensils, BookOpen, LineChart, Grid, Key, X, Loader2 } from 'lucide-react';
 import TableGrid from './components/TableGrid';
 import TableView from './components/TableView';
 import POSInterface from './components/POSInterface';
@@ -14,7 +14,8 @@ import { DashboardView } from './components/DashboardView';
 import WaiterDashboard from './components/WaiterDashboard';
 import KitchenDashboard from './components/KitchenDashboard';
 import NotificationBell from './components/NotificationBell';
-import { Loader2 } from 'lucide-react';
+import TopLoader, { topLoader } from './components/TopLoader';
+import { DashboardSkeleton } from './components/Skeleton';
 
 const BrandLogo = ({ className = '' }) => (
   <img
@@ -130,6 +131,15 @@ function App() {
     fetchSubscription();
   };
 
+  // ── useCallback hooks MUST be before any early returns (Rules of Hooks) ────────
+  const handleTabChange = useCallback((tabId) => {
+    topLoader.flush();
+    topLoader.start();
+    setActiveTab(tabId);
+    setTimeout(() => topLoader.done(), 300);
+    window.dispatchEvent(new Event('close-notifications'));
+  }, []);
+
   // ── AUTH GATE ────────────────────────────────────────────────────────────────────
   if (!token) return <Login onLoginSuccess={handleLoginSuccess} />;
 
@@ -151,12 +161,43 @@ function App() {
   // ── LOADING ────────────────────────────────────────────────────────────────
   if (subLoading || !user) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-white">
-        <Loader2 className="w-12 h-12 text-orange-500 animate-spin mb-4" />
-        <p className="text-gray-400 font-bold uppercase tracking-[0.2em] text-[10px]">Loading ArcheArc Restro...</p>
+      <div className="flex flex-col lg:flex-row h-[100dvh] bg-[#F3F5F8] lg:p-3 gap-2 lg:gap-3 overflow-hidden">
+        <TopLoader />
+        {/* Sidebar skeleton */}
+        <aside className="hidden lg:flex w-56 bg-white rounded-3xl flex-col py-5 px-3.5 shrink-0 border border-slate-100">
+          <div className="sk-shimmer h-10 w-full rounded-xl mb-6 bg-slate-100" />
+          <div className="flex-1 space-y-2">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="sk-shimmer h-9 w-full rounded-xl bg-slate-100" />
+            ))}
+          </div>
+          <div className="border-t border-gray-100 pt-4 flex items-center gap-3">
+            <div className="sk-shimmer w-10 h-10 rounded-full bg-slate-100 shrink-0" />
+            <div className="flex-1 space-y-2">
+              <div className="sk-shimmer h-3 w-24 rounded bg-slate-100" />
+              <div className="sk-shimmer h-2.5 w-16 rounded bg-slate-100" />
+            </div>
+          </div>
+        </aside>
+        {/* Main content skeleton */}
+        <main className="flex-1 overflow-hidden lg:rounded-3xl bg-[#F3F5F8] px-2 lg:px-0">
+          <DashboardSkeleton />
+        </main>
+        <style>{`
+          @keyframes sk-wave {
+            0%   { background-position: -400px 0; }
+            100% { background-position:  400px 0; }
+          }
+          .sk-shimmer {
+            background: linear-gradient(90deg, #f1f5f9 25%, #e8edf3 50%, #f1f5f9 75%);
+            background-size: 800px 100%;
+            animation: sk-wave 1.4s ease-in-out infinite;
+          }
+        `}</style>
       </div>
     );
   }
+
 
   const handlePasswordChange = async (e) => {
     e.preventDefault();
@@ -219,6 +260,8 @@ function App() {
 
   return (
     <div className="flex flex-col lg:flex-row h-[100dvh] bg-[#F3F5F8] lg:p-3 gap-2 lg:gap-3 overflow-hidden relative">
+      {/* ── YouTube-style top loader ── */}
+      <TopLoader />
       
       {/* ── Mobile Top Bar ─────────────────────────────────────────────────────────── */}
       <div className="lg:hidden flex items-center justify-between bg-white px-4 py-3 z-20 mx-2 mt-2 border border-slate-100 rounded-2xl">
@@ -253,10 +296,7 @@ function App() {
             {navTabs.filter(t => t.id !== 'settings').map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  window.dispatchEvent(new Event('close-notifications'));
-                }}
+                onClick={() => handleTabChange(tab.id)}
                 className={`w-full flex items-center justify-start gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-300 text-[11px] font-bold uppercase tracking-[0.02em] ${
                   activeTab === tab.id
                     ? 'bg-[#FF5A36] text-white'
@@ -275,10 +315,7 @@ function App() {
             {navTabs.filter(t => t.id === 'settings').map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  window.dispatchEvent(new Event('close-notifications'));
-                }}
+                onClick={() => handleTabChange(tab.id)}
                 className={`w-full flex items-center justify-start gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-300 text-[11px] font-bold uppercase tracking-[0.02em] ${
                   activeTab === tab.id
                     ? 'bg-[#FF5A36] text-white'
@@ -467,10 +504,7 @@ function App() {
           return (
             <button
               key={tab.id}
-              onClick={() => {
-                setActiveTab(tab.id);
-                window.dispatchEvent(new Event('close-notifications'));
-              }}
+              onClick={() => handleTabChange(tab.id)}
               className={`flex flex-col items-center justify-center w-full h-full gap-1 transition-all duration-300 ${
                 isActive ? 'text-[#FF5A36]' : 'text-gray-400 hover:text-gray-900'
               }`}

@@ -7,26 +7,26 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'brand-logo.png', 'pwa-512x512.png'],
+      includeAssets: ['brand-logo.png'],
       manifest: {
         name: 'ArcheArc Restro',
         short_name: 'Restro',
         description: 'Professional Dhaba & Restaurant Management System',
         theme_color: '#0f172a',
-        background_color: '#0f172a',
+        background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait-primary',
         scope: '/',
         start_url: '/',
         icons: [
           {
-            src: 'pwa-512x512.png',
+            src: 'brand-logo.png',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any'
           },
           {
-            src: 'pwa-512x512.png',
+            src: 'brand-logo.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable'

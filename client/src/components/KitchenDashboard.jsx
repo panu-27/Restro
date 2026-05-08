@@ -118,11 +118,10 @@ const KitchenDashboard = ({ user, onLogout }) => {
       {/* Header */}
       <div className="bg-white px-4 py-3 flex items-center justify-between border-b border-slate-200 shrink-0 z-20 shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-500 shadow-inner">
-            <ChefHat size={22} />
-          </div>
-          <div>
-            <p className="text-sm font-black text-slate-900">Kitchen Display</p>
+          <img src="/brand-logo.png" alt="Restro" className="h-9 object-contain" />
+          <div className="w-px h-6 bg-slate-200 hidden sm:block" />
+          <div className="hidden sm:block">
+            <p className="text-xs font-black text-slate-900">Kitchen Display</p>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{user?.name || 'Kitchen'} • Live</p>
           </div>
         </div>

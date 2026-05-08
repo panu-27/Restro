@@ -4,12 +4,13 @@ import {
   ChevronRight, ChevronDown, Clock, MoveUpRight, ArrowUpRight,
   TrendingUp, ShoppingBag, CheckCircle2, DollarSign, Package, Users
 } from 'lucide-react';
+import { DashboardSkeleton, Sk, SkeletonStyles } from './Skeleton';
 
 const StatValue = ({ value, isLoading = false, prefix = '' }) => {
   const normalized = Number(value || 0);
 
   if (isLoading) {
-    return <span className="inline-block align-middle">--</span>;
+    return <Sk className="inline-block h-8 w-20 align-middle" />;
   }
 
   return <span>{prefix}{normalized.toLocaleString('en-IN')}</span>;
@@ -173,8 +174,11 @@ export const DashboardView = ({ activeOrders, tableCount, onTabChange }) => {
   const categories = ['Main Course', 'Beverages', 'Starters', 'Desserts'];
   const categoryData = [45, 25, 20, 10]; // Percentage distribution
 
+  if (loading) return <DashboardSkeleton />;
+
   return (
     <div className="flex-1 px-2 lg:px-3 py-2 w-full max-w-[1800px] mx-auto overflow-hidden animate-in fade-in duration-500">
+      <SkeletonStyles />
 
       {/* HEADER */}
       <div className="mb-4 lg:mb-5 flex justify-between items-start">

@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Plus, Users, Trash2, MoreVertical, ChevronDown, Building2 } from 'lucide-react';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { TableGridSkeleton } from './Skeleton';
 
 const cn = (...inputs) => twMerge(clsx(inputs));
 const LOCAL_AREAS_KEY = 'restro_table_areas';
@@ -408,11 +409,7 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
     }
   };
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-64">
-      <div className="w-10 h-10 border-4 border-slate-100 border-t-slate-400 rounded-full animate-spin"/>
-    </div>
-  );
+  if (loading) return <TableGridSkeleton />;
 
   return (
     <section className="p-4 lg:p-6 pb-24 lg:pb-6 animate-in fade-in duration-500">
