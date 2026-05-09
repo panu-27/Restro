@@ -266,15 +266,7 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
                     </button>
                   )}
                 </div>
-                {!readOnly && area.toLowerCase() !== 'main floor' && (
-                  <button
-                    onClick={() => handleRemoveArea(area)}
-                    className="text-slate-300 hover:text-rose-500 p-1.5 rounded-lg hover:bg-rose-50 transition-all shrink-0"
-                    title="Remove section"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                )}
+
               </div>
               <div className="h-px bg-slate-100 mb-3" />
 

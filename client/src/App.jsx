@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { LayoutGrid, ShoppingBag, History, Settings, LogOut, User, BarChart3, Clock, ChevronDown, MoreVertical, HelpCircle, Utensils, BookOpen, LineChart, Grid, Key, X, Loader2 } from 'lucide-react';
 import TableGrid from './components/TableGrid';
@@ -15,6 +15,14 @@ import WaiterDashboard from './components/WaiterDashboard';
 import KitchenDashboard from './components/KitchenDashboard';
 import NotificationBell from './components/NotificationBell';
 import { DashboardSkeleton } from './components/Skeleton';
+
+// ── PWA back-navigation helper ───────────────────────────────────────────────
+// Pushes a synthetic history entry so Android back has something to pop.
+const pushNav = (key) => {
+  if (window.history.state?.navKey !== key) {
+    window.history.pushState({ navKey: key }, '');
+  }
+};
 
 const BrandLogo = ({ className = '' }) => (
   <img
@@ -112,6 +120,7 @@ function App() {
   /* Table click → open full-screen TableView */
   const handleTableClick = (tableId) => {
     setOpenTableId(tableId);
+    pushNav('table-' + tableId); // back button will close TableView
   };
 
   /* POS table click (from POS tab) → old behaviour */
@@ -130,10 +139,41 @@ function App() {
     fetchSubscription();
   };
 
+  // ── PWA back-button: intercept popstate so Android back navigates inside app ──
+  useEffect(() => {
+    // Ensure there's always a base entry so the first back press is caught
+    if (!window.history.state?.navKey) {
+      window.history.replaceState({ navKey: 'home' }, '');
+    }
+    const handlePop = () => {
+      // If a table/order view is open, close it first
+      setOpenTableId(prev => {
+        if (prev) { fetchActiveOrders(); return null; }
+        return prev;
+      });
+      setOpenOrderId(prev => {
+        if (prev) { fetchActiveOrders(); return null; }
+        return prev;
+      });
+      // If we're on a non-home tab, go back to dashboard and push home entry
+      setActiveTab(prev => {
+        if (prev !== 'dashboard') {
+          window.history.pushState({ navKey: 'home' }, '');
+          return 'dashboard';
+        }
+        return prev;
+      });
+    };
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
+  }, []);
+
   // ── useCallback hooks MUST be before any early returns (Rules of Hooks) ────────
   const handleTabChange = useCallback((tabId) => {
     setActiveTab(tabId);
     window.dispatchEvent(new Event('close-notifications'));
+    // Push a history entry for every non-home tab so back returns here
+    if (tabId !== 'dashboard') pushNav(tabId);
   }, []);
 
   // ── AUTH GATE ────────────────────────────────────────────────────────────────────

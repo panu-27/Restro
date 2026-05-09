@@ -51,6 +51,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   const [catFilter, setCatFilter] = useState('All');
   const [settled, setSettled] = useState(false); // success screen
   const [loading, setLoading] = useState(true);
+  const [menuOpen, setMenuOpen] = useState(true); // mobile menu collapse toggle
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [availableTables, setAvailableTables] = useState([]);
   const [selectedTransferTable, setSelectedTransferTable] = useState('');
@@ -913,9 +914,32 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
 
         {/* ── Column 2: Menu ─────────────────────────────────────────── */}
         <div className="lg:col-span-5 flex flex-col lg:overflow-hidden bg-[#f8f7f5] lg:bg-white border-b border-slate-200 lg:border-none">
-          <div className="px-5 pt-2 pb-4 lg:sticky lg:top-0 z-10 bg-[#f8f7f5] lg:bg-white">
-            <h2 className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-3">Menu</h2>
-            <div className="mb-4">
+
+          {/* ── Mobile collapse toggle (hidden on desktop) ───────────── */}
+          <button
+            className="lg:hidden flex items-center justify-between w-full px-5 py-3 bg-white border-b border-slate-100 active:bg-slate-50 transition-colors"
+            onClick={() => setMenuOpen(v => !v)}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Menu</span>
+              {activeCurrent.length > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-[#ff5a36] text-white text-[9px] font-black">
+                  {activeCurrent.reduce((s, i) => s + i.qty, 0)}
+                </span>
+              )}
+            </div>
+            <span className={cn(
+              'text-slate-400 transition-transform duration-200',
+              menuOpen ? 'rotate-180' : 'rotate-0'
+            )}>
+              <ArrowRight size={14} className="rotate-90" />
+            </span>
+          </button>
+
+          {/* ── Search + filters + list (collapsible on mobile) ────────── */}
+          <div className={cn(menuOpen ? 'block' : 'hidden', 'lg:flex lg:flex-col lg:flex-1 lg:overflow-hidden')}>
+            <div className="px-5 pt-2 pb-4 lg:sticky lg:top-0 z-10 bg-[#f8f7f5] lg:bg-white">
+              <div className="mb-4">
               <div className="flex items-center gap-2">
                 <div className="relative group flex-1">
                   <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
@@ -1050,6 +1074,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
               </div>
             )}
           </div>
+          </div>{/* end collapsible wrapper */}
         </div>
 
         {/* ── Column 3: Order Summary ─────────────────────────────────── */}
