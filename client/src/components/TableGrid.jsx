@@ -12,7 +12,7 @@ const LOCAL_TABLES_KEY = 'restro_tables_cache';
 
 // ── Table SVG Icon ──────────────────────────────────────────────────────────
 const TableIcon = ({ label = '', occupied = false }) => {
-  const fontSize = label.length > 8 ? 13 : label.length > 6 ? 16 : 19;
+  const fontSize = label.length > 8 ? 18 : label.length > 6 ? 22 : 28;
   const iconColor    = occupied ? '#FF5A36' : '#64748B';
   const chairOpacity = occupied ? '0.35' : '0.28';
   const tableOpacity = occupied ? '1' : '0.82';
@@ -56,8 +56,8 @@ const writeCache = (key, val) => {
 };
 
 const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
-  const [tables, setTables] = useState(() => readCache(LOCAL_TABLES_KEY, []));
-  const [areaOptions, setAreaOptions] = useState(() => readCache(LOCAL_AREAS_KEY, ['Main Floor']));
+  const [tables, setTables] = useState([]);
+  const [areaOptions, setAreaOptions] = useState(['Main Floor']);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(null);
@@ -296,7 +296,7 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
                       <div
                         key={table._id}
                         className={cn(
-                          'rounded-[1rem] lg:rounded-xl border shadow-sm hover:shadow-md transition-all duration-300 relative h-[100px] lg:h-[150px]',
+                          'rounded-[1rem] lg:rounded-xl border shadow-sm hover:shadow-md transition-all duration-300 relative h-[148px] lg:h-[150px]',
                           tablHasDraft
                             ? 'bg-emerald-50/60 border-emerald-200'
                             : isOccupied ? 'bg-white border-orange-100' : 'bg-white border-slate-100'
@@ -352,10 +352,10 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
 
                         <div
                           onClick={() => onTableClick(table.tableId)}
-                          className="cursor-pointer p-2 lg:p-3.5 pt-5 lg:pt-4 flex flex-col h-full"
+                          className="cursor-pointer p-2 lg:p-3.5 pt-4 lg:pt-4 flex flex-col h-full"
                         >
-                          <div className="flex justify-center mb-1.5 lg:mb-3 mt-1 lg:mt-2 flex-grow items-center">
-                            <div className="w-[42px] h-[42px] lg:w-[62px] lg:h-[62px] flex items-center justify-center hover:scale-105 transition-transform">
+                          <div className="flex justify-center mb-1 lg:mb-3 mt-0 lg:mt-2 flex-grow items-center">
+                            <div className="w-[70px] h-[70px] lg:w-[62px] lg:h-[62px] flex items-center justify-center hover:scale-105 transition-transform">
                               <TableIcon label={table.tableId} occupied={isOccupied}/>
                             </div>
                           </div>

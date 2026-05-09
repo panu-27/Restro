@@ -1010,7 +1010,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
 
                       <div className="flex-1 min-w-0">
                         <h4 className={cn(
-                          "text-[15px] font-medium text-slate-800 tracking-tight truncate",
+                          "text-[15px] font-medium text-slate-800 tracking-tight leading-snug",
                           inCart && "text-[#c2410c] font-semibold"
                         )}>
                           {item.name}
