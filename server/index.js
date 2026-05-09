@@ -847,6 +847,36 @@ app.delete('/api/table-areas/:name', auth, adminOnly, async (req, res) => {
   }
 });
 
+// PATCH /api/table-areas/:name/rename — Rename a floor/section
+app.patch('/api/table-areas/:name/rename', auth, adminOnly, async (req, res) => {
+  try {
+    const oldName = decodeURIComponent(String(req.params.name || '').trim());
+    const newName = String(req.body?.newName || '').trim();
+    if (!newName) return res.status(400).json({ error: 'New name is required' });
+    if (!oldName) return res.status(400).json({ error: 'Area name is required' });
+
+    const user = await ArcheUser.findById(req.user.ownerId).select('tableAreas');
+    const current = Array.isArray(user?.tableAreas) ? user.tableAreas : ['Main Floor'];
+
+    // Check new name doesn't already exist (case-insensitive)
+    const alreadyExists = current.some(a => a.toLowerCase() === newName.toLowerCase() && a.toLowerCase() !== oldName.toLowerCase());
+    if (alreadyExists) return res.status(400).json({ error: 'A floor with that name already exists' });
+
+    const next = current.map(a => a.toLowerCase() === oldName.toLowerCase() ? newName : a);
+    await ArcheUser.findByIdAndUpdate(req.user.ownerId, { tableAreas: next });
+
+    // Update all tables that belonged to the old area
+    await Table.updateMany(
+      { userId: req.user.ownerId, area: new RegExp('^' + oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') },
+      { area: newName }
+    );
+
+    res.json({ message: 'Area renamed successfully', tableAreas: next });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/tables', auth, async (req, res) => {
   try {
     const tables = await Table.find({ userId: req.user.ownerId }).sort('tableId');

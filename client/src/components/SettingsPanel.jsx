@@ -54,8 +54,10 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
   const [allTables, setAllTables] = useState([]);
   const [tableAreas, setTableAreas] = useState(['Main Floor']);
   const [tablesLoading, setTablesLoading] = useState(false);
-  const [editingTableId, setEditingTableId] = useState(null); // tableId being renamed
+  const [editingTableId, setEditingTableId] = useState(null);
   const [editTableName, setEditTableName] = useState('');
+  const [editingSection, setEditingSection] = useState(null);   // area name being renamed
+  const [editSectionName, setEditSectionName] = useState('');
   const [showAddSection, setShowAddSection] = useState(false);
   const [newSectionName, setNewSectionName] = useState('');
   const [tableError, setTableError] = useState('');
@@ -148,6 +150,18 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
       await axios.delete(`/api/table-areas/${encodeURIComponent(area)}`);
       fetchTablesData();
     } catch (err) { alert(err.response?.data?.error || 'Failed to delete section'); }
+  };
+
+  const handleRenameSection = async (oldName) => {
+    const newName = editSectionName.trim();
+    if (!newName || newName === oldName) { setEditingSection(null); return; }
+    try {
+      await axios.patch(`/api/table-areas/${encodeURIComponent(oldName)}/rename`, { newName });
+      setEditingSection(null);
+      fetchTablesData();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to rename section');
+    }
   };
 
   useEffect(() => {
@@ -681,20 +695,66 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
                     <div key={area}>
                       {/* Section heading */}
                       <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
                           <div className="w-2 h-2 rounded-full bg-[#FF5A36] shrink-0"></div>
-                          <h4 className="text-base font-black text-slate-900 uppercase tracking-wide">{area}</h4>
-                          <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full">{areaTables.length} tables</span>
+                          {editingSection === area ? (
+                            <div className="flex items-center gap-2 flex-1">
+                              <input
+                                autoFocus
+                                value={editSectionName}
+                                onChange={e => setEditSectionName(e.target.value)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') handleRenameSection(area);
+                                  if (e.key === 'Escape') setEditingSection(null);
+                                }}
+                                className="flex-1 min-w-0 text-sm font-black text-slate-900 bg-slate-50 border border-orange-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-orange-400/30 uppercase tracking-wide"
+                              />
+                              <button onClick={() => handleRenameSection(area)}
+                                className="shrink-0 bg-emerald-500 text-white px-2.5 py-1.5 rounded-lg text-[10px] font-black hover:bg-emerald-600 transition-colors">
+                                ✓
+                              </button>
+                              <button onClick={() => setEditingSection(null)}
+                                className="shrink-0 text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
+                                <X size={13} />
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <h4
+                                onDoubleClick={() => { setEditingSection(area); setEditSectionName(area); }}
+                                className="text-base font-black text-slate-900 uppercase tracking-wide cursor-text select-none"
+                              >{area}</h4>
+                              <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full">{areaTables.length} tables</span>
+                              <button
+                                onClick={() => { setEditingSection(area); setEditSectionName(area); }}
+                                className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-all"
+                                title="Rename section"
+                              >
+                                <Edit3 size={12} />
+                              </button>
+                            </>
+                          )}
                         </div>
-                        {area.toLowerCase() !== 'main floor' && (
-                          <button
-                            onClick={() => handleDeleteSection(area)}
-                            className="text-gray-300 hover:text-rose-500 transition-colors p-2 rounded-xl hover:bg-rose-50"
-                            title="Delete section"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
+                        <div className="flex items-center gap-1 shrink-0">
+                          {editingSection !== area && (
+                            <button
+                              onClick={() => { setEditingSection(area); setEditSectionName(area); }}
+                              className="text-slate-300 hover:text-slate-600 transition-colors p-1.5 rounded-xl hover:bg-slate-100"
+                              title="Rename section"
+                            >
+                              <Edit3 size={13} />
+                            </button>
+                          )}
+                          {area.toLowerCase() !== 'main floor' && (
+                            <button
+                              onClick={() => handleDeleteSection(area)}
+                              className="text-gray-300 hover:text-rose-500 transition-colors p-1.5 rounded-xl hover:bg-rose-50"
+                              title="Delete section"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       {/* Divider */}
