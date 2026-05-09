@@ -878,6 +878,37 @@ app.post('/api/tables', auth, adminOnly, async (req, res) => {
   }
 });
 
+// PATCH /api/tables/:tableId/rename — Rename a table (change its tableId)
+app.patch('/api/tables/:tableId/rename', auth, adminOnly, async (req, res) => {
+  try {
+    const oldId = req.params.tableId;
+    const newId = String(req.body?.newTableId || '').trim();
+    if (!newId) return res.status(400).json({ error: 'newTableId is required' });
+    if (newId === oldId) return res.json({ message: 'No change' });
+
+    // Check if new name conflicts
+    const conflict = await Table.findOne({ tableId: newId, userId: req.user.ownerId });
+    if (conflict) return res.status(400).json({ error: `Table "${newId}" already exists` });
+
+    const table = await Table.findOneAndUpdate(
+      { tableId: oldId, userId: req.user.ownerId },
+      { tableId: newId, lastUpdated: new Date() },
+      { new: true }
+    );
+    if (!table) return res.status(404).json({ error: 'Table not found' });
+
+    // Update active orders referencing old tableId
+    await Order.updateMany(
+      { userId: req.user.ownerId, tableId: oldId, status: { $nin: ['Paid', 'Cancelled'] } },
+      { tableId: newId }
+    );
+
+    res.json(table);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PATCH /api/tables/:tableId — Update table seats or other metadata
 app.patch('/api/tables/:tableId', auth, adminOnly, async (req, res) => {
   try {

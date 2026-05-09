@@ -4,7 +4,7 @@ export function CustomLogo({ size = 24, className = "", ...props }) {
     return (
         <img
             src="/brand-logo.png"
-            alt="Restro logo"
+            alt="Annapurna logo"
             width={size}
             height={size}
             className={className}

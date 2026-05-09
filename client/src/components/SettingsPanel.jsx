@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { Plus, Trash2, Edit3, Save, X, Check, ToggleLeft, ToggleRight, Store, Hash, Utensils, CreditCard, Shield, Leaf, Flame, Coffee, IceCream, Search, MapPin, Phone, FileText, Receipt, Percent, Users, Eye, EyeOff, ChefHat, UserPlus, Key, LogOut } from 'lucide-react';
+import { Plus, Trash2, Edit3, Save, X, Check, ToggleLeft, ToggleRight, Store, Hash, Utensils, CreditCard, Shield, Leaf, Flame, Coffee, IceCream, Search, MapPin, Phone, FileText, Receipt, Percent, Users, Eye, EyeOff, ChefHat, UserPlus, Key, LogOut, LayoutGrid } from 'lucide-react';
+import { TableSettingsSkeleton } from './Skeleton';
 
 const DEFAULT_MENU_CATEGORIES = ['Veg', 'Non-Veg', 'Beverage', 'Dessert'];
 
@@ -49,6 +50,16 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
   const [showStaffPw, setShowStaffPw] = useState({});
   const [staffError, setStaffError] = useState('');
 
+  // Tables management
+  const [allTables, setAllTables] = useState([]);
+  const [tableAreas, setTableAreas] = useState(['Main Floor']);
+  const [tablesLoading, setTablesLoading] = useState(false);
+  const [editingTableId, setEditingTableId] = useState(null); // tableId being renamed
+  const [editTableName, setEditTableName] = useState('');
+  const [showAddSection, setShowAddSection] = useState(false);
+  const [newSectionName, setNewSectionName] = useState('');
+  const [tableError, setTableError] = useState('');
+
   const fetchStaff = async () => {
     setStaffLoading(true);
     try {
@@ -61,6 +72,83 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
   useEffect(() => {
     fetchStaff();
   }, []);
+
+  const SETTINGS_TABLES_CACHE = 'restro_settings_tables_cache';
+  const SETTINGS_AREAS_CACHE  = 'restro_settings_areas_cache';
+
+  const readSettingsCache = (key, fallback) => {
+    try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
+    catch { return fallback; }
+  };
+
+  const fetchTablesData = async (silent = false) => {
+    if (!silent) setTablesLoading(true);
+    try {
+      const [tablesRes, areasRes] = await Promise.all([
+        axios.get('/api/tables'),
+        axios.get('/api/table-areas')
+      ]);
+      const t = tablesRes.data || [];
+      const a = Array.isArray(areasRes.data) && areasRes.data.length ? areasRes.data : ['Main Floor'];
+      setAllTables(t);
+      setTableAreas(a);
+      localStorage.setItem(SETTINGS_TABLES_CACHE, JSON.stringify(t));
+      localStorage.setItem(SETTINGS_AREAS_CACHE,  JSON.stringify(a));
+    } catch (err) { console.error('Error fetching tables:', err); }
+    finally { if (!silent) setTablesLoading(false); }
+  };
+
+  useEffect(() => {
+    if (activeSection === 'tables') {
+      // Show cached data instantly, then refresh
+      const cachedTables = readSettingsCache(SETTINGS_TABLES_CACHE, null);
+      const cachedAreas  = readSettingsCache(SETTINGS_AREAS_CACHE,  null);
+      if (cachedTables) { setAllTables(cachedTables); setTableAreas(cachedAreas || ['Main Floor']); setTablesLoading(false); fetchTablesData(true); }
+      else fetchTablesData(false);
+    }
+  }, [activeSection]);
+
+  const handleRenameTable = async (oldId) => {
+    const newId = editTableName.trim();
+    if (!newId || newId === oldId) { setEditingTableId(null); return; }
+    setTableError('');
+    try {
+      await axios.patch(`/api/tables/${oldId}/rename`, { newTableId: newId });
+      setEditingTableId(null);
+      fetchTablesData();
+    } catch (err) {
+      setTableError(err.response?.data?.error || 'Failed to rename table.');
+    }
+  };
+
+  const handleDeleteTableFromSettings = async (tableId) => {
+    if (!window.confirm(`Remove table "${tableId}"?`)) return;
+    try {
+      await axios.delete(`/api/tables/${tableId}`);
+      fetchTablesData();
+    } catch (err) { alert('Failed to delete table'); }
+  };
+
+  const handleAddSection = async () => {
+    const name = newSectionName.trim();
+    if (!name) return;
+    try {
+      await axios.post('/api/table-areas', { name });
+      setNewSectionName('');
+      setShowAddSection(false);
+      fetchTablesData();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to add section');
+    }
+  };
+
+  const handleDeleteSection = async (area) => {
+    if (!window.confirm(`Delete section "${area}" and all its tables?`)) return;
+    try {
+      await axios.delete(`/api/table-areas/${encodeURIComponent(area)}`);
+      fetchTablesData();
+    } catch (err) { alert(err.response?.data?.error || 'Failed to delete section'); }
+  };
 
   useEffect(() => {
     if (user) {
@@ -213,6 +301,7 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
     { id: 'restaurant', icon: Store, label: 'Restaurant' },
     { id: 'taxes', icon: Percent, label: 'Taxes' },
     { id: 'menu', icon: Utensils, label: 'Menu Builder' },
+    { id: 'tables', icon: LayoutGrid, label: 'Tables' },
     { id: 'billing', icon: CreditCard, label: 'Subscription' },
     { id: 'staff', icon: Users, label: 'Staff' },
   ];
@@ -558,6 +647,142 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
               <span className="text-[10px] font-bold text-gray-300 uppercase tracking-[0.2em]">{filteredMenu.length} items</span>
               <span className="text-[10px] font-bold text-gray-300 uppercase tracking-[0.2em]">{menuItems.filter(i => i.isAvailable).length} available / {menuItems.filter(i => !i.isAvailable).length} hidden</span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================== TABLES SECTION ===================== */}
+      {activeSection === 'tables' && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          <div className="bg-white border border-gray-50 rounded-3xl lg:rounded-[2.5rem] p-6 lg:p-10 shadow-sm">
+            <div className="mb-6">
+              <h3 className="text-xl font-black text-slate-900 mb-1">Table Management</h3>
+              <p className="text-sm text-gray-400 font-medium">View, rename, or delete tables in each section. Add new sections at the bottom.</p>
+            </div>
+
+            {tableError && (
+              <div className="bg-red-50 text-red-600 text-xs font-bold p-3 rounded-xl border border-red-100 mb-4">{tableError}</div>
+            )}
+
+            {tablesLoading ? (
+              <TableSettingsSkeleton />
+            ) : (
+              <div className="space-y-8">
+                {tableAreas.map((area) => {
+                  const areaTablesRaw = allTables.filter(t => (t.area || 'Main Floor') === area);
+                  const areaTables = [...areaTablesRaw].sort((a, b) => {
+                    const numA = parseInt((a.tableId || '').replace(/\D+/g, ''), 10);
+                    const numB = parseInt((b.tableId || '').replace(/\D+/g, ''), 10);
+                    if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+                    return (a.tableId || '').localeCompare(b.tableId || '');
+                  });
+
+                  return (
+                    <div key={area}>
+                      {/* Section heading */}
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-2 h-2 rounded-full bg-[#FF5A36] shrink-0"></div>
+                          <h4 className="text-base font-black text-slate-900 uppercase tracking-wide">{area}</h4>
+                          <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full">{areaTables.length} tables</span>
+                        </div>
+                        {area.toLowerCase() !== 'main floor' && (
+                          <button
+                            onClick={() => handleDeleteSection(area)}
+                            className="text-gray-300 hover:text-rose-500 transition-colors p-2 rounded-xl hover:bg-rose-50"
+                            title="Delete section"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Divider */}
+                      <div className="h-px bg-gray-100 mb-4"></div>
+
+                      {/* Tables */}
+                      {areaTables.length === 0 ? (
+                        <div className="text-center py-6 text-gray-300 text-sm font-bold bg-gray-50/50 rounded-2xl">
+                          No tables in this section
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {areaTables.map((table) => (
+                            <div key={table._id} className="flex items-center gap-3 bg-gray-50/50 border border-gray-100 rounded-2xl px-4 py-3 group hover:border-gray-200 transition-all">
+                              {editingTableId === table.tableId ? (
+                                <>
+                                  <input
+                                    autoFocus
+                                    value={editTableName}
+                                    onChange={(e) => setEditTableName(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') handleRenameTable(table.tableId);
+                                      if (e.key === 'Escape') setEditingTableId(null);
+                                    }}
+                                    className="flex-1 min-w-0 bg-white border border-orange-300 rounded-xl py-1.5 px-3 text-sm font-black focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400"
+                                  />
+                                  <button onClick={() => handleRenameTable(table.tableId)} className="shrink-0 bg-emerald-500 text-white p-1.5 rounded-lg hover:bg-emerald-600 transition-all">
+                                    <Check size={13} />
+                                  </button>
+                                  <button onClick={() => setEditingTableId(null)} className="shrink-0 bg-gray-100 text-gray-400 p-1.5 rounded-lg hover:text-rose-500 hover:bg-rose-50 transition-all">
+                                    <X size={13} />
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="flex-1 font-black text-sm text-slate-800 truncate">{table.tableId}</span>
+                                  <span className="text-[10px] font-semibold text-gray-400 shrink-0">{table.seats || 4}s</span>
+                                  <button
+                                    onClick={() => { setEditingTableId(table.tableId); setEditTableName(table.tableId); setTableError(''); }}
+                                    className="shrink-0 text-gray-300 hover:text-blue-500 p-1.5 rounded-lg hover:bg-blue-50 transition-all opacity-0 group-hover:opacity-100"
+                                    title="Rename"
+                                  >
+                                    <Edit3 size={13} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteTableFromSettings(table.tableId)}
+                                    className="shrink-0 text-gray-300 hover:text-rose-500 p-1.5 rounded-lg hover:bg-rose-50 transition-all opacity-0 group-hover:opacity-100"
+                                    title="Delete"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Add Section */}
+                <div className="pt-4 border-t border-gray-100">
+                  {showAddSection ? (
+                    <div className="flex gap-2 items-center animate-in slide-in-from-bottom-2 duration-200">
+                      <input
+                        autoFocus
+                        type="text"
+                        value={newSectionName}
+                        onChange={(e) => setNewSectionName(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleAddSection(); if (e.key === 'Escape') { setShowAddSection(false); setNewSectionName(''); } }}
+                        placeholder="Section name, e.g. First Floor or Terrace"
+                        className="flex-1 bg-gray-50 border border-gray-200 rounded-full py-3 px-5 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400"
+                      />
+                      <button onClick={handleAddSection} className="bg-slate-900 text-white px-5 py-3 rounded-full text-xs font-black uppercase tracking-wider shrink-0">Add</button>
+                      <button onClick={() => { setShowAddSection(false); setNewSectionName(''); }} className="bg-gray-100 text-gray-400 px-4 py-3 rounded-full text-xs font-black uppercase tracking-wider shrink-0 hover:text-rose-500 hover:bg-rose-50 transition-all">Cancel</button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setShowAddSection(true)}
+                      className="flex items-center gap-2 bg-orange-50 text-[#FF5A36] px-5 py-3 rounded-full font-bold text-sm hover:bg-orange-500/10 transition-all"
+                    >
+                      <Plus size={16} /> Add Section
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

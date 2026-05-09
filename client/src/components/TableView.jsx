@@ -60,6 +60,44 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   const [guestNote, setGuestNote] = useState('');
   const [paymentMode, setPaymentMode] = useState('Online');
   const billRef = useRef(null);
+  const isSavingRef = useRef(false); // prevents double-dispatch
+
+  // ── Draft cache — stores [{label, items}] per part, keyed by tableId ─────
+  const draftKey = tableId ? `restro_draft_${tableId}` : null;
+
+  // Serialize all parts' current round items into [{label, items}]
+  const saveDraft = (currentParts, roundItemsMap) => {
+    if (!draftKey) return;
+    try {
+      const snapshot = currentParts.map(p => ({
+        label: p.label,
+        items: roundItemsMap[p.id] || []
+      }));
+      const hasAny = snapshot.some(s => s.items.length > 0);
+      if (hasAny) localStorage.setItem(draftKey, JSON.stringify(snapshot));
+      else localStorage.removeItem(draftKey);
+    } catch {}
+  };
+
+  // Returns [{label, items}] or null
+  const loadDraft = () => {
+    if (!draftKey) return null;
+    try { const v = localStorage.getItem(draftKey); return v ? JSON.parse(v) : null; }
+    catch { return null; }
+  };
+
+  const clearDraft = () => { if (draftKey) { try { localStorage.removeItem(draftKey); } catch {} } };
+
+  // Apply a draft snapshot onto a list of parts (matched by index)
+  const applyDraft = (loadedParts, draft) => {
+    if (!draft || !draft.length) return;
+    const restored = {};
+    draft.forEach((d, idx) => {
+      const part = loadedParts[idx];
+      if (part && d.items && d.items.length > 0) restored[part.id] = d.items;
+    });
+    if (Object.keys(restored).length > 0) setRoundItems(restored);
+  };
 
   // ── Sync with Backend On Mount ─────────────────────────────────────────
   useEffect(() => {
@@ -91,24 +129,37 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
             const pid = `part-${o._id}`;
             orderIds[pid] = o._id;
             orderNumbers[pid] = o.orderNumber;
-            if (o.customerPhone) {
-              initPhones[pid] = o.customerPhone;
-            }
+            if (o.customerPhone) initPhones[pid] = o.customerPhone;
             if (idx === 0) {
               if (o.paymentType) setPaymentType(o.paymentType);
               if (o.guestNote) setGuestNote(o.guestNote);
             }
           });
-
           setParts(loadedParts);
           setPartOrderIds(orderIds);
           setPartOrderNumbers(orderNumbers);
           setPartPhones(initPhones);
+          // Restore draft into matching parts by index
+          applyDraft(loadedParts, loadDraft());
         } else {
-          // New session for a table
+          // New session — create first part, restore draft
           const p1 = newPart(1);
           if (tableId) p1.label = `Table ${tableId.replace('Table ', '')}`;
-          setParts([p1]);
+          // Check if draft had multiple parts (split session)
+          const draft = loadDraft();
+          if (draft && draft.length > 1) {
+            // Recreate all parts from draft
+            const restoredParts = draft.map((d, i) => {
+              const p = newPart(i + 1);
+              p.label = d.label || `Part ${i + 1}`;
+              return p;
+            });
+            setParts(restoredParts);
+            applyDraft(restoredParts, draft);
+          } else {
+            setParts([p1]);
+            applyDraft([p1], draft);
+          }
         }
       } catch (err) {
         console.error('Failed to init TableView:', err);
@@ -119,6 +170,11 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
     };
     init();
   }, [tableId, orderId]);
+
+  // ── Auto-save ALL parts' draft whenever roundItems or parts change ────────
+  useEffect(() => {
+    if (!loading && parts.length > 0) saveDraft(parts, roundItems);
+  }, [roundItems, parts, loading]);
 
   useEffect(() => {
     if (showTransferModal) {
@@ -212,22 +268,21 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   };
 
   const saveRound = async (partId, options = {}) => {
+    if (isSavingRef.current) return; // block double-calls
     const { closeAfterSave = false } = options;
     const items = currentRoundOf(partId);
     if (!items.length) return;
 
+    isSavingRef.current = true;
     try {
       let orderId = partOrderIds[partId];
       if (orderId) {
-        // PATCH existing order
-        const res = await axios.patch(`/api/orders/${orderId}/add-items`, { items: items.map(i => ({ ...i, quantity: i.qty })) });
-        // Update local rounds
+        await axios.patch(`/api/orders/${orderId}/add-items`, { items: items.map(i => ({ ...i, quantity: i.qty })) });
         setParts(prev => prev.map(p => {
           if (p.id !== partId) return p;
           return { ...p, rounds: [...p.rounds, { roundNumber: p.rounds.length + 1, items: [...items] }] };
         }));
       } else {
-        // POST new order
         const orderPayload = {
           orderType: tableId ? 'Dine-in' : 'Parcel',
           partLabel: parts.find(p => p.id === partId)?.label || 'Part 1',
@@ -236,7 +291,6 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
           customerPhone: phoneOf(partId) || ''
         };
         if (tableId) orderPayload.tableId = tableId;
-
         const res = await axios.post('/api/orders', orderPayload);
         orderId = res.data._id;
         setPartOrderIds(prev => ({ ...prev, [partId]: orderId }));
@@ -248,18 +302,19 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
       }
 
       setRoundItems(prev => ({ ...prev, [partId]: [] }));
+      clearDraft(); // clear draft after successful dispatch
       setRoundMsg(true);
       setTimeout(() => setRoundMsg(false), 2000);
       if (closeAfterSave) {
         setIsDispatching(true);
-        setTimeout(() => {
-          onClose?.();
-        }, 170);
+        setTimeout(() => { onClose?.(); }, 170);
       }
       return orderId;
     } catch (err) {
       console.error('Failed to save round:', err);
       alert('Error saving round to database.');
+    } finally {
+      isSavingRef.current = false;
     }
   };
 
@@ -1066,11 +1121,11 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
           <div className="bg-[#f8f7f5] space-y-4">
             {activeCurrent.length > 0 && (
               <button
-                onClick={() => saveRound(currentPartId, { closeAfterSave: true })}
-                disabled={isDispatching}
+                onClick={() => saveRound(currentPartId)}
+                disabled={isDispatching || isSavingRef.current}
                 className={cn(
                   'w-full py-4 rounded-xl text-[14px] font-bold tracking-wide transition-all flex items-center justify-center gap-2.5 border shadow-sm active:scale-[0.98]',
-                  isDispatching && 'opacity-70 cursor-wait',
+                  (isDispatching || isSavingRef.current) && 'opacity-70 cursor-wait',
                   roundMsg
                     ? 'bg-emerald-500 text-white border-emerald-500 shadow-emerald-200'
                     : 'bg-emerald-500 text-white border-emerald-500 shadow-emerald-200 hover:bg-emerald-600 hover:border-emerald-600'
@@ -1078,7 +1133,9 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
               >
                 {roundMsg
                   ? <><CheckCircle2 size={16} strokeWidth={2.5} /> Order Dispatched!</>
-                  : <><ArrowRight size={16} strokeWidth={2.5} /> Dispatch to kitchen</>}
+                  : isSavingRef.current
+                    ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Saving...</>
+                    : <><ArrowRight size={16} strokeWidth={2.5} /> Dispatch to kitchen</>}
               </button>
             )}
 
@@ -1210,42 +1267,64 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
         <PrintBill partId={activePartData.id} />
       )}
 
-      {/* Transfer Modal */}
       {showTransferModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-4 no-print">
-          <div className="bg-white rounded-[2rem] p-8 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="flex justify-between items-center mb-6">
+          <div className="bg-white rounded-[2rem] p-6 lg:p-8 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-black text-slate-900">Transfer Table</h2>
               <button onClick={() => setShowTransferModal(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
             </div>
-            <p className="text-sm text-slate-500 mb-4">Select destination table for <b>{parts[activePart]?.label}</b>:</p>
-            <div className="max-h-60 overflow-y-auto no-scrollbar border border-slate-100 rounded-xl mb-6">
-              {availableTables.filter(t => t.tableId !== tableId).map(t => (
-                <button
-                  key={t._id}
-                  onClick={() => setSelectedTransferTable(t.tableId)}
-                  className={cn(
-                    "w-full text-left px-4 py-3 text-sm font-semibold border-b border-slate-50 last:border-0 transition-colors hover:bg-slate-50",
-                    selectedTransferTable === t.tableId ? "bg-orange-50 text-[#FF5A36]" : "text-slate-700"
-                  )}
-                >
-                  Table {t.tableId} {t.area && <span className="text-xs text-slate-400 font-normal">({t.area})</span>}
-                </button>
-              ))}
-              {availableTables.filter(t => t.tableId !== tableId).length === 0 && (
-                <div className="p-4 text-center text-sm text-slate-400">No other tables available</div>
-              )}
+            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-4">Select destination for <span className="text-slate-700">{parts[activePart]?.label}</span></p>
+            <div className="max-h-72 overflow-y-auto no-scrollbar space-y-4 mb-5">
+              {(() => {
+                const others = availableTables.filter(t => t.tableId !== tableId);
+                const areas = [...new Set(others.map(t => t.area || 'Main Floor'))];
+                if (others.length === 0) return (
+                  <div className="py-8 text-center text-sm text-slate-400 font-semibold">No other tables available</div>
+                );
+                return areas.map(area => (
+                  <div key={area}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-[#FF5A36] shrink-0" />
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{area}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {others.filter(t => (t.area || 'Main Floor') === area)
+                        .sort((a, b) => {
+                          const na = parseInt((a.tableId||'').replace(/\D+/g,''),10);
+                          const nb = parseInt((b.tableId||'').replace(/\D+/g,''),10);
+                          return (!isNaN(na)&&!isNaN(nb)) ? na-nb : (a.tableId||'').localeCompare(b.tableId||'');
+                        })
+                        .map(t => (
+                          <button
+                            key={t._id}
+                            onClick={() => setSelectedTransferTable(t.tableId)}
+                            className={cn(
+                              "px-3 py-2.5 rounded-xl text-xs font-black border transition-all text-left",
+                              selectedTransferTable === t.tableId
+                                ? "bg-orange-50 border-orange-300 text-[#FF5A36]"
+                                : "bg-slate-50 border-slate-100 text-slate-700 hover:border-slate-200"
+                            )}
+                          >
+                            {t.tableId}
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                ));
+              })()}
             </div>
             <button
               onClick={handleTransfer}
               disabled={!selectedTransferTable}
-              className="w-full py-4 bg-[#FF5A36] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              className="w-full py-4 bg-[#FF5A36] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
               Confirm Transfer
             </button>
           </div>
         </div>
       )}
+
     </div>
   );
 };

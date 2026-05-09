@@ -19,7 +19,7 @@ import { DashboardSkeleton } from './components/Skeleton';
 const BrandLogo = ({ className = '' }) => (
   <img
     src="/brand-logo.png"
-    alt="Restro"
+    alt="Annapurna"
     className={className}
   />
 );
@@ -245,12 +245,12 @@ function App() {
   const tableCount = user?.tableCount || 10;
 
   const navTabs = [
-    { id: 'dashboard', icon: LayoutGrid,  label: 'Dashboard' },
-    { id: 'tables',    icon: Grid,        label: 'Tables' },
-    { id: 'pos',       icon: ShoppingBag, label: 'Orders' },
-    { id: 'history',   icon: History,     label: 'History' },
-    { id: 'sales',     icon: LineChart,   label: 'Analytics' },
-    { id: 'settings',  icon: Settings,    label: 'Settings' },
+    { id: 'dashboard', icon: LayoutGrid, label: 'Dashboard' },
+    { id: 'tables', icon: Grid, label: 'Tables' },
+    { id: 'pos', icon: ShoppingBag, label: 'Orders' },
+    { id: 'history', icon: History, label: 'History' },
+    { id: 'sales', icon: LineChart, label: 'Analytics' },
+    { id: 'settings', icon: Settings, label: 'Settings' },
   ];
 
   return (
@@ -289,11 +289,10 @@ function App() {
               <button
                 key={tab.id}
                 onClick={() => handleTabChange(tab.id)}
-                className={`w-full flex items-center justify-start gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-300 text-[11px] font-bold uppercase tracking-[0.02em] ${
-                  activeTab === tab.id
+                className={`w-full flex items-center justify-start gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-300 text-[11px] font-bold uppercase tracking-[0.02em] ${activeTab === tab.id
                     ? 'bg-[#FF5A36] text-white'
                     : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
-                }`}
+                  }`}
               >
                 <tab.icon size={17} className="shrink-0" />
                 <span>{tab.label}</span>
@@ -308,11 +307,10 @@ function App() {
               <button
                 key={tab.id}
                 onClick={() => handleTabChange(tab.id)}
-                className={`w-full flex items-center justify-start gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-300 text-[11px] font-bold uppercase tracking-[0.02em] ${
-                  activeTab === tab.id
+                className={`w-full flex items-center justify-start gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-300 text-[11px] font-bold uppercase tracking-[0.02em] ${activeTab === tab.id
                     ? 'bg-[#FF5A36] text-white'
                     : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
-                }`}
+                  }`}
               >
                 <tab.icon size={17} className="shrink-0" />
                 <span>{tab.label}</span>
@@ -355,9 +353,9 @@ function App() {
 
           {/* Dashboard View */}
           {activeTab === 'dashboard' && (
-            <DashboardView 
-              activeOrders={activeOrders} 
-              tableCount={tableCount} 
+            <DashboardView
+              activeOrders={activeOrders}
+              tableCount={tableCount}
               onTabChange={setActiveTab}
             />
           )}
@@ -388,9 +386,9 @@ function App() {
           {/* History */}
           {activeTab === 'history' && (
             <div className="animate-in fade-in duration-500">
-              <OrderHistory 
-                activeOrders={activeOrders} 
-                onOrderUpdate={fetchActiveOrders} 
+              <OrderHistory
+                activeOrders={activeOrders}
+                onOrderUpdate={fetchActiveOrders}
                 onOrderClick={(orderId) => setOpenOrderId(orderId)}
               />
             </div>
@@ -406,10 +404,10 @@ function App() {
           {/* Settings */}
           {activeTab === 'settings' && (
             <div className="animate-in fade-in duration-500">
-              <SettingsPanel 
-                user={user} 
-                subscription={subscription} 
-                onSettingsUpdate={handleSettingsUpdate} 
+              <SettingsPanel
+                user={user}
+                subscription={subscription}
+                onSettingsUpdate={handleSettingsUpdate}
                 onShowPassword={() => setShowPasswordModal(true)}
                 onLogout={handleLogout}
               />
@@ -497,9 +495,8 @@ function App() {
             <button
               key={tab.id}
               onClick={() => handleTabChange(tab.id)}
-              className={`flex flex-col items-center justify-center w-full h-full gap-1 transition-all duration-300 ${
-                isActive ? 'text-[#FF5A36]' : 'text-gray-400 hover:text-gray-900'
-              }`}
+              className={`flex flex-col items-center justify-center w-full h-full gap-1 transition-all duration-300 ${isActive ? 'text-[#FF5A36]' : 'text-gray-400 hover:text-gray-900'
+                }`}
             >
               <div className={`p-2 rounded-xl transition-all duration-300 ${isActive ? 'bg-[#FF5A36]/10' : ''}`}>
                 <tab.icon size={22} className={isActive ? 'fill-[#FF5A36]/20' : ''} />

@@ -108,7 +108,7 @@ export default function MenuPreview() {
             <iframe
               className="w-full h-full"
               src="https://www.youtube.com/embed/dQw4w9WgXcQ?si=replace_with_your_video_id&rel=0&modestbranding=1&color=white"
-              title="Restro POS Demo"
+              title="Annapurna POS Demo"
               frameBorder="0"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
               allowFullScreen
@@ -158,11 +158,10 @@ export default function MenuPreview() {
               <button
                 key={cat}
                 onClick={() => setActiveCategory(cat)}
-                className={`whitespace-nowrap px-5 py-2.5 rounded-full text-[14px] font-medium border transition-all ${
-                  activeCategory === cat
+                className={`whitespace-nowrap px-5 py-2.5 rounded-full text-[14px] font-medium border transition-all ${activeCategory === cat
                     ? 'bg-[#111111] text-white border-[#111111]'
                     : 'bg-white text-zinc-600 border-zinc-100 hover:border-zinc-300'
-                }`}
+                  }`}
               >
                 {cat}
               </button>

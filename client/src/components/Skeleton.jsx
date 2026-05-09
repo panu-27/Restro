@@ -263,3 +263,33 @@ export function OrderHistorySkeleton() {
     </div>
   );
 }
+
+/** Settings > Tables skeleton */
+export function TableSettingsSkeleton() {
+  return (
+    <div className="space-y-8">
+      <SkeletonStyles />
+      {[...Array(2)].map((_, s) => (
+        <div key={s}>
+          <div className="flex items-center gap-3 mb-3">
+            <Sk className="w-2 h-2 rounded-full" />
+            <Sk className="h-4 w-28" />
+            <Sk className="h-5 w-16 rounded-full" />
+          </div>
+          <div className="h-px bg-slate-100 mb-4" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {[...Array(s === 0 ? 6 : 3)].map((_, i) => (
+              <div key={i} className="flex items-center gap-3 bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3">
+                <Sk className="h-4 flex-1" />
+                <Sk className="h-3 w-6 shrink-0" />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      <div className="pt-4 border-t border-gray-100">
+        <Sk className="h-10 w-36 rounded-full" />
+      </div>
+    </div>
+  );
+}

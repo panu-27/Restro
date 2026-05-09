@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Plus, Users, Trash2, MoreVertical, ChevronDown, Building2 } from 'lucide-react';
+import { Plus, Users, Trash2, MoreVertical, Building2 } from 'lucide-react';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { TableGridSkeleton } from './Skeleton';
@@ -8,43 +8,27 @@ import { TableGridSkeleton } from './Skeleton';
 const cn = (...inputs) => twMerge(clsx(inputs));
 const LOCAL_AREAS_KEY = 'restro_table_areas';
 const LOCAL_AREA_MAP_KEY = 'restro_table_area_map';
-const LOCAL_SEEDED_AREAS_KEY = 'restro_seeded_areas';
+const LOCAL_TABLES_KEY = 'restro_tables_cache';
 
-// ── Table SVG Icon with proper inner text via SVG <text> ─────────────────────
+// ── Table SVG Icon ──────────────────────────────────────────────────────────
 const TableIcon = ({ label = '', occupied = false }) => {
-  // Shrink font for longer labels
   const fontSize = label.length > 8 ? 13 : label.length > 6 ? 16 : 19;
   const iconColor    = occupied ? '#FF5A36' : '#64748B';
   const chairOpacity = occupied ? '0.35' : '0.28';
   const tableOpacity = occupied ? '1' : '0.82';
-
   return (
     <svg className="w-full h-full drop-shadow-sm" viewBox="0 0 110 110" fill="none" xmlns="http://www.w3.org/2000/svg">
-      {/* Top chairs */}
       <rect x="25" y="4"  width="16" height="12" rx="4" fill={iconColor} opacity={chairOpacity}/>
       <rect x="69" y="4"  width="16" height="12" rx="4" fill={iconColor} opacity={chairOpacity}/>
-      {/* Bottom chairs */}
       <rect x="25" y="94" width="16" height="12" rx="4" fill={iconColor} opacity={chairOpacity}/>
       <rect x="69" y="94" width="16" height="12" rx="4" fill={iconColor} opacity={chairOpacity}/>
-      {/* Left chairs */}
       <rect x="4"  y="28" width="12" height="16" rx="4" fill={iconColor} opacity={chairOpacity}/>
       <rect x="4"  y="66" width="12" height="16" rx="4" fill={iconColor} opacity={chairOpacity}/>
-      {/* Right chairs */}
       <rect x="94" y="28" width="12" height="16" rx="4" fill={iconColor} opacity={chairOpacity}/>
       <rect x="94" y="66" width="12" height="16" rx="4" fill={iconColor} opacity={chairOpacity}/>
-      {/* Table surface */}
       <rect x="20" y="20" width="70" height="70" rx="14" fill={iconColor} opacity={tableOpacity}/>
-      {/* Table ID */}
-      <text
-        x="55" y="57"
-        textAnchor="middle"
-        dominantBaseline="middle"
-        fill="white"
-        fontFamily="'DM Sans', sans-serif"
-        fontWeight="800"
-        fontSize={fontSize}
-        letterSpacing="-0.4"
-      >
+      <text x="55" y="57" textAnchor="middle" dominantBaseline="middle" fill="white"
+        fontFamily="'DM Sans', sans-serif" fontWeight="800" fontSize={fontSize} letterSpacing="-0.4">
         {label}
       </text>
     </svg>
@@ -57,84 +41,37 @@ const sizeLabel = (seats) => {
   return 'Large';
 };
 
-// ── Status config ─────────────────────────────────────────────────────────────
 const STATUS = {
-  Occupied:  { label: 'Occupied',  text: 'text-[#FF5A36]',    bg: 'bg-orange-50 border-orange-100' },
-  Available: { label: 'Available', text: 'text-emerald-600',  bg: 'bg-emerald-50 border-emerald-100' },
-  Reserved:  { label: 'Reserved',  text: 'text-blue-500',     bg: 'bg-blue-50 border-blue-100' },
+  Occupied:  { label: 'Occupied',  text: 'text-[#FF5A36]',   bg: 'bg-orange-50 border-orange-100' },
+  Available: { label: 'Available', text: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-100' },
+};
+
+// ── Local cache helpers ─────────────────────────────────────────────────────
+const readCache = (key, fallback) => {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
+  catch { return fallback; }
+};
+const writeCache = (key, val) => {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
 };
 
 const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
-  const [tables, setTables] = useState([]);
+  const [tables, setTables] = useState(() => readCache(LOCAL_TABLES_KEY, []));
+  const [areaOptions, setAreaOptions] = useState(() => readCache(LOCAL_AREAS_KEY, ['Main Floor']));
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(null);
+  const [isAdding, setIsAdding] = useState(false);
+  const [addToArea, setAddToArea] = useState('Main Floor');
   const [newTable, setNewTable] = useState({ tableId: '', seats: 4 });
   const [openMenuId, setOpenMenuId] = useState(null);
-  const [selectedArea, setSelectedArea] = useState('Main Floor');
-  const [areaMenuOpen, setAreaMenuOpen] = useState(false);
   const [showAddAreaModal, setShowAddAreaModal] = useState(false);
   const [newArea, setNewArea] = useState('');
-  const [areaOptions, setAreaOptions] = useState(['Main Floor']);
 
-  const getLocalAreas = () => {
-    try {
-      const raw = localStorage.getItem(LOCAL_AREAS_KEY);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  };
+  const getLocalAreaMap = () => readCache(LOCAL_AREA_MAP_KEY, {});
+  const saveLocalAreaMap = (m) => writeCache(LOCAL_AREA_MAP_KEY, m);
 
-  const saveLocalAreas = (areas) => {
-    try {
-      localStorage.setItem(LOCAL_AREAS_KEY, JSON.stringify(areas));
-    } catch {
-      // no-op
-    }
-  };
-
-  const getLocalAreaMap = () => {
-    try {
-      const raw = localStorage.getItem(LOCAL_AREA_MAP_KEY);
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === 'object' ? parsed : {};
-    } catch {
-      return {};
-    }
-  };
-
-  const saveLocalAreaMap = (mapObj) => {
-    try {
-      localStorage.setItem(LOCAL_AREA_MAP_KEY, JSON.stringify(mapObj || {}));
-    } catch {
-      // no-op
-    }
-  };
-
-  const getSeededAreas = () => {
-    try {
-      const raw = localStorage.getItem(LOCAL_SEEDED_AREAS_KEY);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  };
-
-  const saveSeededAreas = (areas) => {
-    try {
-      localStorage.setItem(LOCAL_SEEDED_AREAS_KEY, JSON.stringify(areas));
-    } catch {
-      // no-op
-    }
-  };
-
-  const tableMapKey = (table) => {
-    if (!table) return '';
-    return table._id || `legacy:${table.tableId || ''}`;
-  };
+  const tableMapKey = (t) => t?._id || `legacy:${t?.tableId || ''}`;
 
   const resolveTableArea = (table) => {
     const explicit = (table?.area || '').trim();
@@ -142,150 +79,34 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
     const map = getLocalAreaMap();
     const key = tableMapKey(table);
     if (key && map[key]) return map[key];
-    // fallback for older local keys (before _id-based mapping)
     if (table?.tableId && map[table.tableId]) return map[table.tableId];
     return 'Main Floor';
   };
 
-  const getAreaPrefix = (areaName) => {
-    // Extract first 3 alphanumeric characters from the area name
-    const chars = String(areaName || '')
-      .trim()
-      .replace(/[^a-zA-Z0-9]/g, '');
-    if (!chars) return 'FLR';
-    // Capitalize first letter, keep rest as-is, take first 3
-    const prefix = chars.slice(0, 3);
-    return prefix.charAt(0).toUpperCase() + prefix.slice(1);
-  };
-
-  const createDefaultTablesForArea = async (areaName, minCount = 10) => {
-    const normalizedArea = String(areaName || '').trim();
-    if (!normalizedArea || normalizedArea.toLowerCase() === 'main floor') return;
-
-    // Fetch fresh table data from server to avoid stale-state duplicates
-    let freshTables = [];
+  const fetchAll = async () => {
     try {
-      const res = await axios.get('/api/tables');
-      freshTables = res.data || [];
-    } catch (err) {
-      console.error('Failed to fetch fresh tables:', err);
-      return;
-    }
-
-    const existingForArea = freshTables.filter(t => {
-      const area = (t.area || '').trim();
-      if (area) return area === normalizedArea;
-      const map = getLocalAreaMap();
-      const key = tableMapKey(t);
-      return (key && map[key] === normalizedArea) || (t.tableId && map[t.tableId] === normalizedArea);
-    }).length;
-    if (existingForArea >= minCount) return;
-
-    const existingIds = new Set(freshTables.map(t => t.tableId));
-    const prefix = getAreaPrefix(normalizedArea);
-    const payloads = [];
-
-    for (let i = existingForArea + 1; i <= minCount; i++) {
-      let candidate = `${prefix}-T${i}`;
-      let seq = i;
-      while (existingIds.has(candidate)) {
-        seq += 1;
-        candidate = `${prefix}-T${seq}`;
-      }
-      existingIds.add(candidate);
-      payloads.push({ tableId: candidate, seats: 4, area: normalizedArea });
-    }
-
-    for (const payload of payloads) {
-      const res = await axios.post('/api/tables', payload);
-      const created = res?.data;
-      const map = getLocalAreaMap();
-      const key = tableMapKey(created) || `legacy:${payload.tableId}`;
-      map[key] = normalizedArea;
+      const [tablesRes, areasRes] = await Promise.all([
+        axios.get('/api/tables'),
+        axios.get('/api/table-areas'),
+      ]);
+      const t = tablesRes.data || [];
+      const a = Array.isArray(areasRes.data) && areasRes.data.length ? areasRes.data : ['Main Floor'];
+      setTables(t);
+      setAreaOptions(a);
+      writeCache(LOCAL_TABLES_KEY, t);
+      writeCache(LOCAL_AREAS_KEY, a);
+      // rebuild local area map
+      const map = {};
+      t.forEach(tbl => { const k = tableMapKey(tbl); if (k) map[k] = resolveTableArea(tbl); });
       saveLocalAreaMap(map);
-    }
-  };
-
-  const fetchTables = async () => {
-    try {
-      const res = await axios.get('/api/tables');
-      setTables(res.data);
     } catch (err) {
-      console.error('Error fetching tables:', err);
+      console.error('Error fetching tables/areas:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchAreas = async () => {
-    try {
-      const res = await axios.get('/api/table-areas');
-      if (Array.isArray(res.data) && res.data.length) {
-        setAreaOptions(res.data);
-        saveLocalAreas(res.data);
-      } else {
-        const localAreas = getLocalAreas();
-        setAreaOptions(localAreas.length ? localAreas : ['Main Floor']);
-      }
-    } catch (err) {
-      console.error('Error fetching table areas:', err);
-      const localAreas = getLocalAreas();
-      setAreaOptions(localAreas.length ? localAreas : ['Main Floor']);
-    }
-  };
-
-  useEffect(() => {
-    fetchTables();
-    fetchAreas();
-  }, []);
-
-  useEffect(() => {
-    if (areaOptions.length && !areaOptions.includes(selectedArea)) {
-      setSelectedArea(areaOptions[0]);
-    }
-  }, [areaOptions, selectedArea]);
-
-  useEffect(() => {
-    const nonMainAreas = (areaOptions || []).filter(a => String(a).trim().toLowerCase() !== 'main floor');
-    const seeded = getSeededAreas();
-    const run = async () => {
-      let changed = false;
-      const nextSeeded = [...seeded];
-      for (const area of nonMainAreas) {
-        if (nextSeeded.includes(area)) continue;
-        try {
-          await createDefaultTablesForArea(area, 10);
-          nextSeeded.push(area);
-          changed = true;
-        } catch (err) {
-          console.error(`Failed seeding default tables for ${area}:`, err);
-        }
-      }
-      saveSeededAreas(nextSeeded);
-      if (changed) await fetchTables();
-    };
-    if (nonMainAreas.length) run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [areaOptions]);
-
-  useEffect(() => {
-    const fromTables = Array.from(
-      new Set((tables || []).map(t => resolveTableArea(t)).filter(Boolean))
-    );
-    if (!fromTables.length) return;
-    const map = getLocalAreaMap();
-    (tables || []).forEach((t) => {
-      const key = tableMapKey(t);
-      if (!key) return;
-      map[key] = resolveTableArea(t);
-    });
-    saveLocalAreaMap(map);
-    setAreaOptions((prev) => {
-      const merged = Array.from(new Set([...(prev || []), ...fromTables]));
-      saveLocalAreas(merged);
-      return merged;
-    });
-  }, [tables]);
+  useEffect(() => { fetchAll(); }, []);
 
   useEffect(() => {
     const close = () => setOpenMenuId(null);
@@ -294,46 +115,61 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
   }, []);
 
   const handleAddTable = async () => {
-    if (!newTable.tableId) return;
+    if (!newTable.tableId || isAdding) return;
+    setIsAdding(true);
     try {
-      const res = await axios.post('/api/tables', { ...newTable, area: selectedArea });
+      const res = await axios.post('/api/tables', { ...newTable, area: addToArea });
       const created = res?.data;
       const map = getLocalAreaMap();
-      const key = tableMapKey(created) || `legacy:${newTable.tableId}`;
-      map[key] = selectedArea;
+      map[tableMapKey(created)] = addToArea;
       saveLocalAreaMap(map);
       setShowAddModal(false);
       setNewTable({ tableId: '', seats: 4 });
-      fetchTables();
+      fetchAll();
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to add table');
+    } finally {
+      setIsAdding(false);
     }
   };
 
   const handleRemoveTable = async (tableId) => {
     if (!window.confirm(`Remove ${tableId}?`)) return;
     try {
-      const target = (tables || []).find(t => t.tableId === tableId);
       await axios.delete(`/api/tables/${tableId}`);
-      const map = getLocalAreaMap();
-      const key = tableMapKey(target);
-      if (key && map[key]) {
-        delete map[key];
-      }
-      if (map[tableId]) {
-        delete map[tableId]; // clean older key shape if present
-        saveLocalAreaMap(map);
-      }
-      fetchTables();
-    } catch (err) { alert('Failed to remove table'); }
+      fetchAll();
+    } catch { alert('Failed to remove table'); }
   };
 
   const handleUpdateSeats = async (tableId, seats) => {
     try {
       await axios.patch(`/api/tables/${tableId}`, { seats });
       setShowEditModal(null);
-      fetchTables();
-    } catch (err) { alert('Failed to update seats'); }
+      fetchAll();
+    } catch { alert('Failed to update seats'); }
+  };
+
+  const handleCreateArea = async () => {
+    const name = (newArea || '').trim();
+    if (!name) return;
+    try {
+      await axios.post('/api/table-areas', { name });
+    } catch (err) {
+      console.warn('Area backend sync failed:', err?.response?.data?.error || err.message);
+    }
+    setShowAddAreaModal(false);
+    setNewArea('');
+    fetchAll();
+  };
+
+  const handleRemoveArea = async (area) => {
+    if (!window.confirm(`Remove floor "${area}" and all its tables?`)) return;
+    try {
+      await axios.delete(`/api/table-areas/${encodeURIComponent(area)}`);
+      fetchAll();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to remove area');
+    }
   };
 
   const getTableInfo = (tableId) => {
@@ -341,73 +177,28 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
       o => o.tableId === tableId && o.orderType === 'Dine-in' && o.status !== 'Paid' && o.status !== 'Cancelled'
     );
     if (!orders.length) return { status: 'Available', billTotal: 0 };
-    const total = orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
-    return { status: 'Occupied', billTotal: total };
+    return { status: 'Occupied', billTotal: orders.reduce((s, o) => s + (o.totalAmount || 0), 0) };
   };
 
-  const displayedTables = tables.filter(t => resolveTableArea(t) === selectedArea);
+  const sortTables = (arr) => [...arr].sort((a, b) => {
+    const numA = parseInt((a.tableId || '').replace(/\D+/g, ''), 10);
+    const numB = parseInt((b.tableId || '').replace(/\D+/g, ''), 10);
+    if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+    return (a.tableId || '').localeCompare(b.tableId || '');
+  });
 
-  const occupied  = displayedTables.filter(t => getTableInfo(t.tableId).status === 'Occupied').length;
-  const available = displayedTables.filter(t => getTableInfo(t.tableId).status === 'Available').length;
-
-  const handleCreateArea = async () => {
-    const name = (newArea || '').trim();
-    if (!name) return;
-
-    // Mark as seeded FIRST — before updating areaOptions — so the seeding
-    // useEffect that fires on areaOptions change will skip this area.
-    const seeded = getSeededAreas();
-    if (!seeded.includes(name)) saveSeededAreas([...seeded, name]);
-
-    const mergedLocal = Array.from(new Set([...(areaOptions || []), name]));
-    setAreaOptions(mergedLocal);
-    saveLocalAreas(mergedLocal);
-    setSelectedArea(name);
-    setNewArea('');
-    setShowAddAreaModal(false);
-    setAreaMenuOpen(false);
-
+  // Check if a table has unsaved draft items in localStorage
+  const hasDraft = (tId) => {
     try {
-      const res = await axios.post('/api/table-areas', { name });
-      if (Array.isArray(res.data) && res.data.length) {
-        setAreaOptions(res.data);
-        saveLocalAreas(res.data);
-      } else {
-        setAreaOptions(mergedLocal);
-      }
-    } catch (err) {
-      console.warn('Area saved locally; backend sync failed:', err?.response?.data?.error || err.message);
-    }
-
-    try {
-      await createDefaultTablesForArea(name, 10);
-      await fetchTables();
-    } catch (err) {
-      console.error('Failed creating default floor tables:', err);
-      alert(err.response?.data?.error || 'Floor created, but default tables could not be added.');
-    }
+      const v = localStorage.getItem(`restro_draft_${tId}`);
+      if (!v) return false;
+      const arr = JSON.parse(v);
+      return Array.isArray(arr) && arr.length > 0;
+    } catch { return false; }
   };
 
-  const handleRemoveArea = async (areaToRemove) => {
-    if (!window.confirm(`Are you sure you want to remove the floor "${areaToRemove}"? All tables inside this floor will be deleted.`)) return;
-    
-    try {
-      const res = await axios.delete(`/api/table-areas/${encodeURIComponent(areaToRemove)}`);
-      
-      const newOptions = areaOptions.filter(a => a !== areaToRemove);
-      setAreaOptions(newOptions);
-      saveLocalAreas(newOptions);
-      
-      if (selectedArea === areaToRemove) {
-        setSelectedArea('Main Floor');
-      }
-      
-      await fetchTables();
-    } catch (err) {
-      console.error('Failed to remove area:', err);
-      alert(err.response?.data?.error || 'Failed to remove area');
-    }
-  };
+  const totalOccupied  = tables.filter(t => getTableInfo(t.tableId).status === 'Occupied').length;
+  const totalAvailable = tables.filter(t => getTableInfo(t.tableId).status === 'Available').length;
 
   if (loading) return <TableGridSkeleton />;
 
@@ -415,207 +206,200 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
     <section className="p-4 lg:p-6 pb-24 lg:pb-6 animate-in fade-in duration-500">
 
       {/* ── Top bar ──────────────────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 lg:mb-5 gap-3">
-        <div className="flex justify-between items-start w-full md:w-auto">
-          <div>
-            <h1 className="text-lg lg:text-[1.7rem] font-black text-slate-900 tracking-tight uppercase">Tables</h1>
-            <p className="text-[8px] lg:text-[10px] font-semibold text-slate-400 uppercase tracking-[0.1em] mt-1">Floor Management</p>
+      <div className="flex items-start justify-between mb-5 lg:mb-6">
+        <div>
+          <h1 className="text-lg lg:text-[1.7rem] font-black text-slate-900 tracking-tight uppercase">Tables</h1>
+          <p className="text-[8px] lg:text-[10px] font-semibold text-slate-400 uppercase tracking-[0.1em] mt-1">Floor Management</p>
+        </div>
+        <div className="flex items-center gap-2 lg:gap-3 shrink-0">
+          {/* Stats pill */}
+          <div className="flex items-center gap-3 lg:gap-4 bg-white rounded-xl lg:rounded-2xl px-3 lg:px-4 py-2.5 border border-slate-100 shadow-sm">
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#FF5A36]" />
+              <span className="text-[9px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest hidden sm:block">Occ</span>
+              <span className="text-sm lg:text-lg font-black text-[#FF5A36]">{totalOccupied}</span>
+            </div>
+            <span className="text-slate-200">|</span>
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span className="text-[9px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest hidden sm:block">Free</span>
+              <span className="text-sm lg:text-lg font-black text-emerald-500">{totalAvailable}</span>
+            </div>
           </div>
           {!readOnly && (
             <button
-              onClick={() => setShowAddModal(true)}
-              className="flex md:hidden items-center gap-1.5 px-4 py-2.5 bg-[#FF5A36] hover:bg-orange-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-orange-200"
+              onClick={() => { setAddToArea(areaOptions[0] || 'Main Floor'); setShowAddModal(true); }}
+              className="flex items-center gap-1.5 lg:gap-2 px-3 lg:px-5 py-2.5 lg:py-3 bg-[#FF5A36] hover:bg-orange-600 text-white rounded-xl lg:rounded-2xl text-[10px] lg:text-xs font-black uppercase tracking-widest transition-all shadow-lg shadow-orange-200 active:scale-95"
             >
-              <Plus size={14} strokeWidth={3}/> Add
+              <Plus size={14} strokeWidth={3}/> Add Table
             </button>
           )}
         </div>
+      </div>
 
-        <div className="flex items-center justify-between gap-2 lg:gap-4 w-full md:w-auto">
-          <div className="relative shrink-0">
-            <button
-              onClick={() => setAreaMenuOpen(o => !o)}
-              className="flex items-center gap-2 px-4 py-3 bg-white border border-slate-100 rounded-xl lg:rounded-2xl text-[10px] lg:text-xs font-black uppercase tracking-widest text-slate-600 shadow-sm"
-            >
-              <Building2 size={14} className="text-slate-400" />
-              {selectedArea}
-              <ChevronDown size={14} className={cn('text-slate-400 transition-transform', areaMenuOpen && 'rotate-180')} />
-            </button>
-            {areaMenuOpen && (
-              <div className="absolute right-0 mt-1 w-56 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 animate-in fade-in zoom-in-95 duration-150 overflow-hidden">
-                <div className="max-h-52 overflow-y-auto">
-                  {areaOptions.map((area) => (
-                    <div key={area} className={cn("flex items-center w-full group", selectedArea === area ? "bg-slate-900 text-white" : "hover:bg-slate-50")}>
-                      <button
-                        onClick={() => { setSelectedArea(area); setAreaMenuOpen(false); }}
-                        className={cn(
-                          'flex-1 px-3 py-2 text-left text-[11px] font-black uppercase tracking-wider transition-colors',
-                          selectedArea === area ? 'text-white' : 'text-slate-600'
-                        )}
-                      >
-                        {area}
-                      </button>
-                      {!readOnly && area.toLowerCase() !== 'main floor' && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleRemoveArea(area); }}
-                          className={cn(
-                            "px-3 py-2 text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity",
-                            selectedArea === area ? "hover:text-white" : "hover:bg-rose-50"
-                          )}
-                          title="Remove Floor"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
+      {/* ── Sections ─────────────────────────────────────────────── */}
+      <div className="space-y-8">
+        {areaOptions.map((area) => {
+          const areaTables = sortTables(tables.filter(t => resolveTableArea(t) === area));
+          const areaOccupied  = areaTables.filter(t => getTableInfo(t.tableId).status === 'Occupied').length;
+          const areaAvailable = areaTables.filter(t => getTableInfo(t.tableId).status === 'Available').length;
+
+          return (
+            <div key={area}>
+              {/* Section heading */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <Building2 size={13} className="text-slate-400 shrink-0" />
+                    <h2 className="text-xs lg:text-sm font-black text-slate-900 uppercase tracking-widest">{area}</h2>
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] font-bold">
+                    <span className="px-2 py-0.5 bg-orange-50 text-[#FF5A36] rounded-full border border-orange-100">{areaOccupied} occ</span>
+                    <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100">{areaAvailable} free</span>
+                  </div>
+                  {!readOnly && (
+                    <button
+                      onClick={() => { setAddToArea(area); setShowAddModal(true); }}
+                      className="flex items-center gap-1 px-2.5 py-1 bg-slate-50 hover:bg-slate-100 text-slate-500 rounded-full text-[10px] font-black uppercase tracking-wider transition-colors border border-slate-100"
+                    >
+                      <Plus size={10} strokeWidth={3}/> Add
+                    </button>
+                  )}
                 </div>
-                {!readOnly && (
+                {!readOnly && area.toLowerCase() !== 'main floor' && (
                   <button
-                    onClick={() => { setShowAddAreaModal(true); setAreaMenuOpen(false); }}
-                    className="w-full px-3 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-[#FF5A36] border-t border-slate-100 hover:bg-orange-50"
+                    onClick={() => handleRemoveArea(area)}
+                    className="text-slate-300 hover:text-rose-500 p-1.5 rounded-lg hover:bg-rose-50 transition-all shrink-0"
+                    title="Remove section"
                   >
-                    + Add Floor / Room
+                    <Trash2 size={13} />
                   </button>
                 )}
               </div>
-            )}
-          </div>
+              <div className="h-px bg-slate-100 mb-3" />
 
-          {/* Summary pills */}
-          <div className="flex items-center justify-center flex-1 md:flex-none gap-3 lg:gap-4 bg-white rounded-xl lg:rounded-2xl px-4 py-3 border border-slate-100 shadow-sm w-full md:w-auto">
-            <div className="flex items-center gap-1.5 lg:gap-2">
-               <span className="w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full bg-[#FF5A36]"></span>
-               <span className="text-[9px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest">Occupied</span>
-               <span className="text-sm lg:text-xl font-black text-[#FF5A36]">{occupied}</span>
-            </div>
-            <span className="text-slate-200 font-bold">|</span>
-            <div className="flex items-center gap-1.5 lg:gap-2">
-               <span className="w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full bg-emerald-400"></span>
-               <span className="text-[9px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest">Available</span>
-               <span className="text-sm lg:text-xl font-black text-emerald-500">{available}</span>
-            </div>
-          </div>
+              {areaTables.length === 0 ? (
+                <div className="py-8 text-center text-slate-300 text-xs font-bold uppercase tracking-widest bg-slate-50/50 rounded-2xl border border-slate-100">
+                  No tables — tap Add above
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-2.5 lg:gap-3">
+                  {areaTables.map((table) => {
+                    const { status, billTotal } = getTableInfo(table.tableId);
+                    const cfg = STATUS[status] || STATUS.Available;
+                    const isOccupied = status === 'Occupied';
+                    const seats = table.seats || 4;
+                    const isMenuOpen = openMenuId === table.tableId;
+                    const tablHasDraft = hasDraft(table.tableId);
 
-          {!readOnly && (
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="hidden md:flex items-center gap-2 px-5 py-3 bg-[#FF5A36] hover:bg-orange-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest transition-all shadow-lg shadow-orange-200 active:scale-95 shrink-0"
-            >
-              <Plus size={16} strokeWidth={3}/> Add Table
-            </button>
-          )}
-        </div>
-      </div>
+                    return (
+                      <div
+                        key={table._id}
+                        className={cn(
+                          'rounded-[1rem] lg:rounded-xl border shadow-sm hover:shadow-md transition-all duration-300 relative h-[100px] lg:h-[150px]',
+                          tablHasDraft
+                            ? 'bg-emerald-50/60 border-emerald-200'
+                            : isOccupied ? 'bg-white border-orange-100' : 'bg-white border-slate-100'
+                        )}
+                      >
+                        {/* Status badge */}
+                        <div className={cn(
+                          'absolute top-1.5 right-1.5 px-1 lg:px-1.5 py-[2px] rounded-full text-[6px] lg:text-[8px] font-black uppercase tracking-wider border',
+                          cfg.bg, cfg.text
+                        )}>
+                          {cfg.label}
+                        </div>
 
-      {/* ── Cards Grid ───────────────────────────────────────────── */}
-      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-2.5 lg:gap-4">
-        {[...displayedTables]
-          .sort((a, b) => {
-            // Natural sort: extract trailing numbers for numeric comparison
-            const numA = parseInt((a.tableId || '').replace(/\D+/g, ''), 10);
-            const numB = parseInt((b.tableId || '').replace(/\D+/g, ''), 10);
-            if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
-            return (a.tableId || '').localeCompare(b.tableId || '');
-          })
-          .map((table) => {
-          const { status, billTotal } = getTableInfo(table.tableId);
-          const cfg = STATUS[status] || STATUS.Available;
-          const isOccupied = status === 'Occupied';
-          const seats = table.seats || 4;
-          const size  = sizeLabel(seats);
-          const isMenuOpen = openMenuId === table.tableId;
+                        {/* Draft indicator — pulsing green dot */}
+                        {tablHasDraft && (
+                          <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1">
+                            <span className="relative flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                            </span>
+                            <span className="text-[6px] lg:text-[7px] font-black text-emerald-600 uppercase tracking-wider hidden lg:block">Draft</span>
+                          </div>
+                        )}
 
-          return (
-            <div
-              key={table._id}
-              className={cn(
-                'bg-white rounded-[1rem] lg:rounded-xl border shadow-sm hover:shadow-md transition-all duration-300 relative h-[96px] lg:h-[150px]',
-                isOccupied ? 'border-orange-100' : 'border-slate-100'
-              )}
-            >
-              {/* Status badge */}
-              <div className={cn(
-                'absolute top-1.5 lg:top-2.5 right-1.5 lg:right-2.5 px-1 lg:px-1.5 py-[2px] rounded-full text-[6px] lg:text-[8px] font-black uppercase tracking-wider border',
-                cfg.bg, cfg.text
-              )}>
-                {cfg.label}
-              </div>
+                        {!readOnly && (
+                          <div className="absolute top-1 left-1 z-20" onClick={e => e.stopPropagation()}>
+                            <button
+                              onClick={() => setOpenMenuId(isMenuOpen ? null : table.tableId)}
+                              className="w-4 h-4 lg:w-5 lg:h-5 flex items-center justify-center rounded-md text-slate-300 hover:text-slate-500 hover:bg-slate-50 transition-colors"
+                            >
+                              <MoreVertical size={12} className="w-[10px] h-[10px] lg:w-3 lg:h-3"/>
+                            </button>
+                            {isMenuOpen && (
+                              <div className="absolute left-0 mt-1 w-40 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 animate-in fade-in zoom-in-95 duration-150">
+                                <div className="p-1 space-y-0.5">
+                                  <button
+                                    onClick={() => { setShowEditModal(table); setOpenMenuId(null); }}
+                                    className="w-full flex items-center gap-2 px-2.5 py-2 text-left text-[10px] font-black text-slate-600 hover:bg-slate-50 rounded-lg uppercase tracking-wider"
+                                  >
+                                    <Users size={11} className="text-slate-400"/> Change Seats
+                                  </button>
+                                  <button
+                                    onClick={() => { handleRemoveTable(table.tableId); setOpenMenuId(null); }}
+                                    className="w-full flex items-center gap-2 px-2.5 py-2 text-left text-[10px] font-black text-rose-500 hover:bg-rose-50 rounded-lg uppercase tracking-wider"
+                                  >
+                                    <Trash2 size={11}/> Remove
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
 
-              {!readOnly && (
-                <div className="absolute top-1 lg:top-1.5 left-1 lg:left-1.5 z-20" onClick={e => e.stopPropagation()}>
-                  <button
-                    onClick={() => setOpenMenuId(isMenuOpen ? null : table.tableId)}
-                    className="w-4 h-4 lg:w-5 lg:h-5 flex items-center justify-center rounded-md text-slate-300 hover:text-slate-500 hover:bg-slate-50 transition-colors"
-                  >
-                    <MoreVertical size={13} className="w-[10px] h-[10px] lg:w-[13px] lg:h-[13px]"/>
-                  </button>
-                  {isMenuOpen && (
-                    <div className="absolute left-0 mt-1 w-44 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 animate-in fade-in zoom-in-95 duration-150">
-                      <div className="p-1 space-y-0.5">
-                        <button
-                          onClick={() => { setShowEditModal(table); setOpenMenuId(null); }}
-                          className="w-full flex items-center gap-2 px-2.5 py-2 text-left text-[10px] font-black text-slate-600 hover:bg-slate-50 rounded-lg uppercase tracking-wider"
+                        <div
+                          onClick={() => onTableClick(table.tableId)}
+                          className="cursor-pointer p-2 lg:p-3.5 pt-5 lg:pt-4 flex flex-col h-full"
                         >
-                          <Users size={11} className="text-slate-400"/> Change Seats
-                        </button>
-                        <button
-                          onClick={() => { handleRemoveTable(table.tableId); setOpenMenuId(null); }}
-                          className="w-full flex items-center gap-2 px-2.5 py-2 text-left text-[10px] font-black text-rose-500 hover:bg-rose-50 rounded-lg uppercase tracking-wider"
-                        >
-                          <Trash2 size={11}/> Remove
-                        </button>
+                          <div className="flex justify-center mb-1.5 lg:mb-3 mt-1 lg:mt-2 flex-grow items-center">
+                            <div className="w-[42px] h-[42px] lg:w-[62px] lg:h-[62px] flex items-center justify-center hover:scale-105 transition-transform">
+                              <TableIcon label={table.tableId} occupied={isOccupied}/>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between mt-auto">
+                            <div className="flex flex-col">
+                              <span className="text-[8px] lg:text-[11px] font-black text-slate-900 leading-tight">{seats} Seats</span>
+                              <span className="text-[7px] lg:text-[9px] font-semibold text-slate-400 capitalize">{sizeLabel(seats)}</span>
+                            </div>
+                            {isOccupied && billTotal > 0 && (
+                              <span className="text-[8px] lg:text-[12px] font-black text-[#FF5A36] truncate ml-0.5">
+                                ₹{Math.round(billTotal)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })}
                 </div>
               )}
-
-              {/* Clickable area */}
-              <div
-                onClick={() => onTableClick(table.tableId)}
-                className="cursor-pointer p-2 lg:p-3.5 pt-5 lg:pt-4 flex flex-col h-full"
-              >
-                {/* Icon centered */}
-                <div className="flex justify-center mb-1.5 lg:mb-3 mt-1 lg:mt-2 flex-grow items-center">
-                  <div className="w-[40px] h-[40px] lg:w-[62px] lg:h-[62px] flex items-center justify-center transfrom hover:scale-105 transition-transform">
-                    <TableIcon label={table.tableId} occupied={isOccupied}/>
-                  </div>
-                </div>
-
-                {/* Bottom info */}
-                <div className="flex items-center justify-between mt-auto">
-                  <div className="flex flex-col">
-                    <span className="text-[8px] lg:text-[11px] font-black text-slate-900 leading-tight">{seats} Seats</span>
-                    <span className="text-[7px] lg:text-[9px] font-semibold text-slate-400 capitalize">{size}</span>
-                  </div>
-                  {/* Bill amount only when occupied */}
-                  {isOccupied && billTotal > 0 && (
-                     <span className="text-[8px] lg:text-[12px] font-black text-[#FF5A36] truncate ml-0.5">
-                      ₹{Math.round(billTotal)}
-                    </span>
-                  )}
-                </div>
-              </div>
             </div>
           );
         })}
+
+        {/* Add new section */}
+        {!readOnly && (
+          <div className="pt-4 border-t border-slate-100">
+            <button
+              onClick={() => setShowAddAreaModal(true)}
+              className="flex items-center gap-2 px-5 py-3 bg-slate-50 hover:bg-slate-100 text-slate-500 rounded-2xl text-xs font-black uppercase tracking-widest transition-all border border-slate-100"
+            >
+              <Plus size={14} strokeWidth={3}/> Add Section / Floor
+            </button>
+          </div>
+        )}
       </div>
 
-      {displayedTables.length === 0 && (
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm py-16 mt-4 text-center">
-          <p className="text-sm font-black text-slate-300 uppercase tracking-widest">No tables in {selectedArea}</p>
-          <p className="text-xs font-semibold text-slate-400 mt-2">Add a table to start managing this area</p>
-        </div>
-      )}
-
-      {/* ── Add Table Modal ───────────────────────────────────────── */}
+      {/* ── Add Table Modal ─────────────────────────────────────── */}
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-          <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-300">
+          <div className="bg-white rounded-[2.5rem] p-8 lg:p-10 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-300">
             <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase mb-1">New Table</h2>
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-8">Add a seating zone to your floor</p>
-            <div className="space-y-5">
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-8">Adding to <span className="text-[#FF5A36]">{addToArea}</span></p>
+            <div className="space-y-4">
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Table ID</label>
                 <input type="text" placeholder="e.g. T-11 or VIP-1"
@@ -623,6 +407,14 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
                   onChange={e => setNewTable({...newTable, tableId: e.target.value})}
                   className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-black focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400 transition-all"
                 />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Section</label>
+                <select value={addToArea} onChange={e => setAddToArea(e.target.value)}
+                  className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-black focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400 transition-all appearance-none cursor-pointer"
+                >
+                  {areaOptions.map(a => <option key={a} value={a}>{a}</option>)}
+                </select>
               </div>
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Seating Capacity</label>
@@ -637,16 +429,20 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
                 className="flex-1 py-4 bg-slate-50 text-slate-400 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-slate-100 transition-all">
                 Cancel
               </button>
-              <button onClick={handleAddTable}
-                className="flex-1 py-4 bg-[#FF5A36] text-white rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-orange-600 transition-all shadow-lg shadow-orange-200">
-                Create Table
+              <button onClick={handleAddTable} disabled={isAdding}
+                className={`flex-1 py-4 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all shadow-lg shadow-orange-200 flex items-center justify-center gap-2 ${
+                  isAdding ? 'bg-orange-400 cursor-not-allowed' : 'bg-[#FF5A36] hover:bg-orange-600'
+                }`}>
+                {isAdding ? (
+                  <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Adding...</>
+                ) : 'Create Table'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Edit Seats Modal ──────────────────────────────────────── */}
+      {/* ── Edit Seats Modal ────────────────────────────────────── */}
       {showEditModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
           <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-300">
@@ -676,35 +472,29 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
         </div>
       )}
 
-      {/* ── Add Floor/Room Modal ─────────────────────────────────── */}
+      {/* ── Add Section Modal ───────────────────────────────────── */}
       {showAddAreaModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
           <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-300">
-            <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase mb-1">Add Floor / Room</h2>
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-8">Create a new area for tables</p>
+            <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase mb-1">Add Section</h2>
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-8">Create a new floor or room</p>
             <div>
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Area Name</label>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Section Name</label>
               <input
-                type="text"
-                autoFocus
-                placeholder="e.g. First Floor or VIP Room"
-                value={newArea}
-                onChange={(e) => setNewArea(e.target.value)}
+                type="text" autoFocus placeholder="e.g. First Floor or VIP Room"
+                value={newArea} onChange={(e) => setNewArea(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleCreateArea()}
                 className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-black focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400 transition-all"
               />
             </div>
             <div className="flex gap-3 mt-8">
-              <button
-                onClick={() => { setShowAddAreaModal(false); setNewArea(''); }}
-                className="flex-1 py-4 bg-slate-50 text-slate-400 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-slate-100 transition-all"
-              >
+              <button onClick={() => { setShowAddAreaModal(false); setNewArea(''); }}
+                className="flex-1 py-4 bg-slate-50 text-slate-400 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-slate-100 transition-all">
                 Cancel
               </button>
-              <button
-                onClick={handleCreateArea}
-                className="flex-1 py-4 bg-slate-900 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-black transition-all"
-              >
-                Save Area
+              <button onClick={handleCreateArea}
+                className="flex-1 py-4 bg-slate-900 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-black transition-all">
+                Save Section
               </button>
             </div>
           </div>
