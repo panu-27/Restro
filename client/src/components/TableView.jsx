@@ -937,9 +937,8 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
       <div className="flex flex-col gap-1.5">
         {/* ── Card box — image only, no name inside ── */}
         <div
-          className="relative rounded-2xl overflow-hidden bg-[#f2f2f7] border border-slate-200/80 shadow-sm active:scale-[0.97] transition-transform"
+          className="relative rounded-2xl overflow-hidden bg-[#f2f2f7] border border-slate-200/80 shadow-sm"
           style={{ aspectRatio: '3/4' }}
-          onClick={handleAdd}
         >
           {/* Price badge — white bg, black text, top right */}
           <span className="absolute top-2 right-2 z-10 bg-white text-slate-900 text-[10px] font-bold px-2 py-0.5 rounded-lg leading-tight shadow-sm">
@@ -969,42 +968,42 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
           >
             {totalQty > 0 ? (
               /* Blue pill: [−] [count] [+] */
-              <div className="flex items-center bg-blue-600 rounded-md overflow-hidden">
+              <div className="flex items-center bg-blue-600 rounded-lg overflow-hidden shadow-sm">
                 <button
                   onClick={handleRemove}
                   disabled={isReadOnly}
-                  className="w-7 h-7 flex items-center justify-center text-white active:bg-blue-700 transition-colors"
+                  className="w-8 h-8 flex items-center justify-center text-white active:bg-blue-700 transition-colors"
                 >
-                  <Minus size={12} strokeWidth={3} />
+                  <Minus size={14} strokeWidth={3} />
                 </button>
-                <span className="px-0.5 min-w-[20px] text-center text-[13px] font-black text-white">
+                <span className="px-1 min-w-[24px] text-center text-[14px] font-black text-white">
                   {totalQty}
                 </span>
                 <button
                   onClick={handleAdd}
                   disabled={isReadOnly}
-                  className="w-7 h-7 flex items-center justify-center text-white active:bg-blue-700 transition-colors"
+                  className="w-8 h-8 flex items-center justify-center text-white active:bg-blue-700 transition-colors"
                 >
-                  <Plus size={12} strokeWidth={3} />
+                  <Plus size={14} strokeWidth={3} />
                 </button>
               </div>
             ) : (
-              /* White + button — blue border, rounded-md, no shadow */
+              /* White + button — blue border, rounded-lg, no shadow */
               <button
                 onClick={handleAdd}
                 disabled={isReadOnly}
-                className="w-8 h-8 flex items-center justify-center rounded-md bg-white border border-blue-500 text-blue-600 active:scale-90 transition-all disabled:opacity-50"
+                className="w-9 h-9 flex items-center justify-center rounded-lg bg-white border border-blue-500 text-blue-600 active:scale-90 transition-all disabled:opacity-50 shadow-sm"
               >
-                <Plus size={15} strokeWidth={2.5} />
+                <Plus size={18} strokeWidth={2.5} />
               </button>
             )}
           </div>
         </div>
 
         {/* ── Name OUTSIDE the card, below it ── */}
-        <p className="text-[11px] font-semibold text-slate-700 leading-snug line-clamp-2 px-0.5">
+        <p className="text-[13px] font-bold text-slate-900 leading-snug line-clamp-2 px-0.5 mt-0.5">
           {item.name}
-          {isSingleVar && <span className="text-slate-400 font-normal"> · {item.variations[0].name}</span>}
+          {isSingleVar && <span className="text-slate-500 font-medium"> · {item.variations[0].name}</span>}
         </p>
       </div>
     );
