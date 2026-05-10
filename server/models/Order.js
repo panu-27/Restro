@@ -1,11 +1,12 @@
 const mongoose = require('mongoose');
 
 const orderItemSchema = new mongoose.Schema({
-  menuId: { type: mongoose.Schema.Types.ObjectId, ref: 'Menu', required: true },
+  menuId: { type: String, required: true },
   name: { type: String, required: true },
   price: { type: Number, required: true },
   quantity: { type: Number, required: true, default: 1 },
-  round: { type: Number, default: 1 } // Round/batch number for kitchen sequencing
+  round: { type: Number, default: 1 }, // Round/batch number for kitchen sequencing
+  isServed: { type: Boolean, default: false } // KDS tracking
 });
 
 const orderSchema = new mongoose.Schema({

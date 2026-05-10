@@ -3,7 +3,15 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const cloudinary = require('cloudinary').v2;
 require('dotenv').config();
+
+// --- CLOUDINARY CONFIG ---
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 // --- MODELS ---
 const ArcheUser = require('./models/User');
@@ -196,7 +204,7 @@ app.get('/api/auth/me', auth, async (req, res) => {
     const userData = user.toObject();
     // For staff users, also include the owner's restaurant config
     if (user.parentUserId) {
-      const owner = await ArcheUser.findById(user.parentUserId).select('restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber taxEnabled taxes menuCategories tableCount tableAreas');
+      const owner = await ArcheUser.findById(user.parentUserId).select('restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber taxEnabled taxes menuCategories tableCount tableAreas restaurantLogo menuCategoryImages');
       if (owner) {
         userData.restaurantName = owner.restaurantName;
         userData.restaurantAddress = owner.restaurantAddress;
@@ -208,6 +216,8 @@ app.get('/api/auth/me', auth, async (req, res) => {
         userData.menuCategories = owner.menuCategories;
         userData.tableCount = owner.tableCount;
         userData.tableAreas = owner.tableAreas;
+        userData.restaurantLogo = owner.restaurantLogo;
+        userData.menuCategoryImages = owner.menuCategoryImages ? Object.fromEntries(owner.menuCategoryImages) : {};
       }
     }
     res.json(userData);
@@ -392,9 +402,13 @@ app.patch('/api/subscription/cancel-autopay', auth, async (req, res) => {
 // GET /api/settings
 app.get('/api/settings', auth, async (req, res) => {
   try {
-    const user = await ArcheUser.findById(req.user.id).select('tableCount restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber printMobileRequired taxEnabled taxes menuCategories name email role');
+    const user = await ArcheUser.findById(req.user.id).select('tableCount restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber printMobileRequired taxEnabled taxes menuCategories name email role restaurantLogo menuCategoryImages');
     if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json(user);
+    const userData = user.toObject();
+    if (userData.menuCategoryImages instanceof Map) {
+      userData.menuCategoryImages = Object.fromEntries(userData.menuCategoryImages);
+    }
+    res.json(userData);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -403,7 +417,7 @@ app.get('/api/settings', auth, async (req, res) => {
 // PATCH /api/settings
 app.patch('/api/settings', auth, async (req, res) => {
   try {
-    const { tableCount, restaurantName, restaurantAddress, restaurantPhone, gstNumber, fssaiNumber, printMobileRequired, taxEnabled, taxes, menuCategories } = req.body;
+    const { tableCount, restaurantName, restaurantAddress, restaurantPhone, gstNumber, fssaiNumber, printMobileRequired, taxEnabled, taxes, menuCategories, restaurantLogo, menuCategoryImages } = req.body;
     const update = {};
     if (tableCount !== undefined) {
       update.tableCount = Math.max(10, Math.min(50, parseInt(tableCount)));
@@ -416,6 +430,13 @@ app.patch('/api/settings', auth, async (req, res) => {
     if (printMobileRequired !== undefined) update.printMobileRequired = !!printMobileRequired;
     if (taxEnabled !== undefined) update.taxEnabled = taxEnabled;
     if (taxes !== undefined) update.taxes = taxes;
+    if (restaurantLogo !== undefined) update.restaurantLogo = restaurantLogo;
+    if (menuCategoryImages !== undefined && typeof menuCategoryImages === 'object') {
+      // Store each key of the map
+      Object.entries(menuCategoryImages).forEach(([k, v]) => {
+        update[`menuCategoryImages.${k}`] = v;
+      });
+    }
     if (menuCategories !== undefined && Array.isArray(menuCategories)) {
       const cleaned = menuCategories
         .map(c => String(c || '').trim())
@@ -424,10 +445,38 @@ app.patch('/api/settings', auth, async (req, res) => {
     }
 
     const user = await ArcheUser.findByIdAndUpdate(req.user.id, update, { new: true })
-      .select('tableCount restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber printMobileRequired taxEnabled taxes menuCategories name email role');
-    res.json(user);
+      .select('tableCount restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber printMobileRequired taxEnabled taxes menuCategories name email role restaurantLogo menuCategoryImages');
+    const userData = user.toObject();
+    if (userData.menuCategoryImages instanceof Map) {
+      userData.menuCategoryImages = Object.fromEntries(userData.menuCategoryImages);
+    }
+    res.json(userData);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// =====================
+// UPLOAD ROUTE
+// =====================
+
+// POST /api/upload — Upload image to Cloudinary, returns secure URL
+app.post('/api/upload', auth, async (req, res) => {
+  try {
+    const { data, folder } = req.body; // data = base64 data URI, folder = optional subfolder
+    if (!data) return res.status(400).json({ error: 'No image data provided' });
+
+    const uploadFolder = folder || 'restro';
+    const result = await cloudinary.uploader.upload(data, {
+      folder: uploadFolder,
+      resource_type: 'image',
+      transformation: [{ quality: 'auto', fetch_format: 'auto' }],
+    });
+
+    res.json({ url: result.secure_url, public_id: result.public_id });
+  } catch (err) {
+    console.error('Upload error:', err);
+    res.status(500).json({ error: err.message || 'Upload failed' });
   }
 });
 
@@ -694,6 +743,72 @@ app.patch('/api/orders/:id/add-items', auth, canPlaceOrders, async (req, res) =>
     res.json(order);
   } catch (err) {
     console.error('Add items error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/orders/:id/items — Overwrite all items in the order (for editing dispatched items)
+app.put('/api/orders/:id/items', auth, canPlaceOrders, async (req, res) => {
+  try {
+    const { items } = req.body;
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    
+    const user = await ArcheUser.findById(req.user.ownerId);
+
+    order.items = items;
+    
+    // Recalculate subtotal
+    const subtotal = order.items.reduce((s, i) => s + (i.price * i.quantity), 0);
+    order.subtotal = subtotal;
+
+    // Recalculate taxes
+    if (user && user.taxEnabled) {
+      const taxes = (user.taxes || []).filter(t => t.enabled);
+      const taxBreakdown = taxes.map(t => ({
+        name: t.name,
+        percentage: t.percentage,
+        amount: Math.round((subtotal * t.percentage / 100) * 100) / 100
+      }));
+      order.taxBreakdown = taxBreakdown;
+      order.taxAmount = taxBreakdown.reduce((s, t) => s + t.amount, 0);
+    } else {
+      order.taxAmount = 0;
+      order.taxBreakdown = [];
+    }
+    
+    order.totalAmount = order.subtotal + order.taxAmount;
+    await order.save();
+    
+    res.json(order);
+  } catch (err) {
+    console.error('Update items error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/orders/:orderId/items/:itemId/serve — Toggle item served status
+app.patch('/api/orders/:orderId/items/:itemId/serve', auth, async (req, res) => {
+  try {
+    const { isServed } = req.body;
+    const order = await Order.findById(req.params.orderId);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    
+    // Check ownership if not admin
+    const user = await ArcheUser.findById(req.user.ownerId);
+    if (order.userId.toString() !== req.user.ownerId && req.user.role !== 'Admin') {
+       // Waiters/Kitchen staff usually share the ownerId, but it's safe to just update it
+       // since they are authenticated.
+    }
+
+    const item = order.items.id(req.params.itemId);
+    if (!item) return res.status(404).json({ error: 'Item not found' });
+    
+    item.isServed = isServed;
+    await order.save();
+    
+    res.json(order);
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

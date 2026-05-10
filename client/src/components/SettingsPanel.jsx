@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { Plus, Trash2, Edit3, Save, X, Check, ToggleLeft, ToggleRight, Store, Hash, Utensils, CreditCard, Shield, Leaf, Flame, Coffee, IceCream, Search, MapPin, Phone, FileText, Receipt, Percent, Users, Eye, EyeOff, ChefHat, UserPlus, Key, LogOut, LayoutGrid } from 'lucide-react';
+import { Plus, Trash2, Edit3, Save, X, Check, ToggleLeft, ToggleRight, Store, Hash, Utensils, CreditCard, Shield, Leaf, Flame, Coffee, IceCream, Search, MapPin, Phone, FileText, Receipt, Percent, Users, Eye, EyeOff, ChefHat, UserPlus, Key, LogOut, LayoutGrid, ImageIcon } from 'lucide-react';
 import { TableSettingsSkeleton } from './Skeleton';
+import ImageUploader from './ImageUploader';
 
 const DEFAULT_MENU_CATEGORIES = ['Veg', 'Non-Veg', 'Beverage', 'Dessert'];
 
@@ -15,6 +16,8 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
   const [gstNumber, setGstNumber] = useState('');
   const [fssaiNumber, setFssaiNumber] = useState('');
   const [tableCount, setTableCount] = useState(10);
+  const [restaurantLogo, setRestaurantLogo] = useState('');
+  const [menuCategoryImages, setMenuCategoryImages] = useState({});
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [localAutopay, setLocalAutopay] = useState(subscription?.autopayEnabled);
 
@@ -35,8 +38,9 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
   const [editingId, setEditingId] = useState(null);
   const [menuCategories, setMenuCategories] = useState(DEFAULT_MENU_CATEGORIES);
   const [newCategoryName, setNewCategoryName] = useState('');
-  const [newItem, setNewItem] = useState({ name: '', category: DEFAULT_MENU_CATEGORIES[0], price: '' });
-  const [editItem, setEditItem] = useState({ name: '', category: DEFAULT_MENU_CATEGORIES[0], price: '' });
+  const EMPTY_ITEM = { name: '', category: DEFAULT_MENU_CATEGORIES[0], price: '', image: '', variations: [] };
+  const [newItem, setNewItem] = useState(EMPTY_ITEM);
+  const [editItem, setEditItem] = useState(EMPTY_ITEM);
 
   useEffect(() => { fetchMenu(); }, []);
 
@@ -172,6 +176,8 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
       setGstNumber(user.gstNumber || '');
       setFssaiNumber(user.fssaiNumber || '');
       setTableCount(user.tableCount || 10);
+      setRestaurantLogo(user.restaurantLogo || '');
+      setMenuCategoryImages(user.menuCategoryImages || {});
       setTaxEnabled(user.taxEnabled || false);
       setTaxes(user.taxes?.length ? user.taxes : [{ name: 'CGST', percentage: 2.5, enabled: true }, { name: 'SGST', percentage: 2.5, enabled: true }]);
       setMenuCategories(user.menuCategories?.length ? user.menuCategories : DEFAULT_MENU_CATEGORIES);
@@ -203,7 +209,13 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
   const handleSaveSettings = async () => {
     setSettingsSaving(true);
     try {
-      await axios.patch('/api/settings', { tableCount, restaurantName, restaurantAddress, restaurantPhone, gstNumber, fssaiNumber, taxEnabled, taxes, menuCategories: categoryOptions });
+      await axios.patch('/api/settings', {
+        tableCount, restaurantName, restaurantAddress, restaurantPhone,
+        gstNumber, fssaiNumber, taxEnabled, taxes,
+        menuCategories: categoryOptions,
+        restaurantLogo,
+        menuCategoryImages,
+      });
       if (onSettingsUpdate) onSettingsUpdate();
     } catch (err) { console.error('Error saving settings:', err); }
     finally { setSettingsSaving(false); }
@@ -268,18 +280,35 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
   // Menu handlers
   const handleAddItem = async (e) => {
     e.preventDefault();
-    if (!newItem.name || !newItem.price) return;
+    const hasVars = newItem.variations.length > 0;
+    if (!newItem.name) return;
+    if (hasVars) {
+      if (newItem.variations.some(v => !v.name || v.price === '')) return;
+    } else {
+      if (newItem.price === '') return;
+    }
+    const payload = {
+      ...newItem,
+      price: hasVars ? 0 : parseFloat(newItem.price),
+      variations: hasVars ? newItem.variations.map(v => ({ name: v.name, price: parseFloat(v.price) })) : []
+    };
     try {
-      await axios.post('/api/menu', { ...newItem, price: parseFloat(newItem.price) });
-      setNewItem({ name: '', category: categoryOptions[0] || DEFAULT_MENU_CATEGORIES[0], price: '' });
+      await axios.post('/api/menu', payload);
+      setNewItem({ name: '', category: categoryOptions[0] || DEFAULT_MENU_CATEGORIES[0], price: '', image: '', variations: [] });
       setShowAddForm(false);
       fetchMenu();
     } catch (err) { console.error('Error adding item:', err); }
   };
 
   const handleEditItem = async (id) => {
+    const hasVars = editItem.variations.length > 0;
+    const payload = {
+      ...editItem,
+      price: hasVars ? 0 : parseFloat(editItem.price),
+      variations: hasVars ? editItem.variations.map(v => ({ name: v.name, price: parseFloat(v.price) })) : []
+    };
     try {
-      await axios.patch(`/api/menu/${id}`, { ...editItem, price: parseFloat(editItem.price) });
+      await axios.patch(`/api/menu/${id}`, payload);
       setEditingId(null);
       fetchMenu();
     } catch (err) { console.error('Error editing item:', err); }
@@ -298,7 +327,21 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
 
   const startEdit = (item) => {
     setEditingId(item._id);
-    setEditItem({ name: item.name, category: item.category, price: item.price });
+    setEditItem({ name: item.name, category: item.category, price: item.price || '', image: item.image || '', variations: item.variations || [] });
+  };
+
+  // Variation helpers
+  const addVariation = (isEdit) => {
+    const setter = isEdit ? setEditItem : setNewItem;
+    setter(prev => prev.variations.length >= 5 ? prev : { ...prev, variations: [...prev.variations, { name: '', price: '' }] });
+  };
+  const removeVariation = (idx, isEdit) => {
+    const setter = isEdit ? setEditItem : setNewItem;
+    setter(prev => ({ ...prev, variations: prev.variations.filter((_, i) => i !== idx) }));
+  };
+  const updateVariation = (idx, field, val, isEdit) => {
+    const setter = isEdit ? setEditItem : setNewItem;
+    setter(prev => ({ ...prev, variations: prev.variations.map((v, i) => i === idx ? { ...v, [field]: val } : v) }));
   };
 
   const categoryIcon = (cat) => {
@@ -363,14 +406,25 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
             <p className="text-sm text-gray-400 font-medium">This info appears on your bills and receipts.</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <SettingsInput icon={Store} label="Restaurant Name" value={restaurantName} onChange={setRestaurantName} placeholder="My Restaurant" />
-            <SettingsInput icon={Phone} label="Phone Number" value={restaurantPhone} onChange={setRestaurantPhone} placeholder="+91 9876543210" />
-            <div className="md:col-span-2">
-              <SettingsInput icon={MapPin} label="Full Address" value={restaurantAddress} onChange={setRestaurantAddress} placeholder="123, Main Road, City - 411001" />
+          <div className="flex flex-col md:flex-row gap-8 items-start">
+            <div className="shrink-0 flex flex-col items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">Restaurant Logo</span>
+              <ImageUploader
+                value={restaurantLogo}
+                onChange={setRestaurantLogo}
+                label="Logo"
+                shape="circle"
+              />
             </div>
-            <SettingsInput icon={FileText} label="GST Number (GSTIN)" value={gstNumber} onChange={setGstNumber} placeholder="22AAAAA0000A1Z5" />
-            <SettingsInput icon={FileText} label="FSSAI License No." value={fssaiNumber} onChange={setFssaiNumber} placeholder="12345678901234" />
+            <div className="flex-1 w-full grid grid-cols-1 md:grid-cols-2 gap-6">
+              <SettingsInput icon={Store} label="Restaurant Name" value={restaurantName} onChange={setRestaurantName} placeholder="My Restaurant" />
+              <SettingsInput icon={Phone} label="Phone Number" value={restaurantPhone} onChange={setRestaurantPhone} placeholder="+91 9876543210" />
+              <div className="md:col-span-2">
+                <SettingsInput icon={MapPin} label="Full Address" value={restaurantAddress} onChange={setRestaurantAddress} placeholder="123, Main Road, City - 411001" />
+              </div>
+              <SettingsInput icon={FileText} label="GST Number (GSTIN)" value={gstNumber} onChange={setGstNumber} placeholder="22AAAAA0000A1Z5" />
+              <SettingsInput icon={FileText} label="FSSAI License No." value={fssaiNumber} onChange={setFssaiNumber} placeholder="12345678901234" />
+            </div>
           </div>
 
           <div className="flex justify-end pt-4">
@@ -478,29 +532,62 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
           </div>
 
           {showAddForm && (
-            <form onSubmit={handleAddItem} className="bg-white border border-gray-50 rounded-3xl lg:rounded-[2rem] p-6 lg:p-8 shadow-sm flex flex-col md:flex-row gap-4 items-stretch md:items-end animate-in slide-in-from-top-4 duration-300">
-              <div className="flex-1 space-y-1">
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider ml-1">Item Name</label>
-                <input type="text" required value={newItem.name} onChange={(e) => setNewItem({ ...newItem, name: e.target.value })} placeholder="e.g. Paneer Tikka"
-                  className="w-full bg-gray-50/50 border border-gray-100 rounded-full py-3 px-5 focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400 transition-all font-medium text-slate-900" />
+            <form onSubmit={handleAddItem} className="bg-white border border-gray-50 rounded-3xl lg:rounded-[2rem] p-6 lg:p-8 shadow-sm flex flex-col gap-5 animate-in slide-in-from-top-4 duration-300">
+              <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-end">
+                <div className="shrink-0 flex items-center justify-center">
+                  <ImageUploader value={newItem.image} onChange={(url) => setNewItem({ ...newItem, image: url })} label="Photo" shape="square" />
+                </div>
+                <div className="flex-1 space-y-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider ml-1">Item Name</label>
+                  <input type="text" required value={newItem.name} onChange={(e) => setNewItem({ ...newItem, name: e.target.value })} placeholder="e.g. Biryani"
+                    className="w-full bg-gray-50/50 border border-gray-100 rounded-full py-3 px-5 focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400 transition-all font-medium text-slate-900" />
+                </div>
+                <div className="w-full md:w-40 space-y-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider ml-1">Category</label>
+                  <select value={newItem.category} onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
+                    className="w-full bg-gray-50/50 border border-gray-100 rounded-full py-3 px-5 focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400 transition-all font-bold text-slate-900 appearance-none cursor-pointer">
+                    {categoryOptions.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+                {newItem.variations.length === 0 && (
+                  <div className="w-full md:w-32 space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider ml-1">Price (₹)</label>
+                    <input type="number" min="1" value={newItem.price} onChange={(e) => setNewItem({ ...newItem, price: e.target.value })} placeholder="₹0"
+                      className="w-full bg-gray-50/50 border border-gray-100 rounded-full py-3 px-5 focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400 transition-all font-bold text-slate-900" />
+                  </div>
+                )}
               </div>
-              <div className="w-full md:w-40 space-y-1">
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider ml-1">Category</label>
-                <select value={newItem.category} onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
-                  className="w-full bg-gray-50/50 border border-gray-100 rounded-full py-3 px-5 focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400 transition-all font-bold text-slate-900 appearance-none cursor-pointer">
-                  {categoryOptions.map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </select>
+
+              {/* Variations */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Variations (optional, max 5)</label>
+                  {newItem.variations.length < 5 && (
+                    <button type="button" onClick={() => addVariation(false)}
+                      className="text-[10px] font-black text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-full transition-all flex items-center gap-1">
+                      <Plus size={11} strokeWidth={3} /> Add Variation
+                    </button>
+                  )}
+                </div>
+                {newItem.variations.map((v, idx) => (
+                  <div key={idx} className="flex gap-2 items-center">
+                    <input type="text" value={v.name} onChange={(e) => updateVariation(idx, 'name', e.target.value, false)}
+                      placeholder={`Name (e.g. Full)`}
+                      className="flex-1 bg-gray-50 border border-gray-100 rounded-full py-2.5 px-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400" />
+                    <input type="number" value={v.price} onChange={(e) => updateVariation(idx, 'price', e.target.value, false)}
+                      placeholder="₹0" min="0"
+                      className="w-24 bg-gray-50 border border-gray-100 rounded-full py-2.5 px-4 text-sm font-black focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400" />
+                    <button type="button" onClick={() => removeVariation(idx, false)}
+                      className="text-gray-300 hover:text-rose-500 transition-colors shrink-0"><X size={16} /></button>
+                  </div>
+                ))}
               </div>
-              <div className="w-full md:w-32 space-y-1">
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider ml-1">Price (₹)</label>
-                <input type="number" required min="1" value={newItem.price} onChange={(e) => setNewItem({ ...newItem, price: e.target.value })} placeholder="₹0"
-                  className="w-full bg-gray-50/50 border border-gray-100 rounded-full py-3 px-5 focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400 transition-all font-bold text-slate-900" />
-              </div>
-              <div className="flex justify-end gap-2 mt-2 md:mt-0">
-                <button type="submit" className="bg-emerald-500 text-white px-5 py-3 md:p-3 rounded-xl hover:bg-emerald-600 transition-all shadow-md shadow-emerald-500/20 flex-1 md:flex-none flex items-center justify-center"><Check size={20} /></button>
-                <button type="button" onClick={() => setShowAddForm(false)} className="bg-gray-100 text-gray-400 px-5 py-3 md:p-3 rounded-xl hover:text-rose-500 hover:bg-rose-50 transition-all flex items-center justify-center"><X size={20} /></button>
+
+              <div className="flex justify-end gap-2">
+                <button type="submit" className="bg-emerald-500 text-white px-6 py-3 rounded-xl hover:bg-emerald-600 transition-all shadow-md shadow-emerald-500/20 flex items-center gap-2 font-bold text-sm"><Check size={18} /> Save Item</button>
+                <button type="button" onClick={() => setShowAddForm(false)} className="bg-gray-100 text-gray-400 px-4 py-3 rounded-xl hover:text-rose-500 hover:bg-rose-50 transition-all flex items-center justify-center"><X size={18} /></button>
               </div>
             </form>
           )}
@@ -527,7 +614,13 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
             </div>
             <div className="flex flex-wrap gap-2">
               {categoryOptions.map(cat => (
-                <div key={cat} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-gray-100 bg-gray-50 text-xs font-bold text-slate-600">
+                <div key={cat} className="inline-flex items-center gap-2 pr-3 py-1.5 pl-1.5 rounded-full border border-gray-100 bg-gray-50 text-xs font-bold text-slate-600">
+                  <ImageUploader
+                    value={menuCategoryImages[cat]}
+                    onChange={(url) => setMenuCategoryImages(prev => ({ ...prev, [cat]: url }))}
+                    label="Pic"
+                    shape="mini"
+                  />
                   <span>{cat}</span>
                   <button type="button" onClick={() => handleDeleteCategory(cat)} className="text-rose-500 hover:text-rose-600">
                     <Trash2 size={12} />
@@ -548,6 +641,9 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
                 <div key={item._id} className={`bg-white rounded-2xl border shadow-sm p-4 transition-all ${item.isAvailable ? 'border-gray-100' : 'border-gray-100 opacity-60'}`}>
                   {editingId === item._id ? (
                     <div className="space-y-3">
+                      <div className="flex items-center justify-center mb-2">
+                        <ImageUploader value={editItem.image} onChange={(url) => setEditItem({ ...editItem, image: url })} label="Photo" shape="square" />
+                      </div>
                       <input value={editItem.name} onChange={(e) => setEditItem({ ...editItem, name: e.target.value })}
                         className="w-full bg-gray-50 border border-gray-200 rounded-xl py-2.5 px-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400" />
                       <div className="flex gap-2">
@@ -557,8 +653,31 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
                             <option key={cat} value={cat}>{cat}</option>
                           ))}
                         </select>
-                        <input type="number" value={editItem.price} onChange={(e) => setEditItem({ ...editItem, price: e.target.value })}
-                          className="w-24 bg-gray-50 border border-gray-200 rounded-xl py-2.5 px-4 text-sm font-black focus:outline-none" />
+                        {editItem.variations.length === 0 && (
+                          <input type="number" value={editItem.price} onChange={(e) => setEditItem({ ...editItem, price: e.target.value })}
+                            placeholder="₹" className="w-24 bg-gray-50 border border-gray-200 rounded-xl py-2.5 px-4 text-sm font-black focus:outline-none" />
+                        )}
+                      </div>
+                      {/* Edit Variations */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Variations</span>
+                          {editItem.variations.length < 5 && (
+                            <button type="button" onClick={() => addVariation(true)}
+                              className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full flex items-center gap-1">
+                              <Plus size={10} strokeWidth={3} /> Add
+                            </button>
+                          )}
+                        </div>
+                        {editItem.variations.map((v, idx) => (
+                          <div key={idx} className="flex gap-2 items-center">
+                            <input type="text" value={v.name} onChange={(e) => updateVariation(idx, 'name', e.target.value, true)}
+                              placeholder="Name" className="flex-1 bg-gray-50 border border-gray-200 rounded-lg py-2 px-3 text-xs font-bold focus:outline-none" />
+                            <input type="number" value={v.price} onChange={(e) => updateVariation(idx, 'price', e.target.value, true)}
+                              placeholder="₹" className="w-20 bg-gray-50 border border-gray-200 rounded-lg py-2 px-3 text-xs font-black focus:outline-none" />
+                            <button type="button" onClick={() => removeVariation(idx, true)} className="text-gray-300 hover:text-rose-500"><X size={14} /></button>
+                          </div>
+                        ))}
                       </div>
                       <div className="flex gap-2">
                         <button onClick={() => handleEditItem(item._id)} className="flex-1 bg-emerald-500 text-white py-2.5 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-1.5"><Check size={14} /> Save</button>
@@ -569,12 +688,23 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
                     <>
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-3 flex-1 min-w-0">
+                          {item.image && (
+                            <img src={item.image} alt={item.name} className={`w-10 h-10 rounded-lg object-cover shrink-0 ${!item.isAvailable && 'opacity-50 grayscale'}`} />
+                          )}
                           <button onClick={() => handleToggleItem(item._id)} className="shrink-0">
                             {item.isAvailable ? <ToggleRight size={24} className="text-emerald-500" /> : <ToggleLeft size={24} className="text-gray-300" />}
                           </button>
                           <span className={`font-bold text-sm truncate ${item.isAvailable ? 'text-slate-900' : 'text-gray-300 line-through'}`}>{item.name}</span>
                         </div>
-                        <span className="font-black text-slate-900 text-base shrink-0 ml-2">₹{item.price}</span>
+                        {item.variations?.length > 0 ? (
+                          <div className="flex flex-col items-end gap-0.5 shrink-0 ml-2">
+                            {item.variations.map((v, i) => (
+                              <span key={i} className="text-[11px] font-black text-slate-600">{v.name}: ₹{v.price}</span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="font-black text-slate-900 text-base shrink-0 ml-2">₹{item.price}</span>
+                        )}
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-gray-400">{categoryIcon(item.category)} {item.category}</span>
@@ -612,12 +742,24 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
                         {item.isAvailable ? <ToggleRight size={28} className="text-emerald-500" /> : <ToggleLeft size={28} className="text-gray-300" />}
                       </button>
                     </div>
-                    <div className="col-span-4">
+                    <div className="col-span-4 flex items-center gap-3">
                       {editingId === item._id ? (
-                        <input value={editItem.name} onChange={(e) => setEditItem({ ...editItem, name: e.target.value })}
-                          className="w-full bg-gray-50 border border-gray-200 rounded-full py-2 px-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400" />
+                        <>
+                          <ImageUploader value={editItem.image} onChange={(url) => setEditItem({ ...editItem, image: url })} label="Photo" shape="mini" />
+                          <input value={editItem.name} onChange={(e) => setEditItem({ ...editItem, name: e.target.value })}
+                            className="w-full bg-gray-50 border border-gray-200 rounded-full py-2 px-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400" />
+                        </>
                       ) : (
-                        <span className={`font-bold text-sm ${item.isAvailable ? 'text-slate-900' : 'text-gray-300 line-through'}`}>{item.name}</span>
+                        <>
+                          {item.image ? (
+                            <img src={item.image} alt={item.name} className={`w-8 h-8 rounded-lg object-cover shrink-0 ${!item.isAvailable && 'opacity-50 grayscale'}`} />
+                          ) : (
+                            <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center shrink-0">
+                              <ImageIcon size={14} className="text-gray-300" />
+                            </div>
+                          )}
+                          <span className={`font-bold text-sm truncate ${item.isAvailable ? 'text-slate-900' : 'text-gray-300 line-through'}`}>{item.name}</span>
+                        </>
                       )}
                     </div>
                     <div className="col-span-2">
@@ -634,10 +776,37 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
                     </div>
                     <div className="col-span-2">
                       {editingId === item._id ? (
-                        <input type="number" value={editItem.price} onChange={(e) => setEditItem({ ...editItem, price: e.target.value })}
-                          className="w-24 bg-gray-50 border border-gray-200 rounded-full py-2 px-4 text-sm font-black focus:outline-none" />
+                        <div className="space-y-2">
+                          {editItem.variations.length === 0 && (
+                            <input type="number" value={editItem.price} onChange={(e) => setEditItem({ ...editItem, price: e.target.value })}
+                              className="w-24 bg-gray-50 border border-gray-200 rounded-full py-2 px-4 text-sm font-black focus:outline-none" />
+                          )}
+                          {editItem.variations.length < 5 && (
+                            <button type="button" onClick={() => addVariation(true)}
+                              className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full flex items-center gap-0.5">
+                              <Plus size={9} strokeWidth={3} /> Var
+                            </button>
+                          )}
+                          {editItem.variations.map((v, idx) => (
+                            <div key={idx} className="flex gap-1 items-center">
+                              <input type="text" value={v.name} onChange={(e) => updateVariation(idx, 'name', e.target.value, true)}
+                                placeholder="Name" className="w-16 bg-gray-50 border border-gray-200 rounded-lg py-1.5 px-2 text-[10px] font-bold focus:outline-none" />
+                              <input type="number" value={v.price} onChange={(e) => updateVariation(idx, 'price', e.target.value, true)}
+                                placeholder="₹" className="w-14 bg-gray-50 border border-gray-200 rounded-lg py-1.5 px-2 text-[10px] font-black focus:outline-none" />
+                              <button type="button" onClick={() => removeVariation(idx, true)} className="text-gray-300 hover:text-rose-500"><X size={12} /></button>
+                            </div>
+                          ))}
+                        </div>
                       ) : (
-                        <span className="font-black text-slate-900">₹{item.price}</span>
+                        item.variations?.length > 0 ? (
+                          <div className="flex flex-col gap-0.5">
+                            {item.variations.map((v, i) => (
+                              <span key={i} className="text-[11px] font-black text-slate-600">{v.name}: ₹{v.price}</span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="font-black text-slate-900">₹{item.price}</span>
+                        )
                       )}
                     </div>
                     <div className="col-span-3 flex justify-end gap-2">

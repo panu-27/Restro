@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Plus, Users, Trash2, MoreVertical, Building2 } from 'lucide-react';
+import { Plus, Users, Trash2, MoreVertical, Building2, X, Search, ChevronRight } from 'lucide-react';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { TableGridSkeleton } from './Skeleton';
@@ -10,49 +10,13 @@ const LOCAL_AREAS_KEY = 'restro_table_areas';
 const LOCAL_AREA_MAP_KEY = 'restro_table_area_map';
 const LOCAL_TABLES_KEY = 'restro_tables_cache';
 
-// ── Table SVG Icon ──────────────────────────────────────────────────────────
-const TableIcon = ({ label = '', occupied = false }) => {
-  const fontSize = label.length > 8 ? 18 : label.length > 6 ? 22 : 28;
-  const iconColor    = occupied ? '#FF5A36' : '#64748B';
-  const chairOpacity = occupied ? '0.35' : '0.28';
-  const tableOpacity = occupied ? '1' : '0.82';
-  return (
-    <svg className="w-full h-full drop-shadow-sm" viewBox="0 0 110 110" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="25" y="4"  width="16" height="12" rx="4" fill={iconColor} opacity={chairOpacity}/>
-      <rect x="69" y="4"  width="16" height="12" rx="4" fill={iconColor} opacity={chairOpacity}/>
-      <rect x="25" y="94" width="16" height="12" rx="4" fill={iconColor} opacity={chairOpacity}/>
-      <rect x="69" y="94" width="16" height="12" rx="4" fill={iconColor} opacity={chairOpacity}/>
-      <rect x="4"  y="28" width="12" height="16" rx="4" fill={iconColor} opacity={chairOpacity}/>
-      <rect x="4"  y="66" width="12" height="16" rx="4" fill={iconColor} opacity={chairOpacity}/>
-      <rect x="94" y="28" width="12" height="16" rx="4" fill={iconColor} opacity={chairOpacity}/>
-      <rect x="94" y="66" width="12" height="16" rx="4" fill={iconColor} opacity={chairOpacity}/>
-      <rect x="20" y="20" width="70" height="70" rx="14" fill={iconColor} opacity={tableOpacity}/>
-      <text x="55" y="57" textAnchor="middle" dominantBaseline="middle" fill="white"
-        fontFamily="'DM Sans', sans-serif" fontWeight="800" fontSize={fontSize} letterSpacing="-0.4">
-        {label}
-      </text>
-    </svg>
-  );
-};
-
-const sizeLabel = (seats) => {
-  if (seats <= 4) return 'Small';
-  if (seats <= 6) return 'Medium';
-  return 'Large';
-};
-
-const STATUS = {
-  Occupied:  { label: 'Occupied',  text: 'text-[#FF5A36]',   bg: 'bg-orange-50 border-orange-100' },
-  Available: { label: 'Available', text: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-100' },
-};
-
 // ── Local cache helpers ─────────────────────────────────────────────────────
 const readCache = (key, fallback) => {
   try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
   catch { return fallback; }
 };
 const writeCache = (key, val) => {
-  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch { }
 };
 
 const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
@@ -67,10 +31,11 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
   const [openMenuId, setOpenMenuId] = useState(null);
   const [showAddAreaModal, setShowAddAreaModal] = useState(false);
   const [newArea, setNewArea] = useState('');
-
+  const [search, setSearch] = useState('');
+  const [activeAreaFilter, setActiveAreaFilter] = useState('All');
+  const [activeStatusFilter, setActiveStatusFilter] = useState('All');
   const getLocalAreaMap = () => readCache(LOCAL_AREA_MAP_KEY, {});
   const saveLocalAreaMap = (m) => writeCache(LOCAL_AREA_MAP_KEY, m);
-
   const tableMapKey = (t) => t?._id || `legacy:${t?.tableId || ''}`;
 
   const resolveTableArea = (table) => {
@@ -95,7 +60,6 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
       setAreaOptions(a);
       writeCache(LOCAL_TABLES_KEY, t);
       writeCache(LOCAL_AREAS_KEY, a);
-      // rebuild local area map
       const map = {};
       t.forEach(tbl => { const k = tableMapKey(tbl); if (k) map[k] = resolveTableArea(tbl); });
       saveLocalAreaMap(map);
@@ -107,7 +71,6 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
   };
 
   useEffect(() => { fetchAll(); }, []);
-
   useEffect(() => {
     const close = () => setOpenMenuId(null);
     document.addEventListener('click', close);
@@ -176,8 +139,12 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
     const orders = (activeOrders || []).filter(
       o => o.tableId === tableId && o.orderType === 'Dine-in' && o.status !== 'Paid' && o.status !== 'Cancelled'
     );
-    if (!orders.length) return { status: 'Available', billTotal: 0 };
-    return { status: 'Occupied', billTotal: orders.reduce((s, o) => s + (o.totalAmount || 0), 0) };
+    if (!orders.length) return { status: 'Available', billTotal: 0, partsCount: 0 };
+    return { 
+      status: 'Occupied', 
+      billTotal: orders.reduce((s, o) => s + (o.totalAmount || 0), 0),
+      partsCount: orders.length
+    };
   };
 
   const sortTables = (arr) => [...arr].sort((a, b) => {
@@ -187,312 +154,483 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
     return (a.tableId || '').localeCompare(b.tableId || '');
   });
 
-  // Check if a table has unsaved draft items in localStorage
   const hasDraft = (tId) => {
     try {
       const v = localStorage.getItem(`restro_draft_${tId}`);
       if (!v) return false;
       const arr = JSON.parse(v);
-      return Array.isArray(arr) && arr.length > 0;
+      return Array.isArray(arr) && arr.some(p => p.items && p.items.length > 0);
     } catch { return false; }
   };
 
-  const totalOccupied  = tables.filter(t => getTableInfo(t.tableId).status === 'Occupied').length;
-  const totalAvailable = tables.filter(t => getTableInfo(t.tableId).status === 'Available').length;
+  // Stats (disjoint mutually exclusive logic to match visual priority)
+  const draftTables = tables.filter(t => hasDraft(t.tableId));
+  const occupiedTables = tables.filter(t => !hasDraft(t.tableId) && getTableInfo(t.tableId).status === 'Occupied');
+  const availableTables = tables.filter(t => !hasDraft(t.tableId) && getTableInfo(t.tableId).status === 'Available');
+
+  const totalDraft = draftTables.length;
+  const totalOccupied = occupiedTables.length;
+  const totalAvailable = availableTables.length;
+
+  // Filter tables by search + area + status
+  const allAreaOptions = ['All', ...areaOptions];
+  const filteredTables = tables.filter(t => {
+    const matchSearch = !search || t.tableId.toLowerCase().includes(search.toLowerCase());
+    const matchArea = activeAreaFilter === 'All' || resolveTableArea(t) === activeAreaFilter;
+
+    let matchStatus = true;
+    if (activeStatusFilter === 'Draft') matchStatus = hasDraft(t.tableId);
+    else if (activeStatusFilter === 'Occupied') matchStatus = !hasDraft(t.tableId) && getTableInfo(t.tableId).status === 'Occupied';
+    else if (activeStatusFilter === 'Available') matchStatus = !hasDraft(t.tableId) && getTableInfo(t.tableId).status === 'Available';
+
+    return matchSearch && matchArea && matchStatus;
+  });
 
   if (loading) return <TableGridSkeleton />;
 
-  return (
-    <section className="p-4 lg:p-6 pb-24 lg:pb-6 animate-in fade-in duration-500">
+  // ── Table Card ──────────────────────────────────────────────────────────────
+  const TableCard = ({ table }) => {
+    const { status, billTotal, partsCount } = getTableInfo(table.tableId);
+    const isOccupied = status === 'Occupied';
+    const tablHasDraft = hasDraft(table.tableId);
+    const isMenuOpen = openMenuId === table.tableId;
 
-      {/* ── Top bar ──────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between mb-5 lg:mb-6">
-        <div>
-          <h1 className="text-lg lg:text-[1.7rem] font-black text-slate-900 tracking-tight uppercase">Tables</h1>
-          <p className="text-[8px] lg:text-[10px] font-semibold text-slate-400 uppercase tracking-[0.1em] mt-1">Floor Management</p>
-        </div>
-        <div className="flex items-center gap-2 lg:gap-3 shrink-0">
-          {/* Stats pill */}
-          <div className="flex items-center gap-3 lg:gap-4 bg-white rounded-xl lg:rounded-2xl px-3 lg:px-4 py-2.5 border border-slate-100 shadow-sm">
-            <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#FF5A36]" />
-              <span className="text-[9px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest hidden sm:block">Occ</span>
-              <span className="text-sm lg:text-lg font-black text-[#FF5A36]">{totalOccupied}</span>
-            </div>
-            <span className="text-slate-200">|</span>
-            <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span className="text-[9px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest hidden sm:block">Free</span>
-              <span className="text-sm lg:text-lg font-black text-emerald-500">{totalAvailable}</span>
-            </div>
+    return (
+      <div
+        onClick={() => onTableClick(table.tableId)}
+        className={cn(
+          'group relative rounded-2xl border cursor-pointer transition-all duration-200 active:scale-[0.97] overflow-hidden',
+          tablHasDraft
+            ? 'bg-emerald-50 border-emerald-200'
+            : isOccupied
+              ? 'bg-orange-50 border-orange-200'
+              : 'bg-white border-slate-200'
+        )}
+      >
+        {/* Top strip — status dot + label + seats */}
+        <div className="flex items-center justify-between px-3 pt-3 pb-2">
+          <div className="flex items-center gap-1.5">
+            <span className={cn(
+              'w-2 h-2 rounded-full shrink-0',
+              tablHasDraft ? 'bg-emerald-500' : isOccupied ? 'bg-[#FF5A36]' : 'bg-slate-300'
+            )} />
+            <span className={cn(
+              'text-[10px] font-black uppercase tracking-widest',
+              tablHasDraft ? 'text-emerald-600' : isOccupied ? 'text-[#FF5A36]' : 'text-slate-400'
+            )}>
+              {tablHasDraft ? 'Draft' : status}
+            </span>
           </div>
+
+          {/* 3-dot menu */}
           {!readOnly && (
-            <button
-              onClick={() => { setAddToArea(areaOptions[0] || 'Main Floor'); setShowAddModal(true); }}
-              className="flex items-center gap-1.5 lg:gap-2 px-3 lg:px-5 py-2.5 lg:py-3 bg-[#FF5A36] hover:bg-orange-600 text-white rounded-xl lg:rounded-2xl text-[10px] lg:text-xs font-black uppercase tracking-widest transition-all shadow-lg shadow-orange-200 active:scale-95"
-            >
-              <Plus size={14} strokeWidth={3}/> Add Table
-            </button>
+            <div onClick={e => e.stopPropagation()} className="relative">
+              <button
+                onClick={() => setOpenMenuId(isMenuOpen ? null : table.tableId)}
+                className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-300 hover:text-slate-500 hover:bg-slate-100 transition-colors"
+              >
+                <MoreVertical size={13} strokeWidth={2.5} />
+              </button>
+              {isMenuOpen && (
+                <div className="absolute right-0 top-7 w-32 bg-white rounded-xl shadow-xl border border-slate-100 z-50 py-1 animate-in fade-in zoom-in-95 duration-150">
+                  <button
+                    onClick={() => { setShowEditModal(table); setOpenMenuId(null); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-[11px] font-bold text-slate-600 hover:bg-slate-50"
+                  >
+                    <Users size={11} className="text-slate-400" /> Edit Seats
+                  </button>
+                  <button
+                    onClick={() => { handleRemoveTable(table.tableId); setOpenMenuId(null); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-[11px] font-bold text-rose-500 hover:bg-rose-50"
+                  >
+                    <Trash2 size={11} /> Remove
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Table ID — big */}
+        <div className="px-3 pb-1">
+          <p className={cn(
+            'text-2xl font-black tracking-tight leading-none uppercase transition-colors',
+            isOccupied ? 'text-[#FF5A36]' : tablHasDraft ? 'text-emerald-700' : 'text-slate-800 group-hover:text-blue-600'
+          )}>
+            {table.tableId}
+          </p>
+        </div>
+
+        {/* Bottom — parts + bill */}
+        <div className="flex items-center justify-between px-3 pb-3 pt-2">
+          <div className="flex items-center gap-1 text-slate-400">
+            {isOccupied && partsCount > 0 ? (
+              <span className="text-[12px] font-bold text-slate-500">{partsCount} {partsCount === 1 ? 'Part' : 'Parts'}</span>
+            ) : tablHasDraft ? (
+              <span className="text-[12px] font-bold text-emerald-500">Unsaved</span>
+            ) : null}
+          </div>
+          {isOccupied && billTotal > 0 && (
+            <span className="text-[17px] font-black text-[#FF5A36]">₹{Math.round(billTotal)}</span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // ── Bottom sheet modal shared style ──────────────────────────────────────────
+  const BottomSheet = ({ onClose: closeSheet, title, subtitle, children, footer }) => (
+    <div
+      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40 backdrop-blur-sm"
+      onClick={closeSheet}
+    >
+      <div
+        className="bg-white w-full max-w-lg rounded-t-3xl flex flex-col"
+        style={{ maxHeight: '90vh' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Handle */}
+        <div className="flex justify-center pt-3 pb-1 shrink-0">
+          <div className="w-10 h-1 bg-slate-200 rounded-full" />
+        </div>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 shrink-0">
+          <div>
+            <p className="font-black text-slate-900 text-base">{title}</p>
+            {subtitle && <p className="text-[11px] text-slate-400 mt-0.5">{subtitle}</p>}
+          </div>
+          <button
+            onClick={closeSheet}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-500"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-5 py-4" style={{ scrollbarWidth: 'none' }}>
+          {children}
+        </div>
+        {/* Footer */}
+        {footer && (
+          <div className="px-5 py-4 border-t border-slate-100 shrink-0" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}>
+            {footer}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col h-screen bg-white overflow-hidden font-sans">
+
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between px-4 h-14 bg-white border-b border-slate-100 shrink-0">
+        <span className="text-[17px] font-bold text-slate-900">Tables</span>
+        <div className="flex items-center gap-2">
+          {!readOnly && (
+            <>
+              <button
+                onClick={() => setShowAddAreaModal(true)}
+                className="px-3 py-1.5 border border-slate-200 rounded-lg text-[11px] font-bold text-slate-600 bg-white active:scale-95"
+              >
+                + Section
+              </button>
+              <button
+                onClick={() => { setAddToArea(areaOptions[0] || 'Main Floor'); setShowAddModal(true); }}
+                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[11px] font-bold active:scale-95 shadow-md shadow-blue-200"
+              >
+                + Table
+              </button>
+            </>
           )}
         </div>
       </div>
 
-      {/* ── Sections ─────────────────────────────────────────────── */}
-      <div className="space-y-8">
-        {areaOptions.map((area) => {
-          const areaTables = sortTables(tables.filter(t => resolveTableArea(t) === area));
-          const areaOccupied  = areaTables.filter(t => getTableInfo(t.tableId).status === 'Occupied').length;
-          const areaAvailable = areaTables.filter(t => getTableInfo(t.tableId).status === 'Available').length;
+      {/* ── Search bar ── */}
+      <div className="flex gap-2.5 px-4 py-2.5 bg-white shrink-0">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search tables"
+            className="w-full bg-[#f2f2f7] rounded-xl py-2.5 pl-10 pr-4 outline-none text-[15px] text-slate-700 placeholder:text-slate-400"
+          />
+        </div>
+      </div>
 
-          return (
-            <div key={area}>
-              {/* Section heading */}
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <div className="flex items-center gap-2">
-                    <Building2 size={13} className="text-slate-400 shrink-0" />
-                    <h2 className="text-xs lg:text-sm font-black text-slate-900 uppercase tracking-widest">{area}</h2>
+      {/* ── Area filter chips ── */}
+      <div className="px-4 pb-2.5 bg-white shrink-0">
+        <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+          {allAreaOptions.map(area => (
+            <button
+              key={area}
+              onClick={() => setActiveAreaFilter(area)}
+              className={cn(
+                'px-4 py-1.5 rounded-full text-[12px] font-bold whitespace-nowrap border shrink-0 transition-all',
+                activeAreaFilter === area
+                  ? 'bg-white border-blue-500 text-blue-600'
+                  : 'bg-white border-slate-200 text-slate-600'
+              )}
+            >
+              {area.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Stats strip (Filters) ── */}
+      <div className="flex justify-between gap-1.5 px-3 pb-3 shrink-0">
+        <button
+          onClick={() => setActiveStatusFilter('All')}
+          className={cn(
+            'flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl border transition-all active:scale-[0.98]',
+            activeStatusFilter === 'All' ? 'bg-slate-800 border-slate-900 text-white shadow-sm' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+          )}
+        >
+          <span className="text-[10px] font-bold">{tables.length} All</span>
+        </button>
+        <button
+          onClick={() => setActiveStatusFilter('Occupied')}
+          className={cn(
+            'flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl border transition-all active:scale-[0.98]',
+            activeStatusFilter === 'Occupied' ? 'bg-orange-100 border-orange-300 shadow-sm' : 'bg-orange-50/50 border-orange-100/50 hover:bg-orange-50'
+          )}
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-[#FF5A36] shrink-0" />
+          <span className="text-[10px] font-bold text-[#FF5A36]">{totalOccupied} Occ</span>
+        </button>
+        <button
+          onClick={() => setActiveStatusFilter('Draft')}
+          className={cn(
+            'flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl border transition-all active:scale-[0.98]',
+            activeStatusFilter === 'Draft' ? 'bg-emerald-100 border-emerald-300 shadow-sm' : 'bg-emerald-50/50 border-emerald-100/50 hover:bg-emerald-50'
+          )}
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+          <span className="text-[10px] font-bold text-emerald-600">{totalDraft} Draft</span>
+        </button>
+        <button
+          onClick={() => setActiveStatusFilter('Available')}
+          className={cn(
+            'flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl border transition-all active:scale-[0.98]',
+            activeStatusFilter === 'Available' ? 'bg-slate-200 border-slate-300 shadow-sm' : 'bg-slate-50 border-slate-200/60 hover:bg-slate-100'
+          )}
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
+          <span className="text-[10px] font-bold text-slate-600">{totalAvailable} Free</span>
+        </button>
+      </div>
+
+      {/* ── Table grid ── */}
+      <div className="flex-1 overflow-y-auto px-4 pb-28" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(env(safe-area-inset-bottom) + 112px)' }}>
+        {activeAreaFilter === 'All' ? (
+          // Group by area
+          <div className="space-y-8">
+            {areaOptions.map(area => {
+              const areaTables = sortTables(
+                filteredTables.filter(t => resolveTableArea(t) === area)
+              );
+              if (areaTables.length === 0 && search) return null;
+              return (
+                <div key={area}>
+                  {/* Area heading */}
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Building2 size={14} className="text-slate-400 shrink-0" />
+                      <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest">{area}</span>
+                      {/* <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                        {areaTables.length}
+                      </span> */}
+                    </div>
+                    {/* {!readOnly && (
+                      <button
+                        onClick={() => { setAddToArea(area); setShowAddModal(true); }}
+                        className="text-[10px] font-bold text-blue-500 px-2 py-1 rounded-lg hover:bg-blue-50 transition-colors"
+                      >
+                        + Add
+                      </button>
+                    )} */}
                   </div>
-                  <div className="flex items-center gap-2 text-[10px] font-bold">
-                    <span className="px-2 py-0.5 bg-orange-50 text-[#FF5A36] rounded-full border border-orange-100">{areaOccupied} occ</span>
-                    <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100">{areaAvailable} free</span>
-                  </div>
-                  {!readOnly && (
-                    <button
-                      onClick={() => { setAddToArea(area); setShowAddModal(true); }}
-                      className="flex items-center gap-1 px-2.5 py-1 bg-slate-50 hover:bg-slate-100 text-slate-500 rounded-full text-[10px] font-black uppercase tracking-wider transition-colors border border-slate-100"
-                    >
-                      <Plus size={10} strokeWidth={3}/> Add
-                    </button>
+
+                  {areaTables.length === 0 ? (
+                    <div className="py-16 text-center text-slate-300 text-xs font-bold uppercase tracking-widest bg-slate-50 rounded-2xl border border-slate-100">
+                      No tables yet
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                      {areaTables.map(table => <TableCard key={table._id || table.tableId} table={table} />)}
+                    </div>
                   )}
                 </div>
-
+              );
+            })}
+          </div>
+        ) : (
+          // Single area view
+          <div>
+            {sortTables(filteredTables).length === 0 ? (
+              <div className="py-16 text-center text-slate-300 text-xs font-bold uppercase tracking-widest">
+                No tables found
               </div>
-              <div className="h-px bg-slate-100 mb-3" />
-
-              {areaTables.length === 0 ? (
-                <div className="py-8 text-center text-slate-300 text-xs font-bold uppercase tracking-widest bg-slate-50/50 rounded-2xl border border-slate-100">
-                  No tables — tap Add above
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-2.5 lg:gap-3">
-                  {areaTables.map((table) => {
-                    const { status, billTotal } = getTableInfo(table.tableId);
-                    const cfg = STATUS[status] || STATUS.Available;
-                    const isOccupied = status === 'Occupied';
-                    const seats = table.seats || 4;
-                    const isMenuOpen = openMenuId === table.tableId;
-                    const tablHasDraft = hasDraft(table.tableId);
-
-                    return (
-                      <div
-                        key={table._id}
-                        className={cn(
-                          'rounded-[1rem] lg:rounded-xl border shadow-sm hover:shadow-md transition-all duration-300 relative h-[148px] lg:h-[150px]',
-                          tablHasDraft
-                            ? 'bg-emerald-50/60 border-emerald-200'
-                            : isOccupied ? 'bg-white border-orange-100' : 'bg-white border-slate-100'
-                        )}
-                      >
-                        {/* Status badge */}
-                        <div className={cn(
-                          'absolute top-1.5 right-1.5 px-1 lg:px-1.5 py-[2px] rounded-full text-[6px] lg:text-[8px] font-black uppercase tracking-wider border',
-                          cfg.bg, cfg.text
-                        )}>
-                          {cfg.label}
-                        </div>
-
-                        {/* Draft indicator — pulsing green dot */}
-                        {tablHasDraft && (
-                          <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1">
-                            <span className="relative flex h-2 w-2">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
-                              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-                            </span>
-                            <span className="text-[6px] lg:text-[7px] font-black text-emerald-600 uppercase tracking-wider hidden lg:block">Draft</span>
-                          </div>
-                        )}
-
-                        {!readOnly && (
-                          <div className="absolute top-1 left-1 z-20" onClick={e => e.stopPropagation()}>
-                            <button
-                              onClick={() => setOpenMenuId(isMenuOpen ? null : table.tableId)}
-                              className="w-4 h-4 lg:w-5 lg:h-5 flex items-center justify-center rounded-md text-slate-300 hover:text-slate-500 hover:bg-slate-50 transition-colors"
-                            >
-                              <MoreVertical size={12} className="w-[10px] h-[10px] lg:w-3 lg:h-3"/>
-                            </button>
-                            {isMenuOpen && (
-                              <div className="absolute left-0 mt-1 w-40 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 animate-in fade-in zoom-in-95 duration-150">
-                                <div className="p-1 space-y-0.5">
-                                  <button
-                                    onClick={() => { setShowEditModal(table); setOpenMenuId(null); }}
-                                    className="w-full flex items-center gap-2 px-2.5 py-2 text-left text-[10px] font-black text-slate-600 hover:bg-slate-50 rounded-lg uppercase tracking-wider"
-                                  >
-                                    <Users size={11} className="text-slate-400"/> Change Seats
-                                  </button>
-                                  <button
-                                    onClick={() => { handleRemoveTable(table.tableId); setOpenMenuId(null); }}
-                                    className="w-full flex items-center gap-2 px-2.5 py-2 text-left text-[10px] font-black text-rose-500 hover:bg-rose-50 rounded-lg uppercase tracking-wider"
-                                  >
-                                    <Trash2 size={11}/> Remove
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        <div
-                          onClick={() => onTableClick(table.tableId)}
-                          className="cursor-pointer p-2 lg:p-3.5 pt-4 lg:pt-4 flex flex-col h-full"
-                        >
-                          <div className="flex justify-center mb-1 lg:mb-3 mt-0 lg:mt-2 flex-grow items-center">
-                            <div className="w-[70px] h-[70px] lg:w-[62px] lg:h-[62px] flex items-center justify-center hover:scale-105 transition-transform">
-                              <TableIcon label={table.tableId} occupied={isOccupied}/>
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-between mt-auto">
-                            <div className="flex flex-col">
-                              <span className="text-[8px] lg:text-[11px] font-black text-slate-900 leading-tight">{seats} Seats</span>
-                              <span className="text-[7px] lg:text-[9px] font-semibold text-slate-400 capitalize">{sizeLabel(seats)}</span>
-                            </div>
-                            {isOccupied && billTotal > 0 && (
-                              <span className="text-[8px] lg:text-[12px] font-black text-[#FF5A36] truncate ml-0.5">
-                                ₹{Math.round(billTotal)}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
-
-        {/* Add new section */}
-        {!readOnly && (
-          <div className="pt-4 border-t border-slate-100">
-            <button
-              onClick={() => setShowAddAreaModal(true)}
-              className="flex items-center gap-2 px-5 py-3 bg-slate-50 hover:bg-slate-100 text-slate-500 rounded-2xl text-xs font-black uppercase tracking-widest transition-all border border-slate-100"
-            >
-              <Plus size={14} strokeWidth={3}/> Add Section / Floor
-            </button>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                {sortTables(filteredTables).map(table => <TableCard key={table._id || table.tableId} table={table} />)}
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      {/* ── Add Table Modal ─────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════
+          MODALS — all as bottom sheets, matching TableView style
+      ══════════════════════════════════════════════════════════════ */}
+
+      {/* Add Table */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-          <div className="bg-white rounded-[2.5rem] p-8 lg:p-10 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-300">
-            <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase mb-1">New Table</h2>
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-8">Adding to <span className="text-[#FF5A36]">{addToArea}</span></p>
-            <div className="space-y-4">
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Table ID</label>
-                <input type="text" placeholder="e.g. T-11 or VIP-1"
-                  value={newTable.tableId}
-                  onChange={e => setNewTable({...newTable, tableId: e.target.value})}
-                  className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-black focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400 transition-all"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Section</label>
-                <select value={addToArea} onChange={e => setAddToArea(e.target.value)}
-                  className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-black focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400 transition-all appearance-none cursor-pointer"
-                >
-                  {areaOptions.map(a => <option key={a} value={a}>{a}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Seating Capacity</label>
-                <input type="number" value={newTable.seats} min={1} max={20}
-                  onChange={e => setNewTable({...newTable, seats: parseInt(e.target.value)})}
-                  className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-black focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400 transition-all"
-                />
-              </div>
-            </div>
-            <div className="flex gap-3 mt-8">
-              <button onClick={() => setShowAddModal(false)}
-                className="flex-1 py-4 bg-slate-50 text-slate-400 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-slate-100 transition-all">
+        <BottomSheet
+          onClose={() => setShowAddModal(false)}
+          title="Add Table"
+          subtitle={`Adding to ${addToArea}`}
+          footer={
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="flex-1 py-3.5 bg-slate-100 text-slate-600 rounded-2xl font-bold text-[13px] active:scale-[0.98] transition-all"
+              >
                 Cancel
               </button>
-              <button onClick={handleAddTable} disabled={isAdding}
-                className={`flex-1 py-4 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all shadow-lg shadow-orange-200 flex items-center justify-center gap-2 ${
-                  isAdding ? 'bg-orange-400 cursor-not-allowed' : 'bg-[#FF5A36] hover:bg-orange-600'
-                }`}>
-                {isAdding ? (
-                  <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Adding...</>
-                ) : 'Create Table'}
+              <button
+                onClick={handleAddTable}
+                disabled={isAdding || !newTable.tableId}
+                className={cn(
+                  'flex-1 py-3.5 text-white rounded-2xl font-bold text-[13px] active:scale-[0.98] transition-all shadow-md shadow-blue-200 flex items-center justify-center gap-2',
+                  isAdding || !newTable.tableId ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600'
+                )}
+              >
+                {isAdding
+                  ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Adding...</>
+                  : 'Create Table'
+                }
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Edit Seats Modal ────────────────────────────────────── */}
-      {showEditModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-          <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-300">
-            <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase mb-1">Adjust Seats</h2>
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-8">Update capacity for {showEditModal.tableId}</p>
+          }
+        >
+          <div className="space-y-4">
             <div>
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">New Seat Count</label>
-              <input type="number" autoFocus min={1} max={20}
-                defaultValue={showEditModal.seats} id="edit-seats-input"
-                className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-black focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400 transition-all"
+              <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Table ID</label>
+              <input
+                type="text"
+                placeholder="e.g. T-11 or VIP-1"
+                value={newTable.tableId}
+                onChange={e => setNewTable({ ...newTable, tableId: e.target.value })}
+                className="w-full px-4 py-3 bg-[#f2f2f7] rounded-xl text-[15px] font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white border border-transparent focus:border-blue-400 transition-all"
               />
             </div>
-            <div className="flex gap-3 mt-8">
-              <button onClick={() => setShowEditModal(null)}
-                className="flex-1 py-4 bg-slate-50 text-slate-400 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-slate-100 transition-all">
+            <div>
+              <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Section</label>
+              <select
+                value={addToArea}
+                onChange={e => setAddToArea(e.target.value)}
+                className="w-full px-4 py-3 bg-[#f2f2f7] rounded-xl text-[15px] font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white border border-transparent focus:border-blue-400 transition-all appearance-none cursor-pointer"
+              >
+                {areaOptions.map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Seats</label>
+              <input
+                type="number"
+                value={newTable.seats}
+                min={1} max={20}
+                onChange={e => setNewTable({ ...newTable, seats: parseInt(e.target.value) })}
+                className="w-full px-4 py-3 bg-[#f2f2f7] rounded-xl text-[15px] font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white border border-transparent focus:border-blue-400 transition-all"
+              />
+            </div>
+          </div>
+        </BottomSheet>
+      )}
+
+      {/* Edit Seats */}
+      {showEditModal && (
+        <BottomSheet
+          onClose={() => setShowEditModal(null)}
+          title="Edit Seats"
+          subtitle={`Update capacity for ${showEditModal.tableId}`}
+          footer={
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowEditModal(null)}
+                className="flex-1 py-3.5 bg-slate-100 text-slate-600 rounded-2xl font-bold text-[13px] active:scale-[0.98] transition-all"
+              >
                 Cancel
               </button>
-              <button onClick={() => {
+              <button
+                onClick={() => {
                   const s = parseInt(document.getElementById('edit-seats-input').value);
                   handleUpdateSeats(showEditModal.tableId, s);
                 }}
-                className="flex-1 py-4 bg-slate-900 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-black transition-all">
-                Save Changes
+                className="flex-1 py-3.5 bg-blue-600 text-white rounded-2xl font-bold text-[13px] active:scale-[0.98] transition-all shadow-md shadow-blue-200"
+              >
+                Save
               </button>
             </div>
+          }
+        >
+          <div>
+            <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Seat Count</label>
+            <input
+              id="edit-seats-input"
+              type="number"
+              autoFocus
+              min={1} max={20}
+              defaultValue={showEditModal.seats}
+              className="w-full px-4 py-3 bg-[#f2f2f7] rounded-xl text-[15px] font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white border border-transparent focus:border-blue-400 transition-all"
+            />
           </div>
-        </div>
+        </BottomSheet>
       )}
 
-      {/* ── Add Section Modal ───────────────────────────────────── */}
+      {/* Add Section */}
       {showAddAreaModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-          <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-300">
-            <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase mb-1">Add Section</h2>
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-8">Create a new floor or room</p>
-            <div>
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Section Name</label>
-              <input
-                type="text" autoFocus placeholder="e.g. First Floor or VIP Room"
-                value={newArea} onChange={(e) => setNewArea(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleCreateArea()}
-                className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-black focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400 transition-all"
-              />
-            </div>
-            <div className="flex gap-3 mt-8">
-              <button onClick={() => { setShowAddAreaModal(false); setNewArea(''); }}
-                className="flex-1 py-4 bg-slate-50 text-slate-400 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-slate-100 transition-all">
+        <BottomSheet
+          onClose={() => { setShowAddAreaModal(false); setNewArea(''); }}
+          title="Add Section"
+          subtitle="Create a new floor or room"
+          footer={
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setShowAddAreaModal(false); setNewArea(''); }}
+                className="flex-1 py-3.5 bg-slate-100 text-slate-600 rounded-2xl font-bold text-[13px] active:scale-[0.98] transition-all"
+              >
                 Cancel
               </button>
-              <button onClick={handleCreateArea}
-                className="flex-1 py-4 bg-slate-900 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-black transition-all">
+              <button
+                onClick={handleCreateArea}
+                disabled={!newArea.trim()}
+                className="flex-1 py-3.5 bg-blue-600 text-white rounded-2xl font-bold text-[13px] active:scale-[0.98] transition-all shadow-md shadow-blue-200 disabled:opacity-50"
+              >
                 Save Section
               </button>
             </div>
+          }
+        >
+          <div>
+            <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Section Name</label>
+            <input
+              type="text"
+              autoFocus
+              placeholder="e.g. First Floor or VIP Room"
+              value={newArea}
+              onChange={e => setNewArea(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleCreateArea()}
+              className="w-full px-4 py-3 bg-[#f2f2f7] rounded-xl text-[15px] font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white border border-transparent focus:border-blue-400 transition-all"
+            />
           </div>
-        </div>
+        </BottomSheet>
       )}
-    </section>
+    </div>
   );
 };
 

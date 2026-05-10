@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
-import { LayoutGrid, ShoppingBag, History, Settings, LogOut, User, BarChart3, Clock, ChevronDown, MoreVertical, HelpCircle, Utensils, BookOpen, LineChart, Grid, Key, X, Loader2 } from 'lucide-react';
+import { LayoutGrid, ShoppingBag, History, Settings, LogOut, User, BarChart3, Clock, ChevronDown, MoreVertical, HelpCircle, Utensils, BookOpen, LineChart, Grid, Key, X, Loader2, Package } from 'lucide-react';
 import TableGrid from './components/TableGrid';
 import TableView from './components/TableView';
 import POSInterface from './components/POSInterface';
@@ -15,6 +15,7 @@ import WaiterDashboard from './components/WaiterDashboard';
 import KitchenDashboard from './components/KitchenDashboard';
 import NotificationBell from './components/NotificationBell';
 import { DashboardSkeleton } from './components/Skeleton';
+import ParcelView from './components/ParcelView';
 
 // ── PWA back-navigation helper ───────────────────────────────────────────────
 // Pushes a synthetic history entry so Android back has something to pop.
@@ -39,6 +40,7 @@ function App() {
   const [selectedTable, setSelectedTable] = useState(null); // { tableId, existingOrder }
   const [openTableId, setOpenTableId] = useState(null);     // full-screen TableView for tables
   const [openOrderId, setOpenOrderId] = useState(null);     // full-screen TableView for specific orders (parcels)
+  const [isCreatingParcel, setIsCreatingParcel] = useState(false);
   const [menuItems, setMenuItems] = useState([]);
   const [activeOrders, setActiveOrders] = useState([]);
   const [tables, setTables] = useState([]);
@@ -155,6 +157,10 @@ function App() {
         if (prev) { fetchActiveOrders(); return null; }
         return prev;
       });
+      setIsCreatingParcel(prev => {
+        if (prev) { fetchActiveOrders(); return false; }
+        return prev;
+      });
       // If we're on a non-home tab, go back to dashboard and push home entry
       setActiveTab(prev => {
         if (prev !== 'dashboard') {
@@ -259,7 +265,7 @@ function App() {
   };
 
   // ── FULL-SCREEN VIEW (replaces entire UI) ──────────────────────────────────
-  if (openTableId || openOrderId) {
+  if (openTableId || openOrderId || isCreatingParcel) {
     return (
       <TableView
         tableId={openTableId}
@@ -271,11 +277,13 @@ function App() {
           fetchActiveOrders();
           setOpenTableId(null);
           setOpenOrderId(null);
+          setIsCreatingParcel(false);
         }}
         onCheckoutComplete={() => {
           fetchActiveOrders();
           setOpenTableId(null);
           setOpenOrderId(null);
+          setIsCreatingParcel(false);
         }}
       />
     );
@@ -288,6 +296,7 @@ function App() {
     { id: 'dashboard', icon: LayoutGrid, label: 'Dashboard' },
     { id: 'tables', icon: Grid, label: 'Tables' },
     { id: 'pos', icon: ShoppingBag, label: 'Orders' },
+    { id: 'parcel', icon: Package, label: 'Parcels' },
     { id: 'history', icon: History, label: 'History' },
     { id: 'sales', icon: LineChart, label: 'Analytics' },
     { id: 'settings', icon: Settings, label: 'Settings' },
@@ -295,21 +304,7 @@ function App() {
 
   return (
     <div className="flex flex-col lg:flex-row h-[100dvh] bg-[#F3F5F8] lg:p-3 gap-2 lg:gap-3 overflow-hidden relative">
-      {/* ── Mobile Top Bar ─────────────────────────────────────────────────────────── */}
-      <div className="lg:hidden flex items-center justify-between bg-white px-4 py-3 z-20 mx-2 mt-2 border border-slate-100 rounded-2xl">
-        <div className="flex items-center">
-          <BrandLogo className="h-10 sm:h-12 object-contain shrink-0" />
-        </div>
-        <div className="flex items-center gap-2">
-          {subscription?.plan === 'trial' && subscription?.isValid && (
-            <div className="flex items-center gap-1.5 px-2 py-1 bg-amber-50 rounded-lg border border-amber-100">
-              <Clock size={12} className="text-amber-500" />
-              <span className="text-[10px] font-bold text-amber-600">Trial: {subscription.trialDaysRemaining}d</span>
-            </div>
-          )}
-          <NotificationBell />
-        </div>
-      </div>
+      {/* Mobile Top Bar removed as requested */}
 
       {/* ── Desktop Sidebar ─────────────────────────────────────────────────────────── */}
       <aside className="hidden lg:flex w-56 bg-white rounded-3xl flex-col py-5 px-3.5 shrink-0 transition-all duration-500 z-[110] border border-slate-100">
@@ -418,6 +413,17 @@ function App() {
                 activeOrders={activeOrders}
                 user={user}
                 onOrderUpdate={fetchActiveOrders}
+                onOrderClick={(orderId) => setOpenOrderId(orderId)}
+              />
+            </div>
+          )}
+
+          {/* Parcels */}
+          {activeTab === 'parcel' && (
+            <div className="animate-in fade-in duration-500">
+              <ParcelView
+                activeOrders={activeOrders}
+                onNewParcel={() => setIsCreatingParcel(true)}
                 onOrderClick={(orderId) => setOpenOrderId(orderId)}
               />
             </div>

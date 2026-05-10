@@ -32,6 +32,12 @@ const userSchema = new mongoose.Schema({
     type: [String],
     default: ['Main Floor']
   },
+  restaurantLogo: { type: String, default: '' },
+  menuCategoryImages: {
+    type: Map,
+    of: String,
+    default: {}
+  },
   // Monotonic per-user order sequence (1, 2, 3...)
   lastOrderNumber: { type: Number, default: 0 },
 }, { timestamps: true });

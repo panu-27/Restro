@@ -1,574 +1,424 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import axios from 'axios';
 import {
-  Search, Plus, X, Clock, ArrowUpRight,
-  ShoppingBag, CheckCircle2, XCircle, Activity,
-  ChevronDown, ChevronUp, User, Users, Phone, Utensils, Package, Loader2
+  Search, CheckCircle2, XCircle, Clock,
+  ChevronDown, ChevronUp, Utensils,
+  ArrowUpRight, AlertCircle, Loader2,
+  UtensilsCrossed, User, Package, Flame,
+  ChevronRight, Filter
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 const cn = (...inputs) => twMerge(clsx(inputs));
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-const fmt = (d) => new Date(d).toLocaleString('en-IN', {
-  day: '2-digit', month: '2-digit', year: '2-digit',
-  hour: '2-digit', minute: '2-digit', hour12: true
-});
-const fmtTime = (d) => new Date(d).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-const fmtDate = (d) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: '2-digit' });
-const fmtOrderNo = (n) => String(n || '').padStart(4, '0');
-
-// ── Detail Modal ──────────────────────────────────────────────────────────────
-const OrderDetailModal = ({ order, onClose, onProceed, onCancel }) => {
-  const [itemsOpen,  setItemsOpen]  = useState(true);
-
-  if (!order) return null;
-
-  const sub   = (order.items || []).reduce((s, i) => s + (i.price * (i.quantity || i.qty || 1)), 0);
-  const total = order.totalAmount || sub;
-
-  return (
-    <>
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm animate-in fade-in duration-200 no-print">
-      <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-7 py-5 border-b border-slate-100">
-          <h2 className="text-lg font-black text-slate-900">Orders Details</h2>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 transition-colors">
-            <X size={18} className="text-slate-500"/>
-          </button>
-        </div>
-
-        <div className="overflow-y-auto flex-1 px-7 py-5 space-y-6">
-          {/* Order Info */}
-          <section>
-            <div className="flex items-center gap-2 mb-4">
-              <ShoppingBag size={16} className="text-[#FF5A36]"/>
-              <span className="text-sm font-black text-slate-900">Order Info</span>
-              <span className="ml-auto text-xs font-bold text-slate-400">#{order.orderNumber ? fmtOrderNo(order.orderNumber) : order._id?.slice(-8)}</span>
-            </div>
-            <div className="space-y-2.5 text-sm">
-              {[
-                ['Order Date & Time', fmt(order.createdAt)],
-                ['Order Type',        order.orderType || 'Dine-in'],
-                ['Table',             order.tableId    || '—'],
-                ['Customer',          order.customerName || 'Walk-in'],
-                ['Mobile',            order.customerPhone || '—'],
-                ['Amount',            `₹${Math.round(total)}`],
-                ['Status',            order.status],
-              ].map(([k, v]) => (
-                <div key={k} className="flex justify-between">
-                  <span className="text-slate-400 font-medium">{k}:</span>
-                  <span className="font-bold text-slate-900">{v}</span>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {/* Order Items */}
-          <section className="border border-slate-100 rounded-2xl overflow-hidden">
-            <button onClick={() => setItemsOpen(o => !o)}
-              className="w-full flex items-center gap-2 px-5 py-4 bg-slate-50 hover:bg-slate-100 transition-colors">
-              <Utensils size={15} className="text-[#FF5A36]"/>
-              <span className="text-sm font-black text-slate-900 flex-1 text-left">
-                Order Items ({(order.items || []).length})
-              </span>
-              {itemsOpen ? <ChevronUp size={15} className="text-slate-400"/> : <ChevronDown size={15} className="text-slate-400"/>}
-            </button>
-            {itemsOpen && (
-              <div className="px-5 py-4 space-y-3">
-                {(order.items || []).length === 0 ? (
-                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest text-center py-2">No items yet</p>
-                ) : (
-                  (order.items || []).map((item, idx) => {
-                    const qty   = item.quantity || item.qty || 1;
-                    const lineT = item.price * qty;
-                    return (
-                      <div key={idx} className="flex items-center justify-between text-sm">
-                        <span className="font-bold text-slate-800 flex-1 truncate pr-2">{item.name}</span>
-                        <span className="text-slate-400 text-xs whitespace-nowrap">
-                          Qty <span className="font-black text-slate-700">×{qty}</span>
-                          <span className="mx-2 text-slate-200">|</span>
-                          ₹{item.price}
-                        </span>
-                        <span className="font-black text-slate-900 ml-3 whitespace-nowrap">₹{lineT}</span>
-                      </div>
-                    );
-                  })
-                )}
-                <div className="flex justify-between pt-3 border-t border-slate-100">
-                  <span className="text-sm font-bold text-slate-400">Total</span>
-                  <span className="text-sm font-black text-[#FF5A36]">₹{Math.round(total)}</span>
-                </div>
-              </div>
-            )}
-          </section>
-
-          {order.status !== 'Paid' && order.status !== 'Cancelled' && (
-            <section className="border-t border-slate-100 pt-5 animate-in slide-in-from-bottom-2 duration-200">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button
-                  onClick={() => onCancel(order._id)}
-                  className="w-full py-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-black uppercase tracking-widest transition-all active:scale-95 border border-rose-100"
-                >
-                  Cancel Order
-                </button>
-                <button
-                  onClick={() => onProceed(order._id)}
-                  className="w-full py-3.5 rounded-xl bg-[#FF5A36] hover:bg-orange-600 text-white text-xs font-black uppercase tracking-widest transition-all active:scale-95 shadow-md shadow-orange-200"
-                >
-                  Proceed to Billing
-                </button>
-              </div>
-            </section>
-          )}
-        </div>
-
-        {/* No bottom toggles anymore! */}
-      </div>
-    </div>
-    </>
-  );
+// ── Helpers ────────────────────────────────────────────────────────────────────
+const fmtTimeElapsed = (dateString) => {
+  const diff = Date.now() - new Date(dateString).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  return `${hrs}h ${mins % 60}m`;
 };
 
+const fmtOrderNo = (n) => String(n || '').padStart(4, '0');
 
+const getUrgency = (dateString) => {
+  const mins = Math.floor((Date.now() - new Date(dateString).getTime()) / 60000);
+  if (mins >= 20) return 'critical'; // red
+  if (mins >= 10) return 'warn';     // orange
+  return 'ok';                        // slate
+};
 
+// ── Order Card Component ───────────────────────────────────────────────────────
+const OrderCard = ({ order, onToggleServe, onCancelOrder, updatingItems, onOrderClick }) => {
+  const [expanded, setExpanded] = useState(true);
+  const contentRef = useRef(null);
 
-// ── Main Component ────────────────────────────────────────────────────────────
-const POSInterface = ({ activeOrders, user, onOrderUpdate, onOrderClick }) => {
-  const [searchTerm,    setSearchTerm]    = useState('');
-  const [filterType,    setFilterType]    = useState('All');
-  const [paymentFilter, setPaymentFilter] = useState('Paid');
-  const [detailOrder,   setDetailOrder]   = useState(null);
-  const [isAdding,      setIsAdding]      = useState(false);
-  const [isAddingGuest, setIsAddingGuest] = useState(false);
-  const [newParcel,     setNewParcel]     = useState({ name: '', phone: '' });
-  const [newGuest,      setNewGuest]      = useState({ name: '', note: '' });
-  const [orderStats, setOrderStats] = useState({ total: 0, running: 0, completed: 0, cancelled: 0 });
-  const [statusFilter, setStatusFilter] = useState('Running');
-  const [historicalOrders, setHistoricalOrders] = useState([]);
-  const [histLoading, setHistLoading] = useState(false);
+  const label = order.tableId || order.customerName || 'Walk-in';
+  const items = order.items || [];
+  const servedCount = items.filter(i => i.isServed).length;
+  const totalCount = items.length;
+  const isAllServed = totalCount > 0 && servedCount === totalCount;
+  const urgency = getUrgency(order.createdAt);
+  const isParcel = order.orderType === 'Parcel';
 
-  // Fetch accurate stats from dedicated endpoint
-  useEffect(() => {
-    axios.get('/api/orders/stats')
-      .then(r => setOrderStats(r.data))
-      .catch(() => {});
-  }, [activeOrders]);
+  const progressPct = totalCount > 0 ? Math.round((servedCount / totalCount) * 100) : 0;
 
-  useEffect(() => {
-    if (statusFilter !== 'Running') {
-      fetchHistory();
-    }
-  }, [statusFilter, onOrderUpdate]);
-
-  const fetchHistory = async () => {
-    setHistLoading(true);
-    try {
-      let type = 'All';
-      if (statusFilter === 'Completed') type = 'Paid';
-      if (statusFilter === 'Cancelled') type = 'Cancelled';
-      
-      // We fetch a larger limit to show 'Total' properly
-      const res = await axios.get(`/api/orders?limit=50&paymentType=${paymentFilter}`);
-      let list = res.data.orders || [];
-      
-      if (statusFilter === 'Completed') list = list.filter(o => o.status === 'Paid');
-      if (statusFilter === 'Cancelled') list = list.filter(o => o.status === 'Cancelled');
-      
-      setHistoricalOrders(list);
-    } catch (err) {
-      console.error('Failed to fetch history:', err);
-    } finally {
-      setHistLoading(false);
-    }
-  };
-
-  const stats = orderStats;
-
-  // Filtered orders
-  const filtered = useMemo(() => {
-    let list = [];
-    if (statusFilter === 'Running') {
-      list = (activeOrders || []).filter(o => o.status !== 'Paid' && o.status !== 'Cancelled');
-    } else {
-      list = historicalOrders;
-    }
-
-    if (filterType !== 'All') list = list.filter(o => o.orderType === filterType);
-    if (paymentFilter === 'Guest') {
-      list = list.filter(o => o.paymentType === 'Guest');
-    } else {
-      // Default view excludes Guest unless the filter is explicitly set
-      list = list.filter(o => o.paymentType !== 'Guest');
-    }
-    if (searchTerm) {
-      const q = searchTerm.toLowerCase();
-      list = list.filter(o =>
-        String(o.orderNumber || '').includes(q) ||
-        (o.tableId || '').toLowerCase().includes(q) ||
-        (o.customerName || '').toLowerCase().includes(q) ||
-        (o.customerPhone || '').includes(q)
-      );
-    }
-    return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }, [activeOrders, historicalOrders, statusFilter, filterType, searchTerm]);
-
-  const handleStatusUpdate = async (id, status, opts = {}) => {
-    const { closeDetail = true } = opts;
-    try {
-      await axios.patch(`/api/orders/${id}/status`, { status });
-      setDetailOrder((prev) => (prev && prev._id === id ? { ...prev, status } : prev));
-      setAllOrders((prev) => prev.map((o) => (o._id === id ? { ...o, status } : o)));
-      if (closeDetail) setDetailOrder(null);
-      onOrderUpdate();
-    } catch (err) { console.error(err); }
-  };
-
-  const handleCreateParcel = async (e) => {
-    if (e) e.preventDefault();
-    try {
-      const res = await axios.post('/api/orders', {
-        orderType: 'Parcel', items: [], totalAmount: 0,
-        customerName: newParcel.name, customerPhone: newParcel.phone
-      });
-      setIsAdding(false);
-      setNewParcel({ name: '', phone: '' });
-      onOrderUpdate();
-      if (onOrderClick) onOrderClick(res.data._id);
-    } catch (err) { console.error(err); }
-  };
-
-  const handleCreateGuest = async (e) => {
-    if (e) e.preventDefault();
-    try {
-      const res = await axios.post('/api/orders', {
-        orderType: 'Parcel', 
-        paymentType: 'Guest',
-        items: [], totalAmount: 0,
-        customerName: newGuest.name,
-        guestNote: newGuest.note
-      });
-      setIsAddingGuest(false);
-      setNewGuest({ name: '', note: '' });
-      onOrderUpdate();
-      if (onOrderClick) onOrderClick(res.data._id);
-    } catch (err) { console.error(err); }
-  };
+  const urgencyColors = {
+    critical: { dot: 'bg-rose-500', time: 'text-rose-600', timeBg: 'bg-rose-50', bar: 'bg-rose-500' },
+    warn: { dot: 'bg-orange-500', time: 'text-orange-600', timeBg: 'bg-orange-50', bar: 'bg-orange-500' },
+    ok: { dot: 'bg-emerald-500', time: 'text-slate-500', timeBg: 'bg-slate-100', bar: 'bg-blue-500' },
+  }[urgency];
 
   return (
-    <div className="min-h-full bg-[#F8FAFC] p-4 lg:p-6 pb-24 lg:pb-6 space-y-4 lg:space-y-5 no-print">
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-300">
 
-      {/* ── Page Title ──────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-lg lg:text-[1.7rem] font-black text-slate-900 tracking-tight uppercase">Orders</h1>
-          <p className="text-[8px] lg:text-[10px] font-semibold text-slate-400 uppercase tracking-[0.1em] mt-1">Manage all orders of the restaurant.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setIsAddingGuest(true)}
-            className="flex items-center gap-1.5 lg:gap-2 px-3 py-2 lg:px-5 lg:py-2.5 bg-orange-100 text-orange-600 rounded-lg lg:rounded-xl text-[9px] lg:text-xs font-black uppercase tracking-widest hover:bg-orange-200 transition-all active:scale-95 shrink-0"
-          >
-            <Users size={15} strokeWidth={3}/> <span className="hidden sm:inline">Guest</span>
-          </button>
-          <button
-            onClick={() => setIsAdding(true)}
-            className="flex items-center gap-1.5 lg:gap-2 px-3 py-2 lg:px-5 lg:py-2.5 bg-[#FF5A36] text-white rounded-lg lg:rounded-xl text-[9px] lg:text-xs font-black uppercase tracking-widest hover:bg-orange-600 transition-all shadow-lg shadow-orange-200 active:scale-95 shrink-0"
-          >
-            <Plus size={15} strokeWidth={3}/> <span className="hidden sm:inline">New Parcel</span>
-          </button>
-        </div>
-      </div>
+      {/* ── Card Header — tappable accordion ── */}
+      <div
+        className="px-4 pt-4 pb-3 cursor-pointer active:bg-slate-50 transition-colors select-none"
+        onClick={() => setExpanded(v => !v)}
+      >
+        {/* Row 1: Big Table label + type chip + time */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            {/* Table Number / Name */}
+            <div className="flex items-center shrink-0">
+              <span className="text-[18px] font-black tracking-tight leading-none uppercase text-black">
+                {label}
+              </span>
+            </div>
 
-      {/* ── Stats Strip ─────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 lg:gap-4">
-        {[
-          { id: 'Total',     label: 'Total Orders',  value: stats.total,     valueClass: statusFilter === 'Total' ? 'text-white' : 'text-slate-900',      card: statusFilter === 'Total' ? 'bg-[#FF5A36] shadow-orange-200' : 'bg-white border border-slate-100' },
-          { id: 'Running',   label: 'Running',       value: stats.running,   valueClass: statusFilter === 'Running' ? 'text-white' : 'text-blue-600',      card: statusFilter === 'Running' ? 'bg-blue-600 shadow-blue-200' : 'bg-white border border-slate-100' },
-          { id: 'Completed', label: 'Completed',     value: stats.completed, valueClass: statusFilter === 'Completed' ? 'text-white' : 'text-emerald-500', card: statusFilter === 'Completed' ? 'bg-emerald-500 shadow-emerald-200' : 'bg-white border border-slate-100' },
-          { id: 'Cancelled', label: 'Cancelled',     value: stats.cancelled, valueClass: statusFilter === 'Cancelled' ? 'text-white' : 'text-rose-500',    card: statusFilter === 'Cancelled' ? 'bg-rose-500 shadow-rose-200' : 'bg-white border border-slate-100' },
-        ].map(s => (
-          <div 
-            key={s.label} 
-            onClick={() => setStatusFilter(s.id)}
-            className={cn(
-              'rounded-xl lg:rounded-2xl px-4 py-3 lg:px-6 lg:py-4 shadow-sm flex flex-col justify-center cursor-pointer transition-all active:scale-95 hover:shadow-md', 
-              s.card
-            )}
-          >
-            <p className={cn('text-[9px] lg:text-[10px] font-black uppercase tracking-widest mb-1', s.valueClass === 'text-white' ? 'opacity-80' : 'text-slate-400')}>{s.label}</p>
-            <p className={cn('text-2xl lg:text-3xl font-black leading-none', s.valueClass)}>{s.value}</p>
+            {/* Type Chip */}
+            <span className={cn(
+              'text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-lg',
+              isParcel
+                ? 'bg-amber-100 text-amber-700'
+                : 'bg-blue-100 text-blue-700'
+            )}>
+              {isParcel ? 'Parcel' : 'Dine-in'}
+            </span>
           </div>
-        ))}
-      </div>
 
-      {/* ── Filter + Search ──────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-        {/* Type filters */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 sm:pb-0 border-r border-slate-200 pr-2 mr-2">
-            {['All', 'Dine-in', 'Parcel'].map(t => (
-              <button key={t} onClick={() => setFilterType(t)}
-                className={cn('px-3 lg:px-4 py-2 rounded-lg lg:rounded-xl text-[10px] lg:text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap',
-                  filterType === t ? 'bg-slate-900 text-white' : 'bg-white border border-slate-100 text-slate-400 hover:bg-slate-50'
-                )}>{t}</button>
-            ))}
-          </div>
-          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
-            <button 
-              onClick={() => setPaymentFilter(prev => prev === 'Guest' ? 'Paid' : 'Guest')}
-              className={cn('px-3 lg:px-4 py-2 rounded-lg lg:rounded-xl text-[10px] lg:text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap flex items-center gap-2',
-                paymentFilter === 'Guest' 
-                  ? 'bg-orange-500 text-white shadow-lg shadow-orange-200' 
-                  : 'bg-white border border-slate-100 text-slate-400 hover:bg-slate-50'
-              )}
-            >
-              <Users size={14} />
-              Guest Orders
-            </button>
+          {/* Time pill */}
+          <div className={cn(
+            'flex items-center gap-1.5 px-2.5 py-1 rounded-full',
+            urgencyColors.timeBg
+          )}>
+            <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', urgencyColors.dot)} />
+            <span className={cn('text-[11px] font-black', urgencyColors.time)}>
+              {fmtTimeElapsed(order.createdAt)}
+            </span>
           </div>
         </div>
 
-        {/* Search */}
-        <div className="relative w-full sm:w-auto sm:ml-auto">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14}/>
-          <input
-            type="text" placeholder="Search orders..."
-            className="bg-white border border-slate-100 rounded-lg lg:rounded-xl py-2 pl-9 pr-4 text-xs lg:text-sm font-bold w-full sm:w-56 focus:outline-none focus:ring-4 focus:ring-orange-500/5 focus:border-orange-400 transition-all shadow-sm"
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
+        {/* Row 2: Icon + items + progress + chevron */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-slate-400">
+            {isParcel ? <Package size={14} /> : <Utensils size={14} />}
+            <span className="text-[12px] font-bold text-slate-500">
+              {totalCount} {totalCount === 1 ? 'Item' : 'Items'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Progress pill */}
+            <div className={cn(
+              'flex items-center gap-1.5 px-3 py-1 rounded-full',
+              isAllServed ? 'bg-emerald-100' : 'bg-slate-100'
+            )}>
+              <span className={cn(
+                'text-[12px] font-black',
+                isAllServed ? 'text-emerald-700' : 'text-slate-600'
+              )}>
+                {servedCount}/{totalCount} Served
+              </span>
+            </div>
+
+            {/* Chevron */}
+            <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 shrink-0">
+              {expanded
+                ? <ChevronUp size={14} strokeWidth={2.5} />
+                : <ChevronDown size={14} strokeWidth={2.5} />
+              }
+            </div>
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        <div className="mt-3 h-1 bg-slate-100 rounded-full overflow-hidden">
+          <div
+            className={cn('h-full rounded-full transition-all duration-500', isAllServed ? 'bg-emerald-500' : urgencyColors.bar)}
+            style={{ width: `${progressPct}%` }}
           />
         </div>
       </div>
 
-      {/* ── Orders List ──────────────────────────────────────────────── */}
-      {filtered.length === 0 ? (
-        <div className="bg-white rounded-xl lg:rounded-2xl border border-slate-100 shadow-sm py-20 lg:py-24 flex flex-col items-center gap-3 lg:gap-4">
-          <div className="w-12 h-12 lg:w-16 lg:h-16 bg-slate-50 rounded-full flex items-center justify-center">
-            {histLoading 
-              ? <Loader2 size={24} className="text-orange-500 animate-spin" />
-              : <Activity size={24} className="text-slate-200 lg:w-7 lg:h-7" />
-            }
-          </div>
-          <p className="text-[10px] lg:text-sm font-black text-slate-300 uppercase tracking-widest">
-            {histLoading ? 'Loading orders...' : `No ${statusFilter.toLowerCase()} orders`}
-          </p>
-        </div>
-      ) : (
-        <>
-          {/* ─── Mobile Card Layout ──────────────────────────────────── */}
-          <div className="lg:hidden space-y-3">
-            {filtered.map(order => {
-              const label = order.tableId || order.customerName || 'Walk-in';
-              const statusColor =
-                order.status === 'Served'    ? 'bg-emerald-50 text-emerald-600' :
-                order.status === 'Pending'   ? 'bg-amber-50 text-amber-600' :
-                order.status === 'Preparing' ? 'bg-blue-50 text-blue-600' :
-                                               'bg-orange-50 text-orange-600';
-              return (
-                <div
-                  key={order._id}
-                  className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 active:scale-[0.98] transition-all cursor-pointer"
-                  onClick={() => setDetailOrder(order)}
-                >
-                  {/* Top row: Order # + Status + Amount */}
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-sm font-black text-slate-900">#{order.orderNumber ? fmtOrderNo(order.orderNumber) : '—'}</span>
-                      <span className={cn('px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest', statusColor)}>
-                        {order.status === 'Paid' ? 'Completed' : order.status === 'Pending' ? 'Running' : order.status}
-                      </span>
-                    </div>
-                    <span className="text-lg font-black text-slate-900 tracking-tight">₹{Math.round(order.totalAmount || 0)}</span>
-                  </div>
-                  {/* Bottom row: Type + Table/Customer + Time */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 px-2 py-1 rounded-lg">
-                        {order.orderType === 'Parcel' ? 'Parcel' : 'Dine-in'}
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        {order.orderType === 'Parcel'
-                          ? <User size={12} className="text-slate-300 shrink-0"/>
-                          : <Utensils size={12} className="text-slate-300 shrink-0"/>
-                        }
-                        <span className="text-xs font-bold text-slate-500 truncate max-w-[120px]">{label}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-slate-400">
-                      <Clock size={11}/>
-                      <span className="text-[11px] font-bold">{fmtTime(order.createdAt)}</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+      {/* ── Accordion Body ── */}
+      {expanded && (
+        <div className="border-t border-slate-100">
+          {items.length === 0 ? (
+            <div className="px-4 py-8 text-center">
+              <p className="text-[11px] font-black text-slate-300 uppercase tracking-widest">No items</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100/80">
+              {items.map(item => {
+                const isServed = item.isServed;
+                const isUpdating = updatingItems.has(item._id);
+                const qty = item.quantity || item.qty || 1;
 
-          {/* ─── Desktop Table Layout ────────────────────────────────── */}
-          <div className="hidden lg:block bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-            <div className="divide-y divide-slate-50">
-              {/* Table header */}
-              <div className="grid grid-cols-12 px-6 py-3 bg-slate-50/60">
-                {['Order ID','Date & Time','Type','Table / Customer','Status','Amount',''].map((h, i) => (
-                  <div key={h} className={cn(
-                    'text-[10px] font-black text-slate-400 uppercase tracking-widest',
-                    i === 0 ? 'col-span-2' :
-                    i === 1 ? 'col-span-2' :
-                    i === 2 ? 'col-span-1' :
-                    i === 3 ? 'col-span-3' :
-                    i === 4 ? 'col-span-2' :
-                    i === 5 ? 'col-span-1 text-right' : 'col-span-1 text-center'
-                  )}>{h}</div>
-                ))}
-              </div>
-
-              {filtered.map(order => {
-                const label = order.tableId || order.customerName || 'Walk-in';
                 return (
                   <div
-                    key={order._id}
+                    key={item._id}
                     className={cn(
-                      "grid grid-cols-12 px-6 py-5 items-center hover:bg-slate-50/50 transition-all cursor-pointer group relative",
-                      order.paymentType === 'Guest' ? "bg-orange-50/30 border-l-4 border-orange-500/50" : "border-l-4 border-transparent"
+                      'flex items-center gap-3 px-4 py-3 transition-all duration-200',
+                      isServed ? 'bg-slate-50/80' : 'bg-white'
                     )}
-                    onClick={() => setDetailOrder(order)}
                   >
-                    <div className="col-span-2 flex items-center gap-2">
-                      {order.paymentType === 'Guest' && <Users size={14} className="text-orange-500 animate-pulse" />}
-                      <span className="text-sm font-black text-slate-900">#{order.orderNumber ? fmtOrderNo(order.orderNumber) : '—'}</span>
-                    </div>
-                    <div className="col-span-2">
-                      <span className="text-xs font-bold text-slate-500">{fmtDate(order.createdAt)}</span>
-                      <span className="block text-[11px] text-slate-400 font-bold">{fmtTime(order.createdAt)}</span>
-                    </div>
-                    <div className="col-span-1">
-                      <span className="text-xs font-black text-slate-700 uppercase">{order.orderType === 'Parcel' ? 'Parcel' : 'Dine'}</span>
-                    </div>
-                    <div className="col-span-3 flex items-center gap-2">
-                      {order.orderType === 'Parcel'
-                        ? <User size={13} className="text-slate-300 shrink-0"/>
-                        : <Utensils size={13} className="text-slate-300 shrink-0"/>
-                      }
-                      <span className="text-xs font-bold text-slate-600 truncate">{label}</span>
-                    </div>
-                    <div className="col-span-2 flex flex-col gap-1">
-                      <span className={cn(
-                        'px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest w-fit',
-                        order.status === 'Served'   ? 'bg-emerald-50 text-emerald-600' :
-                        order.status === 'Pending'  ? 'bg-amber-50 text-amber-600' :
-                        order.status === 'Preparing'? 'bg-blue-50 text-blue-600' :
-                                                      'bg-orange-50 text-orange-600'
+                    {/* Served indicator dot */}
+                    <span className={cn(
+                      'w-1.5 h-1.5 rounded-full shrink-0 mt-0.5',
+                      isServed ? 'bg-emerald-400' : 'bg-orange-400'
+                    )} />
+
+                    {/* Item info */}
+                    <div className="flex-1 min-w-0">
+                      <p className={cn(
+                        'text-[14px] font-bold leading-tight',
+                        isServed ? 'text-slate-400 line-through' : 'text-slate-900'
                       )}>
-                        {order.status === 'Paid' ? 'Completed' : order.status === 'Pending' ? 'Running' : order.status}
-                      </span>
-                      {order.paymentType === 'Guest' && (
-                        <span className="px-3 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest bg-orange-100 text-orange-600 w-fit">Guest</span>
+                        {item.name}
+                      </p>
+                      {item.note && (
+                        <p className="text-[10px] font-bold text-orange-500 mt-0.5 flex items-center gap-1">
+                          <AlertCircle size={10} /> {item.note}
+                        </p>
                       )}
-                      {order.paymentType === 'Paid' && order.status === 'Paid' && (
-                        <span className="px-3 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest bg-emerald-100 text-emerald-600 w-fit">Paid</span>
+                    </div>
+
+                    {/* Qty badge */}
+                    <span className={cn(
+                      'text-[13px] font-black px-2 py-0.5 rounded-lg shrink-0',
+                      isServed ? 'text-slate-400 bg-slate-100' : 'text-slate-800 bg-slate-100'
+                    )}>
+                      ×{qty}
+                    </span>
+
+                    {/* Serve toggle button */}
+                    <button
+                      disabled={isUpdating}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleServe(order._id, item._id, isServed, e);
+                      }}
+                      className={cn(
+                        'w-9 h-9 rounded-xl flex items-center justify-center transition-all active:scale-90 shrink-0',
+                        isUpdating
+                          ? 'bg-slate-100 cursor-not-allowed'
+                          : isServed
+                            ? 'bg-slate-200 text-slate-500 hover:bg-slate-300'
+                            : 'bg-emerald-100 text-emerald-600 hover:bg-emerald-500 hover:text-white shadow-sm shadow-emerald-100'
                       )}
-                    </div>
-                    <div className="col-span-1 text-right">
-                      <span className="text-sm font-black text-slate-900">₹{Math.round(order.totalAmount || 0)}</span>
-                    </div>
-                    <div className="col-span-1 text-center">
-                      <button className="inline-flex items-center gap-1 text-[11px] font-black text-[#FF5A36] opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                        Proceed <ArrowUpRight size={12}/>
-                      </button>
-                    </div>
+                    >
+                      {isUpdating
+                        ? <Loader2 size={15} className="animate-spin text-slate-400" />
+                        : isServed
+                          ? <XCircle size={16} strokeWidth={2} />
+                          : <CheckCircle2 size={16} strokeWidth={2.5} />
+                      }
+                    </button>
                   </div>
                 );
               })}
             </div>
-          </div>
-        </>
-      )}
+          )}
 
-      {/* ── Order Detail Modal ───────────────────────────────────────── */}
-      {detailOrder && (
-        <OrderDetailModal
-          order={{ ...detailOrder, user }}
-          onClose={() => setDetailOrder(null)}
-          onProceed={(id) => {
-            setDetailOrder(null);
-            if (onOrderClick) onOrderClick(id);
-          }}
-          onCancel={(id) => handleStatusUpdate(id, 'Cancelled', { closeDetail: false })}
-        />
-      )}
-
-      {/* ── New Guest Modal ─────────────────────────────────────────── */}
-      {isAddingGuest && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between px-7 py-5 border-b border-slate-100">
-              <h3 className="text-lg font-black text-slate-900">New Guest Order</h3>
-              <button onClick={() => setIsAddingGuest(false)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100">
-                <X size={18} className="text-slate-400" />
-              </button>
-            </div>
-            <form onSubmit={handleCreateGuest} className="p-7 space-y-5">
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Guest Name</label>
-                <div className="relative">
-                  <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                  <input type="text" required value={newGuest.name}
-                    onChange={e => setNewGuest(prev => ({ ...prev, name: e.target.value }))}
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-11 py-3.5 text-sm font-bold focus:bg-white focus:border-orange-500 transition-all outline-none"
-                    placeholder="Enter guest name..." />
-                </div>
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Guest Note (Category)</label>
-                <div className="relative">
-                  <Users className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                  <input type="text" value={newGuest.note}
-                    onChange={e => setNewGuest(prev => ({ ...prev, note: e.target.value }))}
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-11 py-3.5 text-sm font-bold focus:bg-white focus:border-orange-500 transition-all outline-none"
-                    placeholder="Friend, VIP, Staff, etc." />
-                </div>
-              </div>
-              <button type="submit" className="w-full py-4 bg-slate-900 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl shadow-slate-200 active:scale-95">
-                Proceed to Menu
-              </button>
-            </form>
+          {/* Card Footer */}
+          <div className="px-4 py-3 bg-white border-t border-slate-100 flex gap-2">
+            <button
+              onClick={(e) => { e.stopPropagation(); onCancelOrder && onCancelOrder(order._id); }}
+              className="px-4 py-3 bg-rose-50 text-rose-600 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-rose-100 transition-colors active:scale-95 shrink-0"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onOrderClick && onOrderClick(order._id); }}
+              className={cn(
+                'flex-1 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 active:scale-[0.98] transition-all',
+                isAllServed
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
+                  : 'bg-slate-900 text-white shadow-md shadow-slate-200'
+              )}
+            >
+              {isAllServed ? 'Billing' : 'Manage'}
+              <ArrowUpRight size={14} />
+            </button>
           </div>
         </div>
       )}
-      {isAdding && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between px-7 py-5 border-b border-slate-100">
-              <h3 className="text-lg font-black text-slate-900">New Parcel Order</h3>
-              <button onClick={() => setIsAdding(false)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100">
-                <X size={18} className="text-slate-500"/>
-              </button>
-            </div>
-            <form onSubmit={handleCreateParcel} className="px-7 py-6 space-y-4">
-              <div className="relative">
-                <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={15}/>
-                <input type="text" placeholder="Customer name (optional)"
-                  className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3.5 pl-11 pr-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400 transition-all"
-                  value={newParcel.name} onChange={e => setNewParcel({...newParcel, name: e.target.value})}
-                />
-              </div>
-              <div className="relative">
-                <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={15}/>
-                <input type="text" placeholder="Phone number (optional)"
-                  className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3.5 pl-11 pr-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400 transition-all"
-                  value={newParcel.phone} onChange={e => setNewParcel({...newParcel, phone: e.target.value})}
-                />
-              </div>
-              <button type="submit" className="w-full py-4 bg-[#FF5A36] text-white rounded-xl text-sm font-black uppercase tracking-widest hover:bg-orange-600 transition-all mt-2 shadow-lg shadow-orange-200">
-                Create Parcel Order
-              </button>
-            </form>
-          </div>
+    </div>
+  );
+};
+
+// ── Main Component ─────────────────────────────────────────────────────────────
+const POSInterface = ({ activeOrders, user, onOrderUpdate, onOrderClick }) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [updatingItems, setUpdatingItems] = useState(new Set());
+  const [statusFilter, setStatusFilter] = useState('All'); // 'All' | 'Pending' | 'Done'
+  const [typeFilter, setTypeFilter] = useState('All');     // 'All' | 'Dine-in' | 'Parcel'
+
+  // ── Derived orders ─────────────────────────────────────────────────────────
+  const runningOrders = useMemo(() => {
+    const active = (activeOrders || []).filter(
+      o => o.status !== 'Paid' && o.status !== 'Cancelled'
+    );
+    active.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+    return active.filter(o => {
+      const items = o.items || [];
+      const servedCount = items.filter(i => i.isServed).length;
+      const isAllServed = items.length > 0 && servedCount === items.length;
+
+      // Status filter
+      if (statusFilter === 'Pending' && isAllServed) return false;
+      if (statusFilter === 'Done' && !isAllServed) return false;
+      if (statusFilter === 'Late') {
+        if (isAllServed) return false;
+        if (getUrgency(o.createdAt) !== 'critical') return false;
+      }
+
+      // Type filter
+      if (typeFilter === 'Dine-in' && o.orderType !== 'Dine-in') return false;
+      if (typeFilter === 'Parcel' && o.orderType !== 'Parcel') return false;
+
+      // Search
+      if (searchTerm) {
+        const q = searchTerm.toLowerCase();
+        if (String(o.orderNumber || '').includes(q)) return true;
+        if ((o.tableId || '').toLowerCase().includes(q)) return true;
+        if ((o.customerName || '').toLowerCase().includes(q)) return true;
+        const hasItem = (o.items || []).some(item =>
+          !item.isServed && item.name.toLowerCase().includes(q)
+        );
+        return hasItem;
+      }
+
+      return true;
+    });
+  }, [activeOrders, searchTerm, statusFilter, typeFilter]);
+
+  // ── Stats ──────────────────────────────────────────────────────────────────
+  const stats = useMemo(() => {
+    const all = (activeOrders || []).filter(o => o.status !== 'Paid' && o.status !== 'Cancelled');
+    const done = all.filter(o => {
+      const items = o.items || [];
+      return items.length > 0 && items.every(i => i.isServed);
+    });
+    const pending = all.filter(o => {
+      const items = o.items || [];
+      return items.some(i => !i.isServed);
+    });
+    const critical = all.filter(o => getUrgency(o.createdAt) === 'critical');
+    return { total: all.length, done: done.length, pending: pending.length, critical: critical.length };
+  }, [activeOrders]);
+
+  // ── Handlers ───────────────────────────────────────────────────────────────
+  const handleToggleServe = async (orderId, itemId, currentIsServed, e) => {
+    e.stopPropagation();
+    setUpdatingItems(prev => new Set(prev).add(itemId));
+
+    try {
+      await axios.patch(`/api/orders/${orderId}/items/${itemId}/serve`, { isServed: !currentIsServed });
+      if (onOrderUpdate) onOrderUpdate();
+    } catch (error) {
+      console.error('Error updating item status:', error);
+      alert('Failed to update item status');
+    } finally {
+      setUpdatingItems(prev => {
+        const next = new Set(prev);
+        next.delete(itemId);
+        return next;
+      });
+    }
+  };
+
+  const handleCancelOrder = async (orderId) => {
+    if (!window.confirm('Are you sure you want to cancel this order?')) return;
+    try {
+      await axios.patch(`/api/orders/${orderId}/status`, { status: 'Cancelled' });
+      if (onOrderUpdate) onOrderUpdate();
+    } catch (err) {
+      console.error('Error cancelling order:', err);
+      alert('Failed to cancel order');
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-screen bg-white overflow-hidden font-sans">
+
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between px-4 h-14 bg-white border-b border-slate-100 shrink-0">
+        <span className="text-[17px] font-bold text-slate-900">Kitchen Display</span>
+        {/* Live dot */}
+        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 rounded-full border border-emerald-200">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="text-[11px] font-black text-emerald-700 uppercase tracking-widest">Live</span>
         </div>
-      )}
+      </div>
+
+      {/* ── Search bar ── */}
+      <div className="flex gap-2.5 px-4 py-2.5 bg-white shrink-0">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            placeholder="Search tables, items..."
+            className="w-full bg-[#f2f2f7] rounded-xl py-2.5 pl-10 pr-4 outline-none text-[15px] text-slate-700 placeholder:text-slate-400"
+          />
+        </div>
+      </div>
+
+      {/* ── Status filter chips ── */}
+      <div className="px-4 pb-3 bg-white shrink-0">
+        <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+          {['All', 'Pending', 'Done'].concat(stats.critical > 0 ? ['Late'] : []).map(status => {
+            const labelMap = { 'All': `ALL (${stats.total})`, 'Pending': `PENDING (${stats.pending})`, 'Done': `DELIVERED (${stats.done})`, 'Late': `LATE (${stats.critical})` };
+            return (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={cn(
+                  'px-4 py-1.5 rounded-full text-[12px] font-bold whitespace-nowrap border shrink-0 transition-all',
+                  statusFilter === status
+                    ? 'bg-white border-blue-500 text-blue-600'
+                    : 'bg-white border-slate-200 text-slate-600'
+                )}
+              >
+                {labelMap[status]}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+
+
+      {/* ── Orders grid / list ── */}
+      <div
+        className="flex-1 overflow-y-auto px-4 pb-28 space-y-3"
+        style={{ scrollbarWidth: 'none', paddingBottom: 'calc(env(safe-area-inset-bottom) + 80px)' }}
+      >
+        {runningOrders.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 text-slate-400">
+            <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mb-4 border border-slate-100">
+              <CheckCircle2 size={28} className="text-emerald-400" />
+            </div>
+            <p className="text-[12px] font-black text-slate-400 uppercase tracking-widest text-center px-8">
+              {searchTerm || statusFilter !== 'All' || typeFilter !== 'All'
+                ? 'No matching orders'
+                : 'Kitchen is clear!'}
+            </p>
+          </div>
+        ) : (
+          /* On desktop: 2-3 col grid. On mobile: single column */
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 items-start">
+            {runningOrders.map(order => (
+              <OrderCard
+                key={order._id}
+                order={order}
+                onToggleServe={handleToggleServe}
+                onCancelOrder={handleCancelOrder}
+                updatingItems={updatingItems}
+                onOrderClick={onOrderClick}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
