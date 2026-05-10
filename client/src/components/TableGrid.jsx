@@ -190,7 +190,7 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
 
   // ── Table Card ──────────────────────────────────────────────────────────────
   const TableCard = ({ table }) => {
-    const { status, billTotal, partsCount } = getTableInfo(table.tableId);
+    const { status, billTotal } = getTableInfo(table.tableId);
     const isOccupied = status === 'Occupied';
     const tablHasDraft = hasDraft(table.tableId);
     const isMenuOpen = openMenuId === table.tableId;
@@ -199,79 +199,28 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
       <div
         onClick={() => onTableClick(table.tableId)}
         className={cn(
-          'group relative rounded-2xl border cursor-pointer transition-all duration-200 active:scale-[0.97] overflow-hidden',
-          tablHasDraft
-            ? 'bg-emerald-50 border-emerald-200'
-            : isOccupied
-              ? 'bg-orange-50 border-orange-200'
-              : 'bg-white border-slate-200'
+          'group relative rounded-2xl border cursor-pointer transition-all duration-200 active:scale-[0.97] overflow-hidden flex flex-col justify-between p-4 min-h-[110px]',
+          isOccupied
+            ? 'bg-orange-50 border-orange-200 shadow-sm shadow-orange-100'
+            : tablHasDraft
+              ? 'bg-emerald-50 border-emerald-200 shadow-sm shadow-emerald-100'
+              : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'
         )}
       >
-        {/* Top strip — status dot + label + seats */}
-        <div className="flex items-center justify-between px-3 pt-3 pb-2">
-          <div className="flex items-center gap-1.5">
-            <span className={cn(
-              'w-2 h-2 rounded-full shrink-0',
-              tablHasDraft ? 'bg-emerald-500' : isOccupied ? 'bg-[#FF5A36]' : 'bg-slate-300'
-            )} />
-            <span className={cn(
-              'text-[10px] font-black uppercase tracking-widest',
-              tablHasDraft ? 'text-emerald-600' : isOccupied ? 'text-[#FF5A36]' : 'text-slate-400'
-            )}>
-              {tablHasDraft ? 'Draft' : status}
-            </span>
-          </div>
-
-          {/* 3-dot menu */}
-          {!readOnly && (
-            <div onClick={e => e.stopPropagation()} className="relative">
-              <button
-                onClick={() => setOpenMenuId(isMenuOpen ? null : table.tableId)}
-                className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-300 hover:text-slate-500 hover:bg-slate-100 transition-colors"
-              >
-                <MoreVertical size={13} strokeWidth={2.5} />
-              </button>
-              {isMenuOpen && (
-                <div className="absolute right-0 top-7 w-32 bg-white rounded-xl shadow-xl border border-slate-100 z-50 py-1 animate-in fade-in zoom-in-95 duration-150">
-                  <button
-                    onClick={() => { setShowEditModal(table); setOpenMenuId(null); }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-[11px] font-bold text-slate-600 hover:bg-slate-50"
-                  >
-                    <Users size={11} className="text-slate-400" /> Edit Seats
-                  </button>
-                  <button
-                    onClick={() => { handleRemoveTable(table.tableId); setOpenMenuId(null); }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-[11px] font-bold text-rose-500 hover:bg-rose-50"
-                  >
-                    <Trash2 size={11} /> Remove
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
         {/* Table ID — big */}
-        <div className="px-3 pb-1">
+        <div className="flex-1 flex items-start mt-1">
           <p className={cn(
-            'text-2xl font-black tracking-tight leading-none uppercase transition-colors',
-            isOccupied ? 'text-[#FF5A36]' : tablHasDraft ? 'text-emerald-700' : 'text-slate-800 group-hover:text-blue-600'
+            "text-3xl font-black tracking-tight leading-none uppercase transition-colors",
+            isOccupied ? "text-orange-600" : tablHasDraft ? "text-emerald-600" : "text-slate-800 group-hover:text-blue-600"
           )}>
             {table.tableId}
           </p>
         </div>
 
-        {/* Bottom — parts + bill */}
-        <div className="flex items-center justify-between px-3 pb-3 pt-2">
-          <div className="flex items-center gap-1 text-slate-400">
-            {isOccupied && partsCount > 0 ? (
-              <span className="text-[12px] font-bold text-slate-500">{partsCount} {partsCount === 1 ? 'Part' : 'Parts'}</span>
-            ) : tablHasDraft ? (
-              <span className="text-[12px] font-bold text-emerald-500">Unsaved</span>
-            ) : null}
-          </div>
+        {/* Bottom — bill */}
+        <div className="flex items-end justify-end mt-2 h-6">
           {isOccupied && billTotal > 0 && (
-            <span className="text-[17px] font-black text-[#FF5A36]">₹{Math.round(billTotal)}</span>
+            <span className="text-[17px] font-black text-orange-600">₹{Math.round(billTotal)}</span>
           )}
         </div>
       </div>
