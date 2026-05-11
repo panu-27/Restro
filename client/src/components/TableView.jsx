@@ -1219,12 +1219,12 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                     </div>
                   )}
                   {!isReadOnly && !isWaiter ? (
-                    <div className="grid grid-cols-2 gap-2">
-                      <button onClick={() => handleSettle(currentPartId, 'print')} className="flex flex-col items-center gap-1 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 text-slate-600 active:scale-95 transition-all"><Printer size={15} /><span className="text-[9px] font-bold uppercase tracking-widest">Print</span></button>
-                      <button onClick={() => handleSettle(currentPartId, 'wa')} className="flex flex-col items-center gap-1 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-emerald-200 text-[#00a884] active:scale-95 transition-all"><MessageCircle size={15} /><span className="text-[9px] font-bold uppercase tracking-widest">WhatsApp</span></button>
-                      <button onClick={() => handleSettle(currentPartId, 'both')} className="flex flex-col items-center gap-1 py-2.5 rounded-xl bg-[#FF5A36] hover:bg-orange-600 text-white active:scale-95 transition-all shadow-md shadow-orange-200"><CheckCircle2 size={15} /><span className="text-[9px] font-bold uppercase tracking-widest">Print + WA</span></button>
-                      <button onClick={() => handleSettle(currentPartId, 'none')} className="flex flex-col items-center gap-1 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 active:scale-95 transition-all"><ArrowRight size={15} /><span className="text-[9px] font-bold uppercase tracking-widest">No Bill</span></button>
-                    </div>
+                    <button
+                      onClick={() => handleSettle(currentPartId, 'none')}
+                      className="w-full py-4 bg-[#FF5A36] hover:bg-orange-600 text-white rounded-2xl text-[14px] font-black uppercase tracking-wider shadow-lg shadow-orange-100 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle2 size={18} /> Confirm & Settle
+                    </button>
                   ) : isReadOnly ? (
                     <div className="grid grid-cols-2 gap-2">
                       <button onClick={() => window.print()} className="py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-semibold text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:border-slate-300"><Printer size={14} /> Reprint</button>
@@ -1412,7 +1412,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
               (activeAllItems.length === 0 || isReadOnly) ? 'opacity-40 cursor-not-allowed' : ''
             )}
           >
-            KOT & Bill
+            KOT & Settle
           </button>
         </div>
       </div>
@@ -1557,7 +1557,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
           style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
           <button
             onClick={async () => {
-              await handleSettle(currentPartId, 'print');
+              await handleSettle(currentPartId, 'none');
             }}
             disabled={activeAllItems.length === 0}
             className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold text-[13px] tracking-wide active:scale-[0.98] transition-all shadow-md shadow-blue-200 disabled:opacity-50"
