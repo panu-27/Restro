@@ -48,7 +48,7 @@ const VegDot = ({ category }) => {
 };
 
 // ── Main Component ────────────────────────────────────────────────────────────────────────────
-const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onClose, onCheckoutComplete }) => {
+const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onClose, onCheckoutComplete, initialScreen }) => {
 
   // ── State ─────────────────────────────────────────────────────────────────────────────────
   const [parts, setParts] = useState([]);
@@ -73,10 +73,22 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   const [paymentMode, setPaymentMode] = useState('Cash');
   const [selectedItemForVars, setSelectedItemForVars] = useState(null);
   // Mobile screens: 'menu' | 'cart'
-  const [mobileScreen, setMobileScreen] = useState('menu');
+  const [mobileScreen, setMobileScreen] = useState(initialScreen || 'menu');
   // Customer details expand
   const [customerDetailsOpen, setCustomerDetailsOpen] = useState(false);
   const [customerName, setCustomerName] = useState('');
+  const [leftOpen, setLeftOpen] = useState(false);
+  const [rightOpen, setRightOpen] = useState(false);
+  const [showDiscardModal, setShowDiscardModal] = useState(false);
+
+  const handleBack = () => {
+    const hasUnsaved = Object.values(roundItems).some(items => items.length > 0);
+    if (hasUnsaved) {
+      setShowDiscardModal(true);
+    } else {
+      onClose();
+    }
+  };
 
   const billRef = useRef(null);
   const isSavingRef = useRef(false);
@@ -683,7 +695,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   };
 
   // ── Print area ────────────────────────────────────────────────────────────────────────────
-  const PrintBill = ({ partId }) => {
+  const renderPrintBill = ({ partId }) => {
     const bill = buildBill(partId);
     return (
       <div className="hidden print:block print-only font-sans" ref={billRef}>
@@ -782,7 +794,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   const paymentModes = ['Cash', 'UPI', 'PhonePe', 'Google Pay'];
 
   // ── Variations modal ──────────────────────────────────────────────────────────────────────
-  const VariationsModal = ({ item, onClose }) => {
+  const renderVariationsModal = ({ item, onClose }) => {
     if (!item) return null;
     return (
       <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
@@ -826,8 +838,47 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
     );
   };
 
+  const renderDiscardModal = () => (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-[28px] w-full max-w-[320px] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+        <div className="p-8 text-center">
+          <div className="w-16 h-16 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-4">
+            <ShoppingCart size={28} className="text-[#FF5A36]" />
+          </div>
+          <h3 className="text-[20px] font-black text-slate-900 mb-2">Unsaved Items!</h3>
+          <p className="text-[14px] text-slate-500 leading-relaxed">
+            You have items in your cart that aren't saved to KOT.
+          </p>
+        </div>
+        <div className="flex flex-col border-t border-slate-100">
+          <button
+            onClick={() => {
+              clearDraft();
+              onClose();
+            }}
+            className="w-full py-4 text-[15px] font-bold text-red-500 active:bg-red-50 transition-colors"
+          >
+            Discard All
+          </button>
+          <button
+            onClick={onClose}
+            className="w-full py-4 text-[15px] font-bold text-slate-900 border-t border-slate-100 active:bg-slate-50 transition-colors"
+          >
+            Save as Draft
+          </button>
+          <button
+            onClick={() => setShowDiscardModal(false)}
+            className="w-full py-4 text-[15px] font-bold text-slate-400 border-t border-slate-100 active:bg-slate-50 transition-colors uppercase tracking-widest"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   // ── Transfer Modal ────────────────────────────────────────────────────────────────────────
-  const TransferModal = () => {
+  const renderTransferModal = () => {
     // Group tables by area/section, exclude current table
     const otherTables = availableTables.filter(t => t.tableId !== tableId);
     const sections = otherTables.reduce((acc, t) => {
@@ -903,7 +954,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
 
 
   // ── Menu Item Card — name outside, controls anchored bottom-right ─────────────────────────
-  const MenuItemCard = ({ item, overrideQty }) => {
+  const renderMenuItemCard = ({ item, overrideQty }) => {
     const hasVars = item.variations?.length >= 2;
     const isSingleVar = item.variations?.length === 1;
 
@@ -1001,7 +1052,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
         </div>
 
         {/* ── Name OUTSIDE the card, below it ── */}
-        <p className="text-[13px] font-bold text-slate-900 leading-snug line-clamp-2 px-0.5 mt-0.5">
+        <p className="text-[13px] font-bold text-slate-900 leading-snug line-clamp-5 px-0.5 mt-0.5">
           {item.name}
           {isSingleVar && <span className="text-slate-500 font-medium"> · {item.variations[0].name}</span>}
         </p>
@@ -1010,9 +1061,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   };
 
   // ── DESKTOP UI ────────────────────────────────────────────────────────────────────────────
-  const DesktopUI = () => {
-    const [leftOpen, setLeftOpen] = useState(false);
-    const [rightOpen, setRightOpen] = useState(false);
+  const renderDesktopUI = () => {
     const toggleLeft = () => { setLeftOpen(v => { const n = !v; if (n) setRightOpen(false); return n; }); };
     const toggleRight = () => { setRightOpen(v => { const n = !v; if (n) setLeftOpen(false); return n; }); };
 
@@ -1020,7 +1069,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
       <div className="hidden md:flex flex-col flex-1 overflow-hidden">
         {/* HEADER */}
         <div className="flex items-center gap-2 px-4 h-14 bg-white border-b border-slate-100 no-print shrink-0">
-          <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 transition-colors shrink-0">
+          <button onClick={handleBack} className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 transition-colors shrink-0">
             <ArrowLeft size={16} className="text-slate-600" />
           </button>
           <div className="flex flex-col leading-tight">
@@ -1103,7 +1152,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                 </div>
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                  {filteredMenu.map(item => <MenuItemCard key={item._id} item={item} />)}
+                  {filteredMenu.map(item => renderMenuItemCard({ item }))}
                 </div>
               )}
             </div>
@@ -1194,13 +1243,13 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   };
 
   // ── MOBILE MENU SCREEN ────────────────────────────────────────────────────────────────────
-  const MobileMenuScreen = () => (
+  const renderMobileMenuScreen = () => (
     <div className="flex flex-col h-full overflow-hidden bg-white">
 
       {/* Header: back arrow + title + settings icon */}
       <div className="flex items-center justify-between px-4 h-14 bg-white border-b border-slate-100 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
-          <button onClick={onClose} className="text-slate-800 active:scale-95 transition-transform shrink-0">
+          <button onClick={handleBack} className="text-slate-800 active:scale-95 transition-transform shrink-0">
             <ChevronLeft size={24} strokeWidth={2.5} />
           </button>
           {parts.length > 1 ? (
@@ -1318,7 +1367,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
           </div>
         ) : (
           <div className="grid grid-cols-3 gap-2.5">
-            {filteredMenu.map(item => <MenuItemCard key={item._id} item={item} />)}
+            {filteredMenu.map(item => renderMenuItemCard({ item }))}
           </div>
         )}
       </div>
@@ -1372,7 +1421,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   );
 
   // ── MOBILE CART SCREEN ─────────────────────────────────────────────────────────────────────
-  const MobileCartScreen = () => {
+  const renderMobileCartScreen = () => {
     const bill = buildBill(currentPartId);
     const cartItems = activeAllItems;
 
@@ -1402,7 +1451,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
               {cartItems.map(item => {
                 const menuItem = menuItems.find(m => item.menuId === m._id || item.menuId.startsWith(m._id));
                 if (!menuItem) return null;
-                return <MenuItemCard key={item.menuId} item={menuItem} overrideQty={item.qty} />;
+                return renderMenuItemCard({ item: menuItem, overrideQty: item.qty });
               })}
             </div>
           </div>
@@ -1526,18 +1575,19 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
       "h-screen bg-white flex flex-col overflow-hidden font-sans transition-all duration-150",
       isDispatching && "opacity-0 -translate-y-1 scale-[0.995]"
     )}>
-      {activePartData && <PrintBill partId={activePartData.id} />}
+      {activePartData && renderPrintBill({ partId: activePartData.id })}
 
       {/* Modals */}
-      {selectedItemForVars && <VariationsModal item={selectedItemForVars} onClose={() => setSelectedItemForVars(null)} />}
-      {showTransferModal && <TransferModal />}
+      {showDiscardModal && renderDiscardModal()}
+      {selectedItemForVars && renderVariationsModal({ item: selectedItemForVars, onClose: () => setSelectedItemForVars(null) })}
+      {showTransferModal && renderTransferModal()}
 
       {/* Desktop UI */}
-      <DesktopUI />
+      {renderDesktopUI()}
 
       {/* Mobile UI */}
       <div className="flex md:hidden flex-col flex-1 overflow-hidden relative">
-        {mobileScreen === 'menu' ? <MobileMenuScreen /> : <MobileCartScreen />}
+        {mobileScreen === 'menu' ? renderMobileMenuScreen() : renderMobileCartScreen()}
       </div>
     </div>
   );

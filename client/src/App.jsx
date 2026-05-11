@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
-import { LayoutGrid, ShoppingBag, History, Settings, LogOut, User, BarChart3, Clock, ChevronDown, MoreVertical, HelpCircle, Utensils, BookOpen, LineChart, Grid, Key, X, Loader2, Package } from 'lucide-react';
+import { LayoutGrid, ShoppingBag, History, Settings, LogOut, User, BarChart3, Clock, ChevronDown, MoreVertical, HelpCircle, Utensils, BookOpen, LineChart, Grid, Key, X, Loader2, Package, Plus } from 'lucide-react';
 import TableGrid from './components/TableGrid';
 import TableView from './components/TableView';
 import POSInterface from './components/POSInterface';
@@ -36,10 +36,11 @@ const BrandLogo = ({ className = '' }) => (
 function App() {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token'));
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState('tables');
   const [selectedTable, setSelectedTable] = useState(null); // { tableId, existingOrder }
   const [openTableId, setOpenTableId] = useState(null);     // full-screen TableView for tables
   const [openOrderId, setOpenOrderId] = useState(null);     // full-screen TableView for specific orders (parcels)
+  const [tableNavAction, setTableNavAction] = useState('menu'); // 'menu' | 'cart'
   const [isCreatingParcel, setIsCreatingParcel] = useState(false);
   const [menuItems, setMenuItems] = useState([]);
   const [activeOrders, setActiveOrders] = useState([]);
@@ -121,6 +122,7 @@ function App() {
 
   /* Table click → open full-screen TableView */
   const handleTableClick = (tableId) => {
+    setTableNavAction('menu');
     setOpenTableId(tableId);
     pushNav('table-' + tableId); // back button will close TableView
   };
@@ -203,7 +205,7 @@ function App() {
   // ── LOADING ────────────────────────────────────────────────────────────────
   if (subLoading || !user) {
     return (
-      <div className="flex flex-col lg:flex-row h-[100dvh] bg-[#F3F5F8] lg:p-3 gap-2 lg:gap-3 overflow-hidden">
+      <div className="flex flex-col lg:flex-row h-[100dvh] bg-white lg:p-3 gap-2 lg:gap-3 overflow-hidden">
         {/* Sidebar skeleton */}
         <aside className="hidden lg:flex w-56 bg-white rounded-3xl flex-col py-5 px-3.5 shrink-0 border border-slate-100">
           <div className="sk-shimmer h-10 w-full rounded-xl mb-6 bg-slate-100" />
@@ -221,7 +223,7 @@ function App() {
           </div>
         </aside>
         {/* Main content skeleton */}
-        <main className="flex-1 overflow-hidden lg:rounded-3xl bg-[#F3F5F8] px-2 lg:px-0">
+        <main className="flex-1 overflow-hidden lg:rounded-3xl bg-white px-2 lg:px-0">
           <DashboardSkeleton />
         </main>
         <style>{`
@@ -270,6 +272,7 @@ function App() {
       <TableView
         tableId={openTableId}
         orderId={openOrderId}
+        initialScreen={tableNavAction}
         isHistoryView={activeTab === 'history'}
         menuItems={menuItems}
         user={user}
@@ -293,17 +296,15 @@ function App() {
   const tableCount = user?.tableCount || 10;
 
   const navTabs = [
-    { id: 'dashboard', icon: LayoutGrid, label: 'Dashboard' },
-    { id: 'tables', icon: Grid, label: 'Tables' },
+    { id: 'tables', icon: Grid, label: 'Table' },
     { id: 'pos', icon: ShoppingBag, label: 'Orders' },
-    { id: 'parcel', icon: Package, label: 'Parcels' },
-    { id: 'history', icon: History, label: 'History' },
-    { id: 'sales', icon: LineChart, label: 'Analytics' },
+    { id: 'parcel', icon: Plus, label: 'Parcel' },
+    { id: 'sales', icon: BarChart3, label: 'Analytics' },
     { id: 'settings', icon: Settings, label: 'Settings' },
   ];
 
   return (
-    <div className="flex flex-col lg:flex-row h-[100dvh] bg-[#F3F5F8] lg:p-3 gap-2 lg:gap-3 overflow-hidden relative">
+    <div className="flex flex-col lg:flex-row h-[100dvh] bg-white lg:p-3 gap-2 lg:gap-3 overflow-hidden relative">
       {/* Mobile Top Bar removed as requested */}
 
       {/* ── Desktop Sidebar ─────────────────────────────────────────────────────────── */}
@@ -325,8 +326,8 @@ function App() {
                 key={tab.id}
                 onClick={() => handleTabChange(tab.id)}
                 className={`w-full flex items-center justify-start gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-300 text-[11px] font-bold uppercase tracking-[0.02em] ${activeTab === tab.id
-                    ? 'bg-[#FF5A36] text-white'
-                    : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
+                  ? 'bg-[#FF5A36] text-white'
+                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                   }`}
               >
                 <tab.icon size={17} className="shrink-0" />
@@ -343,8 +344,8 @@ function App() {
                 key={tab.id}
                 onClick={() => handleTabChange(tab.id)}
                 className={`w-full flex items-center justify-start gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-300 text-[11px] font-bold uppercase tracking-[0.02em] ${activeTab === tab.id
-                    ? 'bg-[#FF5A36] text-white'
-                    : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
+                  ? 'bg-[#FF5A36] text-white'
+                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                   }`}
               >
                 <tab.icon size={17} className="shrink-0" />
@@ -386,14 +387,7 @@ function App() {
             <SubscriptionBanner subscription={subscription} onDismiss={() => setBannerDismissed(true)} />
           )}
 
-          {/* Dashboard View */}
-          {activeTab === 'dashboard' && (
-            <DashboardView
-              activeOrders={activeOrders}
-              tableCount={tableCount}
-              onTabChange={setActiveTab}
-            />
-          )}
+          {/* Main Content Area */}
 
           {/* Tables */}
           {activeTab === 'tables' && (
@@ -413,7 +407,16 @@ function App() {
                 activeOrders={activeOrders}
                 user={user}
                 onOrderUpdate={fetchActiveOrders}
-                onOrderClick={(orderId) => setOpenOrderId(orderId)}
+                onManageClick={(order) => {
+                  setTableNavAction('menu');
+                  if (order.tableId) setOpenTableId(order.tableId);
+                  else setOpenOrderId(order._id);
+                }}
+                onBillClick={(order) => {
+                  setTableNavAction('cart');
+                  if (order.tableId) setOpenTableId(order.tableId);
+                  else setOpenOrderId(order._id);
+                }}
               />
             </div>
           )}
@@ -423,22 +426,13 @@ function App() {
             <div className="animate-in fade-in duration-500">
               <ParcelView
                 activeOrders={activeOrders}
-                onNewParcel={() => setIsCreatingParcel(true)}
-                onOrderClick={(orderId) => setOpenOrderId(orderId)}
+                onNewParcel={() => { setTableNavAction('menu'); setIsCreatingParcel(true); }}
+                onOrderClick={(orderId) => { setTableNavAction('menu'); setOpenOrderId(orderId); }}
               />
             </div>
           )}
 
-          {/* History */}
-          {activeTab === 'history' && (
-            <div className="animate-in fade-in duration-500">
-              <OrderHistory
-                activeOrders={activeOrders}
-                onOrderUpdate={fetchActiveOrders}
-                onOrderClick={(orderId) => setOpenOrderId(orderId)}
-              />
-            </div>
-          )}
+          {/* History View removed */}
 
           {/* Sales */}
           {activeTab === 'sales' && (
@@ -449,13 +443,14 @@ function App() {
 
           {/* Settings */}
           {activeTab === 'settings' && (
-            <div className="animate-in fade-in duration-500">
+            <div className="fixed inset-0 z-[120] lg:static lg:z-auto lg:h-full bg-white lg:bg-transparent animate-in slide-in-from-bottom lg:fade-in duration-300">
               <SettingsPanel
                 user={user}
                 subscription={subscription}
                 onSettingsUpdate={handleSettingsUpdate}
                 onShowPassword={() => setShowPasswordModal(true)}
                 onLogout={handleLogout}
+                onClose={() => setActiveTab('tables')}
               />
             </div>
           )}
@@ -534,20 +529,37 @@ function App() {
       </main>
 
       {/* ── Mobile Bottom Nav ───────────────────────────────────────────────────────── */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 flex justify-around items-center h-[72px] z-[110] pb-safe px-2 transition-transform duration-300">
-        {navTabs.map((tab) => {
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 flex items-center justify-around h-[68px] z-[110] pb-safe px-1 shadow-[0_-2px_10px_rgba(0,0,0,0.02)]">
+        {navTabs.map((tab, idx) => {
           const isActive = activeTab === tab.id;
+          const isCenter = idx === 2; // Middle item (Parcel)
+
+          if (isCenter) {
+            return (
+              <button
+                key={tab.id}
+                onClick={() => handleTabChange(tab.id)}
+                className="flex flex-col items-center justify-center -translate-y-4"
+              >
+                <div className="w-14 h-14 bg-blue-600 rounded-full flex items-center justify-center shadow-lg shadow-blue-200 border-4 border-white active:scale-95 transition-all">
+                  <tab.icon size={26} className="text-white" strokeWidth={2.5} />
+                </div>
+                <span className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-tighter">
+                  {tab.label}
+                </span>
+              </button>
+            );
+          }
+
           return (
             <button
               key={tab.id}
               onClick={() => handleTabChange(tab.id)}
-              className={`flex flex-col items-center justify-center w-full h-full gap-1 transition-all duration-300 ${isActive ? 'text-[#FF5A36]' : 'text-gray-400 hover:text-gray-900'
+              className={`flex flex-col items-center justify-center w-full h-full transition-all duration-200 ${isActive ? 'text-blue-600' : 'text-slate-400'
                 }`}
             >
-              <div className={`p-2 rounded-xl transition-all duration-300 ${isActive ? 'bg-[#FF5A36]/10' : ''}`}>
-                <tab.icon size={22} className={isActive ? 'fill-[#FF5A36]/20' : ''} />
-              </div>
-              <span className={`text-[9px] font-black uppercase tracking-widest truncate max-w-full px-1 ${isActive ? 'opacity-100' : 'opacity-70'}`}>
+              <tab.icon size={22} strokeWidth={isActive ? 2.5 : 2} className="mb-0.5" />
+              <span className={`text-[10px] font-bold transition-all ${isActive ? 'opacity-100' : 'opacity-60'}`}>
                 {tab.label}
               </span>
             </button>

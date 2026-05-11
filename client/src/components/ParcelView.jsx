@@ -1,90 +1,168 @@
-import React from 'react';
-import { Package, Plus, ArrowUpRight, Phone, Clock } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Package, Plus, ArrowUpRight, Phone, Search } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 const cn = (...inputs) => twMerge(clsx(inputs));
 
 const ParcelView = ({ activeOrders, onNewParcel, onOrderClick }) => {
-  const parcels = (activeOrders || []).filter(o => 
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
+
+  const parcels = (activeOrders || []).filter(o =>
     o.orderType === 'Parcel' && o.status !== 'Paid' && o.status !== 'Cancelled'
   );
 
   const fmtTime = (d) => new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+  // Stats for chip counts
+  const stats = useMemo(() => {
+    const ready = parcels.filter(o => {
+      const items = o.items || [];
+      return items.length > 0 && items.every(i => i.isServed);
+    });
+    const pending = parcels.filter(o => (o.items || []).some(i => !i.isServed));
+    return { total: parcels.length, ready: ready.length, pending: pending.length };
+  }, [parcels]);
+
+  const filtered = useMemo(() => {
+    return parcels.filter(o => {
+      const items = o.items || [];
+      const allServed = items.length > 0 && items.every(i => i.isServed);
+
+      if (statusFilter === 'Ready' && !allServed) return false;
+      if (statusFilter === 'Pending' && allServed) return false;
+
+      if (search) {
+        const q = search.toLowerCase();
+        if ((o.customerName || '').toLowerCase().includes(q)) return true;
+        if (String(o.orderNumber || '').includes(q)) return true;
+        if ((o.customerPhone || '').includes(q)) return true;
+        return false;
+      }
+
+      return true;
+    });
+  }, [parcels, statusFilter, search]);
+
+  const chips = [
+    { key: 'All', label: `All (${stats.total})` },
+    { key: 'Pending', label: `Pending (${stats.pending})` },
+    { key: 'Ready', label: `Ready (${stats.ready})` },
+  ];
+
   return (
-    <div className="min-h-full bg-transparent lg:bg-white lg:rounded-3xl p-3 lg:p-6 pb-24 lg:pb-6 animate-in fade-in duration-500">
-      <header className="flex items-center justify-between mb-6 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-            <Package size={24} className="text-amber-500" />
-            Active Parcels
-          </h1>
-          <p className="text-xs font-semibold text-slate-500 mt-1">Manage ongoing takeaways</p>
-        </div>
+    <div className="flex flex-col h-screen bg-white overflow-hidden font-sans">
+
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between px-4 h-14 bg-white border-b border-slate-100 shrink-0">
+        <span className="text-[17px] font-bold text-slate-900">Parcels Display</span>
         <button
           onClick={onNewParcel}
-          className="flex items-center gap-2 px-4 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-sm font-black uppercase tracking-widest shadow-md shadow-amber-200 active:scale-95 transition-all"
+          className="flex items-center gap-1.5 px-3 py-2 bg-blue-700 text-white rounded-xl text-[12px] font-bold active:scale-95 transition-all"
         >
-          <Plus size={16} strokeWidth={3} />
-          <span className="hidden sm:inline">New Parcel</span>
+          <Plus size={14} strokeWidth={2.5} />
+          New Parcel
         </button>
-      </header>
+      </div>
 
-      {parcels.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-[50vh] text-center bg-white rounded-2xl border border-slate-100 shadow-sm">
-          <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4 text-slate-300">
-            <Package size={32} />
+      {/* ── Search bar ── */}
+      <div className="flex gap-2.5 px-4 py-2.5 bg-white shrink-0">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search name, phone, order..."
+            className="w-full bg-[#f2f2f7] rounded-xl py-2.5 pl-10 pr-4 outline-none text-[15px] text-slate-700 placeholder:text-slate-400"
+          />
+        </div>
+      </div>
+
+      {/* ── Filter chips ── */}
+      <div className="px-4 pb-3 bg-white shrink-0">
+        <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+          {chips.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setStatusFilter(key)}
+              className={cn(
+                'px-4 py-1.5 rounded-full text-[12px] font-bold whitespace-nowrap border shrink-0 transition-all',
+                statusFilter === key
+                  ? 'bg-white border-blue-500 text-blue-600'
+                  : 'bg-white border-slate-200 text-slate-600'
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── List ── */}
+      {filtered.length === 0 ? (
+        <div className="flex flex-col items-center justify-center flex-1 text-slate-400">
+          <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mb-4 border border-slate-100">
+            <Package size={28} className="text-slate-300" />
           </div>
-          <p className="text-slate-500 font-black text-lg mb-1">No active parcels</p>
-          <p className="text-xs text-slate-400 font-semibold">Click the button above to create one</p>
+          <p className="text-[12px] font-black text-slate-400 uppercase tracking-widest">
+            {search || statusFilter !== 'All' ? 'No matching parcels' : 'No active parcels'}
+          </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
-          {parcels.map(order => (
-            <div
-              key={order._id}
-              onClick={() => onOrderClick(order._id)}
-              className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm cursor-pointer active:scale-[0.98] transition-all hover:border-slate-300 group"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center shrink-0 border border-amber-100 text-amber-500 group-hover:scale-105 transition-transform">
-                    <Package size={22} strokeWidth={2.5} />
-                  </div>
-                  <div>
-                    <h3 className="text-[16px] font-black text-slate-900 leading-tight mb-0.5">
-                      {order.customerName || `Parcel #${String(order.orderNumber).padStart(4, '0')}`}
-                    </h3>
-                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-                      Order #{String(order.orderNumber).padStart(4, '0')}
-                    </p>
-                  </div>
-                </div>
-                <div className="px-2.5 py-1.5 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-1.5 text-slate-500">
-                  <Clock size={12} />
-                  <span className="text-[10px] font-black uppercase">{fmtTime(order.createdAt)}</span>
-                </div>
-              </div>
+        <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
+          {filtered.map(order => {
+            const name = order.customerName || `Parcel   #${String(order.orderNumber).padStart(4, '0')}`; const orderNo = `#${String(order.orderNumber).padStart(4, '0')}`;
+            const itemCount = order.items?.length || 0;
+            const allServed = itemCount > 0 && (order.items || []).every(i => i.isServed);
 
-              <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-100">
-                <div className="flex items-center gap-2 text-slate-500">
-                  <span className="text-[12px] font-black bg-slate-100 px-2 py-1 rounded-md">
-                    {order.items?.length || 0} Items
+            return (
+              <div
+                key={order._id}
+                onClick={() => onOrderClick(order._id)}
+                className="border-t border-slate-200 px-4 py-4 cursor-pointer active:bg-slate-50 transition-colors"
+              >
+                {/* Row 1: name + time */}
+                <div className="flex items-start justify-between mb-2">
+                  <span className="text-[15px] font-bold text-slate-900 uppercase tracking-tight">
+                    {name}
                   </span>
-                  {order.customerPhone && (
-                    <div className="flex items-center gap-1 text-[11px] font-bold text-slate-500 bg-slate-50 px-2 py-1 rounded-md border border-slate-100">
-                      <Phone size={10} />
-                      {order.customerPhone}
-                    </div>
-                  )}
+                  <span className="text-[12px] font-semibold text-slate-400 tabular-nums shrink-0 ml-3">
+                    {fmtTime(order.createdAt)}
+                  </span>
                 </div>
-                <div className="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center text-amber-600 group-hover:bg-amber-500 group-hover:text-white transition-colors shadow-sm">
-                  <ArrowUpRight size={16} strokeWidth={2.5} />
+
+                {/* Row 2: order no + phone + items + ready + arrow */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-slate-400 flex-wrap">
+                    <span className="text-[12px] font-medium">{orderNo}</span>
+                    {order.customerPhone && (
+                      <>
+                        <span className="text-slate-200">·</span>
+                        <div className="flex items-center gap-1 text-[12px] font-medium">
+                          <Phone size={11} />
+                          {order.customerPhone}
+                        </div>
+                      </>
+                    )}
+                    <span className="text-slate-200">·</span>
+                    <span className="text-[12px] font-medium">
+                      {itemCount} {itemCount === 1 ? 'item' : 'items'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    {allServed && (
+                      <span className="text-[11px] font-semibold text-emerald-500">Ready</span>
+                    )}
+                    <ArrowUpRight size={14} className="text-slate-300" />
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
+          <div className="border-t border-slate-200" />
         </div>
       )}
     </div>

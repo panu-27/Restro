@@ -140,8 +140,8 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
       o => o.tableId === tableId && o.orderType === 'Dine-in' && o.status !== 'Paid' && o.status !== 'Cancelled'
     );
     if (!orders.length) return { status: 'Available', billTotal: 0, partsCount: 0 };
-    return { 
-      status: 'Occupied', 
+    return {
+      status: 'Occupied',
       billTotal: orders.reduce((s, o) => s + (o.totalAmount || 0), 0),
       partsCount: orders.length
     };
@@ -274,7 +274,7 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
 
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-4 h-14 bg-white border-b border-slate-100 shrink-0">
-        <span className="text-[17px] font-bold text-slate-900">Tables</span>
+        <span className="text-[17px] font-bold text-slate-900">Tables Display</span>
         <div className="flex items-center gap-2">
           {!readOnly && (
             <>
