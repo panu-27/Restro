@@ -600,7 +600,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
     const total = totalOf(sub, txList);
     return {
       tableId, partLabel: part?.label || 'Bill', items, sub, txList, total,
-      restaurantName: user?.restaurantName || 'Restaurant',
+      restaurantName: user?.restaurantName || 'My Restaurant',
       restaurantAddress: user?.restaurantAddress || '',
       restaurantPhone: user?.restaurantPhone || '',
       gstNumber: user?.gstNumber || '',

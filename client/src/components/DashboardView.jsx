@@ -64,9 +64,12 @@ export const DashboardView = ({ activeOrders = [], tableCount = 10, onTabChange,
     o.status === 'Pending' || o.status === 'Preparing'
   ).length;
 
-  const restaurantName = user?.restaurantName || 'My Restaurant';
+  const rawRestaurantName = (user?.restaurantName || '').trim() || 'My Restaurant';
+  const displayRestaurantName = rawRestaurantName.length > 15
+    ? rawRestaurantName.substring(0, 15) + '..'
+    : rawRestaurantName;
   const userName = user?.name || 'User';
-  const avatarLetter = (restaurantName || 'M')[0].toUpperCase();
+  const avatarLetter = rawRestaurantName[0].toUpperCase();
 
   const quickActions = [
     {
@@ -99,7 +102,7 @@ export const DashboardView = ({ activeOrders = [], tableCount = 10, onTabChange,
           onClick={() => onTabChange && onTabChange('settings')}
         >
           <span className="text-[17px] font-bold text-slate-900">
-            {restaurantName}
+            {displayRestaurantName}
           </span>
           <ChevronDown size={16} className="text-slate-500" strokeWidth={2.5} />
         </button>
@@ -259,7 +262,7 @@ export const DashboardView = ({ activeOrders = [], tableCount = 10, onTabChange,
 
       {/* ── Connectivity & Printer ── */}
       <div className="px-5 mb-4">
-        <p className="text-[11px] font-black text-slate-500 uppercase tracking-widest mb-3">Connectivity</p>
+        <p className="text-[11px] font-black text-slate-500 uppercase tracking-widest mb-3"> Printer Connectivity</p>
         <div className="grid grid-cols-2 gap-3">
           <button className="flex flex-col items-center justify-center p-4 bg-slate-50 rounded-2xl border border-slate-100 active:scale-95 transition-all">
             <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center mb-2">

@@ -1170,22 +1170,38 @@ app.get('/api/analytics/sales', auth, async (req, res) => {
 
     const orders = await Order.find({
       userId: req.user.ownerId,
-      status: 'Paid',
+      status: { $ne: 'Cancelled' },
       createdAt: { $gte: start, $lte: end }
     }).sort('-createdAt');
 
-    const paidOrders = orders.filter(o => o.paymentType !== 'Guest');
+    // Get comparison data (previous period)
+    const prevStart = new Date(start);
+    const diff = end.getTime() - start.getTime();
+    prevStart.setTime(start.getTime() - diff);
+    const prevEnd = new Date(start);
+
+    const prevOrders = await Order.find({
+      userId: req.user.ownerId,
+      status: { $ne: 'Cancelled' },
+      createdAt: { $gte: prevStart, $lte: prevEnd }
+    });
+
+    const paidOrders = orders.filter(o => o.status === 'Paid');
+    const unpaidOrders = orders.filter(o => o.status !== 'Paid');
     const guestOrders = orders.filter(o => o.paymentType === 'Guest');
 
-    const totalRevenue = paidOrders.reduce((sum, o) => sum + o.totalAmount, 0);
-    const guestOrdersValue = guestOrders.reduce((sum, o) => sum + o.totalAmount, 0);
-    const guestOrdersCount = guestOrders.length;
+    const totalRevenue = orders.reduce((sum, o) => sum + o.totalAmount, 0);
+    const settledRevenue = paidOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+    const unpaidRevenue = unpaidOrders.reduce((sum, o) => sum + o.totalAmount, 0);
     
-    const dineInOrders = paidOrders.filter(o => o.orderType === 'Dine-in');
-    const parcelOrders = paidOrders.filter(o => o.orderType === 'Parcel');
+    const prevTotalRevenue = prevOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+    const prevTotalOrders = prevOrders.length;
+
+    const dineInOrders = orders.filter(o => o.orderType === 'Dine-in');
+    const parcelOrders = orders.filter(o => o.orderType === 'Parcel');
     const dineInRevenue = dineInOrders.reduce((sum, o) => sum + o.totalAmount, 0);
     const parcelRevenue = parcelOrders.reduce((sum, o) => sum + o.totalAmount, 0);
-    const avgOrderValue = paidOrders.length > 0 ? totalRevenue / paidOrders.length : 0;
+    const avgOrderValue = orders.length > 0 ? totalRevenue / orders.length : 0;
 
     // Top items & All Inventory (including items with 0 sales)
     const menuItems = await Menu.find({ userId: req.user.ownerId });
@@ -1193,15 +1209,14 @@ app.get('/api/analytics/sales', auth, async (req, res) => {
     
     // Initialize with all menu items
     menuItems.forEach(mi => {
-      itemMap[mi.name] = { name: mi.name, quantity: 0, revenue: 0 };
+      itemMap[mi.name] = { name: mi.name, quantity: 0, revenue: 0, image: mi.image };
     });
 
     // Add sales data
     orders.forEach(o => {
       o.items.forEach(item => {
         if (!itemMap[item.name]) {
-          // In case item name was changed in menu but exists in old orders
-          itemMap[item.name] = { name: item.name, quantity: 0, revenue: 0 };
+          itemMap[item.name] = { name: item.name, quantity: 0, revenue: 0, image: '' };
         }
         itemMap[item.name].quantity += item.quantity;
         itemMap[item.name].revenue += item.price * item.quantity;
@@ -1215,7 +1230,6 @@ app.get('/api/analytics/sales', auth, async (req, res) => {
     // Daily breakdown
     const dailyMap = {};
     
-    // Pre-populate missing days for certain periods so charts look complete
     if (period === 'week' || period === 'previous_week') {
       for (let i = 6; i >= 0; i--) {
         const d = new Date(end);
@@ -1225,23 +1239,18 @@ app.get('/api/analytics/sales', auth, async (req, res) => {
       }
     }
     
-    // We count total orders for dailyMap, but revenue only from paidOrders
     orders.forEach(o => {
       const day = new Date(o.createdAt).toISOString().split('T')[0];
       if (!dailyMap[day]) dailyMap[day] = { date: day, orders: 0, dineIn: 0, parcel: 0, total: 0, avgOrder: 0 };
       dailyMap[day].orders++;
-      
-      if (o.paymentType !== 'Guest') {
-        dailyMap[day].total += o.totalAmount;
-        if (o.orderType === 'Dine-in') dailyMap[day].dineIn += o.totalAmount;
-        else dailyMap[day].parcel += o.totalAmount;
-      }
+      dailyMap[day].total += o.totalAmount;
+      if (o.orderType === 'Dine-in') dailyMap[day].dineIn += o.totalAmount;
+      else dailyMap[day].parcel += o.totalAmount;
     });
-    // compute avgOrder per day
+
     Object.values(dailyMap).forEach(d => { d.avgOrder = d.orders > 0 ? Math.round(d.total / d.orders) : 0; });
     const dailyBreakdown = Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date));
 
-    // Hourly breakdown — only populated for today
     let hourlyBreakdown = [];
     if (period === 'today') {
       const hourlyMap = {};
@@ -1249,14 +1258,10 @@ app.get('/api/analytics/sales', auth, async (req, res) => {
       orders.forEach(o => {
         const h = new Date(o.createdAt).getHours();
         hourlyMap[h].orders++;
-        
-        if (o.paymentType !== 'Guest') {
-          hourlyMap[h].total += o.totalAmount;
-          if (o.orderType === 'Dine-in') hourlyMap[h].dineIn += o.totalAmount;
-          else hourlyMap[h].parcel += o.totalAmount;
-        }
+        hourlyMap[h].total += o.totalAmount;
+        if (o.orderType === 'Dine-in') hourlyMap[h].dineIn += o.totalAmount;
+        else hourlyMap[h].parcel += o.totalAmount;
       });
-      // Only include hours from first order to current hour + 1
       const currentHour = new Date().getHours();
       const orderHours = orders.map(o => new Date(o.createdAt).getHours());
       const firstHour = orderHours.length > 0 ? Math.min(...orderHours) : currentHour;
@@ -1269,11 +1274,13 @@ app.get('/api/analytics/sales', auth, async (req, res) => {
       period,
       dateRange: { start, end },
       totalRevenue,
-      totalOrders: orders.length, // Include guest in total order count
-      guestOrdersValue,
-      guestOrdersCount,
-      dineInOrders: dineInOrders.length, // only paid
-      parcelOrders: parcelOrders.length, // only paid
+      settledRevenue,
+      unpaidRevenue,
+      prevTotalRevenue,
+      prevTotalOrders,
+      totalOrders: orders.length,
+      dineInOrders: dineInOrders.length,
+      parcelOrders: parcelOrders.length,
       dineInRevenue,
       parcelRevenue,
       avgOrderValue: Math.round(avgOrderValue * 100) / 100,

@@ -455,7 +455,11 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
                 : <span className="text-blue-600 font-bold text-xl">{(restaurantName || 'R')[0].toUpperCase()}</span>}
             </div>
             <div className="flex-1 min-w-0 text-left">
-              <p className="text-[16px] font-bold text-gray-900 truncate">{restaurantName || 'Enter Restaurant Name'}</p>
+              <p className="text-[16px] font-bold text-gray-900">
+                {restaurantName 
+                  ? (restaurantName.length > 15 ? restaurantName.substring(0, 15) + '..' : restaurantName)
+                  : 'My Restaurant'}
+              </p>
               <p className="text-[13px] text-gray-400">{restaurantPhone || '+91 —'}</p>
             </div>
             <ChevronRight size={16} className="text-gray-300" />

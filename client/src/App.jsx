@@ -376,6 +376,7 @@ function App() {
                 activeOrders={activeOrders}
                 tableCount={tableCount}
                 onTabChange={handleTabChange}
+                user={user}
               />
             </div>
           )}

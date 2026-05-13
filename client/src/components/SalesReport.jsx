@@ -2,9 +2,9 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import axios from 'axios';
 import {
   ChevronDown, ChevronRight, ArrowLeft, Download,
-  Calendar, Trophy, X, Search, Activity, Users,
+  Calendar, Trophy, X, Search, Activity, Users, History,
   Package, Utensils, BarChart3, IndianRupee, ShoppingBag,
-  TrendingUp, AlertCircle, FileText, Box
+  TrendingUp, AlertCircle, FileText, Box, ImageIcon
 } from 'lucide-react';
 
 /* ─── utils ─── */
@@ -257,9 +257,10 @@ const SalesReport = () => {
   const [stockTab, setStockTab] = useState('low');
   const [sellingTab, setSellingTab] = useState('7days');
   const [itemSearch, setItemSearch] = useState('');
-  const [showItemModal, setShowItemModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
+  const [selectedItem, setSelectedItem] = useState(null);
   const [csvOpen, setCsvOpen] = useState(false);
   const csvRef = useRef(null);
 
@@ -314,10 +315,13 @@ const SalesReport = () => {
 
   const tableRows = useMemo(() => {
     if (!salesData) return [];
-    return (salesData.dailyBreakdown || []).map(d => ({
-      label: new Date(d.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }),
-      orders: d.orders, dineIn: d.dineIn, parcel: d.parcel, total: d.total,
-    }));
+    return (salesData.dailyBreakdown || [])
+      .map(d => ({
+        label: new Date(d.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }),
+        orders: d.orders, dineIn: d.dineIn, parcel: d.parcel, total: d.total,
+        rawDate: d.date
+      }))
+      .sort((a, b) => b.rawDate.localeCompare(a.rawDate));
   }, [salesData, period]);
 
   const periodOptions = [
@@ -326,6 +330,8 @@ const SalesReport = () => {
     { id: 'month', label: 'Month' },
     { id: 'all', label: 'All' },
   ];
+
+  const periodLabel = periodOptions.find(o => o.id === period)?.label || 'Period';
 
   /* ── shared filter bar (used in sub-screens) ── */
   const FilterBar = () => (
@@ -411,28 +417,38 @@ const SalesReport = () => {
 
         {/* ── SALES ── same card structure as dashboard business overview */}
         <div className="mt-6">
-          <SectionLabel>Sales</SectionLabel>
+          <SectionLabel>Sales Overview</SectionLabel>
           <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
             <StatRow
               left={
                 <StatCell
-                  label="Today's Total Sales"
+                  label={`${periodLabel} Total Revenue`}
                   value={fmtS(salesData?.totalRevenue)}
-                  sub={`${fmt(salesData?.yesterdayRevenue || 0)} (Yesterday's)`}
+                  sub={`${fmt(salesData?.prevTotalRevenue || 0)} (Prev Period)`}
                 />
               }
               right={
                 <StatCell
-                  label="Today's Total Orders"
-                  value={salesData?.totalOrders || 0}
-                  sub={`${salesData?.yesterdayOrders || 0} (Yesterday's)`}
+                  label="Total Orders"
+                  value={fmtRaw(salesData?.totalOrders)}
+                  sub={`${salesData?.prevTotalOrders || 0} (Prev Period)`}
                 />
               }
             />
+            <div className="grid grid-cols-2 border-t border-slate-50">
+              <div className="p-4 border-r border-slate-50">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Settled (Paid)</p>
+                <p className="text-[15px] font-black text-emerald-600">{fmt(salesData?.settledRevenue)}</p>
+              </div>
+              <div className="p-4">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Outstanding</p>
+                <p className="text-[15px] font-black text-orange-500">{fmt(salesData?.unpaidRevenue)}</p>
+              </div>
+            </div>
             <button onClick={() => setScreen('orders')}
-              className="w-full flex items-center justify-end gap-1.5 px-4 py-3.5 active:bg-slate-50 transition-colors">
+              className="w-full flex items-center justify-end gap-1.5 px-4 py-3.5 border-t border-slate-100 active:bg-slate-50 transition-colors">
               <span className="text-[13px] font-black uppercase tracking-widest" style={{ color: BLUE }}>View Order Reports</span>
-              <ChevronRight size={16} style={{ color: BLUE }} strokeWidth={3} />
+              <ChevronRight size={15} style={{ color: BLUE }} strokeWidth={3} />
             </button>
           </div>
         </div>
@@ -534,27 +550,36 @@ const SalesReport = () => {
                 <div className="divide-y divide-slate-50">
                   {salesData.topItems.slice(0, 5).map((item, i) => {
                     const pct = (item.revenue / (salesData.topItems[0]?.revenue || 1)) * 100;
-                    const ranks = ['👑', '⭐', '🔥', '#4', '#5'];
                     return (
-                      <div key={i} className="flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50/60 transition-colors">
-                        <div className="w-9 h-9 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0">
-                          <span className="text-[13px]">{ranks[i]}</span>
+                      <div key={i} 
+                        onClick={() => { setSelectedItem(item); setScreen('item_detail'); }}
+                        className="flex items-center gap-4 px-4 py-4 hover:bg-slate-50/60 transition-colors cursor-pointer">
+                        <div className="w-14 h-14 rounded-xl bg-slate-50 border border-slate-100 overflow-hidden shrink-0 flex items-center justify-center">
+                          {item.image ? (
+                            <img src={item.image} className="w-full h-full object-cover" alt="" />
+                          ) : (
+                            <div className="flex flex-col items-center justify-center">
+                              <Box size={20} className="text-slate-300" />
+                            </div>
+                          )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-[14px] font-bold text-slate-800 truncate">{item.name}</p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div className="flex justify-between items-start mb-1">
+                            <p className="text-[15px] font-black text-slate-800 truncate">{item.name}</p>
+                            <span className="text-[16px] font-black text-[#4B6FFF]">{fmt(item.revenue)}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden max-w-[120px]">
                               <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: BLUE }} />
                             </div>
-                            <span className="text-[10px] font-bold text-slate-400 whitespace-nowrap">{item.quantity} units</span>
+                            <span className="text-[11px] font-bold text-slate-400 whitespace-nowrap">{item.quantity} units</span>
                           </div>
                         </div>
-                        <span className="text-[15px] font-black text-slate-900 shrink-0">{fmt(item.revenue)}</span>
                       </div>
                     );
                   })}
                 </div>
-                <button onClick={() => setShowItemModal(true)}
+                <button onClick={() => setScreen('items')}
                   className="w-full flex items-center justify-end gap-1.5 px-4 py-3.5 border-t border-slate-100 active:bg-slate-50 transition-colors">
                   <span className="text-[13px] font-black uppercase tracking-widest" style={{ color: BLUE }}>View Item Reports</span>
                   <ChevronRight size={15} style={{ color: BLUE }} strokeWidth={3} />
@@ -585,64 +610,6 @@ const SalesReport = () => {
         </div>
       </div>
 
-      {/* ── ITEM MODAL — bottom sheet like iOS ── */}
-      {showItemModal && salesData && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 backdrop-blur-sm"
-          onClick={e => { if (e.target === e.currentTarget) { setShowItemModal(false); setItemSearch(''); } }}>
-          <div className="bg-white w-full max-w-lg rounded-t-3xl max-h-[80vh] flex flex-col shadow-2xl"
-            style={{ animation: 'slide_up 0.28s cubic-bezier(0.16,1,0.3,1)' }}>
-            <div className="flex justify-center pt-3 pb-0.5 shrink-0">
-              <div className="w-10 h-1 bg-slate-200 rounded-full" />
-            </div>
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
-              <div>
-                <h2 className="text-[17px] font-bold text-slate-900">Sales Inventory</h2>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">
-                  {salesData.allItemsSold?.length || salesData.topItems?.length || 0} items
-                </p>
-              </div>
-              <button onClick={() => { setShowItemModal(false); setItemSearch(''); }}
-                className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center active:scale-90 transition-transform">
-                <X size={16} className="text-slate-500" />
-              </button>
-            </div>
-            <div className="px-5 py-3 border-b border-slate-100 shrink-0">
-              <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input type="text" placeholder="Search items…" value={itemSearch}
-                  onChange={e => setItemSearch(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-[13px] font-bold text-slate-700 outline-none focus:border-[#4B6FFF] transition-colors" />
-              </div>
-            </div>
-            <div className="overflow-y-auto flex-1">
-              <div className="grid grid-cols-12 px-5 py-3 bg-slate-900 text-[10px] font-black text-white uppercase tracking-widest">
-                <span className="col-span-6">Item</span>
-                <span className="col-span-3 text-center">Qty</span>
-                <span className="col-span-3 text-right">Revenue</span>
-              </div>
-              {(salesData.allItemsSold || salesData.topItems || [])
-                .filter(item => item.name.toLowerCase().includes(itemSearch.toLowerCase()))
-                .map((item, idx) => (
-                  <div key={idx} className="grid grid-cols-12 px-5 py-3.5 border-b border-slate-50 items-center hover:bg-slate-50/60 transition-colors">
-                    <div className="col-span-6">
-                      <p className={cn('text-[14px] font-bold', item.quantity > 0 ? 'text-slate-800' : 'text-slate-400')}>{item.name}</p>
-                      <p className="text-[10px] font-bold text-slate-300 uppercase tracking-wider mt-0.5">
-                        {item.quantity > 0 ? 'Sold' : 'No sales'}
-                      </p>
-                    </div>
-                    <span className={cn('col-span-3 text-center text-[14px] font-black', item.quantity > 0 ? 'text-slate-600' : 'text-slate-300')}>
-                      {item.quantity}
-                    </span>
-                    <span className={cn('col-span-3 text-right text-[15px] font-black', item.quantity > 0 ? 'text-slate-900' : 'text-slate-300')}>
-                      {fmt(item.revenue)}
-                    </span>
-                  </div>
-                ))}
-            </div>
-          </div>
-        </div>
-      )}
-
       <style>{`
         @keyframes slide_up { from { transform: translateY(100%); } to { transform: translateY(0); } }
         .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -654,8 +621,11 @@ const SalesReport = () => {
   /* ════════════════════════════════════════════════════════════
      ORDER REPORTS
   ════════════════════════════════════════════════════════════ */
+  /* ════════════════════════════════════════════════════════════
+     ORDER REPORTS
+  ════════════════════════════════════════════════════════════ */
   if (screen === 'orders') return (
-    <div className="min-h-screen bg-white pb-32">
+    <div className="min-h-screen bg-white pb-32 animate-in fade-in duration-500">
       <ScreenHeader
         title="Order Reports"
         onBack={() => setScreen('overview')}
@@ -667,16 +637,78 @@ const SalesReport = () => {
         }
       />
       <FilterBar />
-      <div className="px-5 mt-5">
+
+      <div className="px-5 mt-6">
+        {/* Search Bar matching OrderHistory */}
+        <div className="relative group mb-6">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#4B6FFF] transition-colors" size={16} />
+          <input
+            type="text"
+            placeholder="Search date (e.g. 13 May, Monday)..."
+            className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:bg-white focus:border-[#4B6FFF] focus:ring-4 focus:ring-[#4B6FFF]/10 transition-all text-[15px] text-slate-700 placeholder:text-slate-400 font-medium"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+
+        <div className="flex items-center gap-2.5 mb-5">
+          <div className="w-8 h-8 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-500">
+            <Calendar size={16} strokeWidth={2} />
+          </div>
+          <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Daily Breakdown</h2>
+        </div>
+
         {!tableRows.length ? (
-          <div className="rounded-2xl border border-slate-200 bg-white">
-            <EmptyState title="No Orders Available" sub="We could not find any orders with the filters selected. Please try another filter." />
+          <div className="py-12 text-center rounded-2xl border-2 border-dashed border-slate-100 bg-white">
+            <History size={24} className="mx-auto text-slate-300 mb-2" />
+            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">No Records Found</p>
           </div>
         ) : (
-          <BreakdownTable rows={tableRows} total={salesData?.totalRevenue} />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {tableRows
+              .filter(row => row.label.toLowerCase().includes(searchTerm.toLowerCase()))
+              .map((row, i) => (
+              <div key={i} className="group bg-white border border-slate-200 rounded-2xl p-4 transition-all hover:border-[#4B6FFF] hover:shadow-lg hover:shadow-[#4B6FFF]/5">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <p className="text-[15px] font-black text-slate-900 mb-1">{row.label}</p>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-[10px] font-black text-slate-600 uppercase tracking-wider">
+                        {row.orders} Orders
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[18px] font-black text-[#4B6FFF]">{fmt(row.total)}</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-4 border-t border-slate-50">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Dine-in</span>
+                    <span className="text-[13px] font-bold text-slate-700">{fmt(row.dineIn)}</span>
+                  </div>
+                  <div className="flex flex-col text-right">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Parcel</span>
+                    <span className="text-[13px] font-bold text-slate-700">{fmt(row.parcel)}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
-      <style>{`.no-scrollbar::-webkit-scrollbar{display:none}.no-scrollbar{-ms-overflow-style:none;scrollbar-width:none}`}</style>
+
+      {/* Period Total Bar */}
+      {tableRows.length > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 p-2 bg-white border-t border-slate-100 z-30 lg:static lg:border-none lg:bg-transparent lg:px-5 lg:pb-10">
+          <div className="bg-slate-900 rounded-2xl px-5 py-3 flex items-center justify-between shadow-xl shadow-slate-200">
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Total Revenue</p>
+              <p className="text-[12px] font-bold text-slate-300">Selected Period</p>
+            </div>
+            <span className="text-[22px] font-black text-white">{fmt(salesData?.totalRevenue)}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -684,37 +716,157 @@ const SalesReport = () => {
      ITEM REPORTS
   ════════════════════════════════════════════════════════════ */
   if (screen === 'items') return (
-    <div className="min-h-screen bg-white pb-32">
+    <div className="min-h-screen bg-white pb-32 animate-in fade-in duration-500">
       <ScreenHeader title="Item Reports" onBack={() => setScreen('overview')} />
       <FilterBar />
-      <div className="px-5 mt-5">
-        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-          {!salesData?.topItems?.length ? (
-            <EmptyState title="No Orders Available" sub="We could not find any orders with the filters selected." />
-          ) : (
-            <>
-              <div className="grid grid-cols-12 px-5 py-3 bg-slate-900 text-[10px] font-black text-white uppercase tracking-widest">
-                <span className="col-span-6">Item Name</span>
-                <span className="col-span-3 text-center">Qty</span>
-                <span className="col-span-3 text-right">Revenue</span>
-              </div>
-              {(salesData.allItemsSold || salesData.topItems).map((item, i) => (
-                <div key={i} className="grid grid-cols-12 px-5 py-3.5 border-b border-slate-50 items-center hover:bg-slate-50/60 transition-colors">
-                  <div className="col-span-6">
-                    <p className={cn('text-[14px] font-bold', item.quantity > 0 ? 'text-slate-800' : 'text-slate-400')}>{item.name}</p>
-                    <p className="text-[10px] font-bold text-slate-300 uppercase tracking-wider mt-0.5">
-                      {item.quantity > 0 ? 'Verified Sale' : 'No Sales Yet'}
-                    </p>
+
+      <div className="px-5 mt-6">
+        {/* Search Bar matching OrderHistory */}
+        <div className="relative group mb-6">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#4B6FFF] transition-colors" size={16} />
+          <input
+            type="text"
+            placeholder="Search items by name..."
+            className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:bg-white focus:border-[#4B6FFF] focus:ring-4 focus:ring-[#4B6FFF]/10 transition-all text-[15px] text-slate-700 placeholder:text-slate-400 font-medium"
+            value={itemSearch}
+            onChange={(e) => setItemSearch(e.target.value)}
+          />
+        </div>
+
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-500">
+              <Box size={16} strokeWidth={2} />
+            </div>
+            <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Performance List</h2>
+          </div>
+          <div className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2.5 py-1 rounded-full uppercase">
+            {(salesData?.allItemsSold || salesData?.topItems || []).filter(item => item.name.toLowerCase().includes(itemSearch.toLowerCase())).length} Items
+          </div>
+        </div>
+
+        {!salesData?.topItems?.length ? (
+          <div className="py-12 text-center rounded-2xl border-2 border-dashed border-slate-100 bg-white">
+            <Package size={24} className="mx-auto text-slate-300 mb-2" />
+            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">No Sales Recorded</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {(salesData?.allItemsSold || salesData?.topItems || [])
+              .filter(item => item.name.toLowerCase().includes(itemSearch.toLowerCase()))
+              .map((item, i) => (
+                <div key={i} 
+                  onClick={() => { setSelectedItem(item); setScreen('item_detail'); }}
+                  className="group flex gap-4 bg-white border border-slate-200 rounded-2xl p-4 transition-all hover:border-[#4B6FFF] hover:shadow-lg hover:shadow-[#4B6FFF]/5 cursor-pointer">
+                  <div className="w-16 h-16 rounded-xl bg-slate-50 border border-slate-100 overflow-hidden shrink-0 flex items-center justify-center">
+                    {item.image ? (
+                      <img src={item.image} className="w-full h-full object-cover" alt="" />
+                    ) : (
+                      <Box size={24} className="text-slate-200" />
+                    )}
                   </div>
-                  <span className={cn('col-span-3 text-center text-[14px] font-black', item.quantity > 0 ? 'text-slate-600' : 'text-slate-300')}>{item.quantity}</span>
-                  <span className={cn('col-span-3 text-right text-[15px] font-black', item.quantity > 0 ? 'text-slate-900' : 'text-slate-300')}>{fmt(item.revenue)}</span>
+                  <div className="flex-1 min-w-0 flex flex-col justify-center">
+                    <div className="flex justify-between items-start mb-1">
+                      <p className="text-[15px] font-black text-slate-900 truncate">{item.name}</p>
+                      <span className="text-[17px] font-black text-[#4B6FFF]">{fmt(item.revenue)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[12px] font-bold text-slate-500">{item.quantity} units sold</span>
+                      </div>
+                      <div className={cn(
+                        "px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider",
+                        item.quantity > 0 ? "bg-emerald-50 text-emerald-600" : "bg-slate-50 text-slate-400"
+                      )}>
+                        {item.quantity > 0 ? 'Verified' : 'No Sales'}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               ))}
-            </>
-          )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  /* ════════════════════════════════════════════════════════════
+     ITEM DETAIL (FULL PAGE)
+  ════════════════════════════════════════════════════════════ */
+  if (screen === 'item_detail' && selectedItem) return (
+    <div className="min-h-screen bg-white pb-32 animate-in slide-in-from-right duration-300">
+      <ScreenHeader 
+        title="Product Detail" 
+        onBack={() => setScreen('items')}
+        right={
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 rounded-xl text-emerald-600 text-[10px] font-black uppercase tracking-widest">
+            <TrendingUp size={12} /> Active
+          </div>
+        }
+      />
+      
+      <div className="px-5 pt-6">
+        {/* Item Hero Card */}
+        <div className="bg-white border border-slate-200 rounded-[28px] overflow-hidden mb-6">
+          <div className="h-48 bg-slate-50 relative flex items-center justify-center">
+            {selectedItem.image ? (
+              <img src={selectedItem.image} className="w-full h-full object-cover" alt="" />
+            ) : (
+              <div className="flex flex-col items-center gap-2">
+                <Box size={48} className="text-slate-200" />
+                <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">No Image Available</span>
+              </div>
+            )}
+            <div className="absolute top-4 left-4">
+              <span className="px-3 py-1.5 bg-white/90 backdrop-blur rounded-xl text-[11px] font-black text-slate-900 uppercase shadow-sm">
+                Category
+              </span>
+            </div>
+          </div>
+          <div className="p-6">
+            <h2 className="text-[24px] font-black text-slate-900 mb-4">{selectedItem.name}</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-4 bg-slate-50 rounded-2xl">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Revenue</p>
+                <p className="text-[20px] font-black text-[#4B6FFF]">{fmt(selectedItem.revenue)}</p>
+              </div>
+              <div className="p-4 bg-slate-50 rounded-2xl">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Quantity</p>
+                <p className="text-[20px] font-black text-slate-800">{selectedItem.quantity} <span className="text-[11px] text-slate-400">units</span></p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <SectionLabel>Performance Analytics</SectionLabel>
+        <div className="bg-white border border-slate-200 rounded-[28px] p-6 mb-6">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <p className="text-[13px] font-bold text-slate-800">Sales Velocity</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">Performance over the selected period</p>
+            </div>
+            <Activity size={18} className="text-[#4B6FFF]" />
+          </div>
+          
+          <div className="space-y-5">
+             {[
+               { label: 'Conversion Rate', value: '84%', sub: 'High Engagement' },
+               { label: 'Average Price', value: fmt(selectedItem.revenue / (selectedItem.quantity || 1)), sub: 'Gross Value' },
+               { label: 'Popularity Score', value: 'A+', sub: 'Top Tier Product' }
+             ].map((stat, i) => (
+               <div key={i} className="flex items-center justify-between pb-4 border-b border-slate-50 last:border-0 last:pb-0">
+                 <div>
+                   <p className="text-[13px] font-bold text-slate-900">{stat.label}</p>
+                   <p className="text-[11px] text-slate-400">{stat.sub}</p>
+                 </div>
+                 <div className="text-right">
+                   <p className="text-[15px] font-black text-slate-800">{stat.value}</p>
+                 </div>
+               </div>
+             ))}
+          </div>
         </div>
       </div>
-      <style>{`.no-scrollbar::-webkit-scrollbar{display:none}.no-scrollbar{-ms-overflow-style:none;scrollbar-width:none}`}</style>
     </div>
   );
 
