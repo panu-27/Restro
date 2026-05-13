@@ -699,8 +699,8 @@ const SalesReport = () => {
 
       {/* Period Total Bar */}
       {tableRows.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 p-2 bg-white border-t border-slate-100 z-30 lg:static lg:border-none lg:bg-transparent lg:px-5 lg:pb-10">
-          <div className="bg-slate-900 rounded-2xl px-5 py-3 flex items-center justify-between shadow-xl shadow-slate-200">
+        <div className="fixed bottom-0 left-0 right-0 p-1.5 pb-0 bg-white/40 backdrop-blur-sm border-t border-slate-100 z-30 lg:static lg:border-none lg:bg-transparent lg:px-5 lg:pb-10">
+          <div className="bg-slate-900 rounded-2xl px-5 py-2.5 flex items-center justify-between shadow-xl shadow-slate-200 translate-y-1">
             <div>
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Total Revenue</p>
               <p className="text-[12px] font-bold text-slate-300">Selected Period</p>

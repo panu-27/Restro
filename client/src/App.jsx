@@ -526,7 +526,7 @@ function App() {
 
       {/* ── Mobile Bottom Nav ───────────────────────────────────────────────────────── */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-[110] overflow-hidden" style={{ background: '#ffffff' }}>
-        <nav className="flex items-center h-[84px] w-full pb-1">
+        <nav className="flex items-center h-[64px] w-full ">
 
           {/* Left: Home, Items */}
           <div className="flex flex-1 justify-around items-center">
@@ -570,7 +570,7 @@ function App() {
             <button
               onClick={() => handleTabChange('parcel')}
               className="w-[52px] h-[52px] bg-blue-600 rounded-full flex items-center justify-center active:scale-90 transition-all duration-200 shadow-[0_4px_16px_rgba(37,99,235,0.4)]"
-              style={{ marginBottom: '16px' }}
+              style={{ marginBottom: '8px' }}
             >
               <Plus size={28} strokeWidth={2.8} color="#fff" />
             </button>
@@ -621,7 +621,7 @@ function App() {
               background: 'linear-gradient(135deg, #8B5CF6 0%, #6366F1 50%, #4F46E5 100%)',
               borderRadius: '14px 0 0 14px',
               marginLeft: '8px',
-              marginBottom: '16px'
+              marginBottom: '8px'
             }}
           >
             <Menu size={24} strokeWidth={2} color="#fff" />
