@@ -526,7 +526,7 @@ function App() {
 
       {/* ── Mobile Bottom Nav ───────────────────────────────────────────────────────── */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-[110] overflow-hidden" style={{ background: '#ffffff' }}>
-        <nav className="flex items-center h-[64px] w-full ">
+        <nav className="flex items-center h-[64px] w-full pb-3">
 
           {/* Left: Home, Items */}
           <div className="flex flex-1 justify-around items-center">
