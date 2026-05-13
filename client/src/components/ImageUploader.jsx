@@ -29,6 +29,7 @@ const ImageUploader = ({
     circle: 'w-20 h-20 rounded-full',
     wide: 'w-full h-28 rounded-2xl',
     mini: 'w-8 h-8 rounded-lg',
+    full: 'w-full h-full',
   };
 
   const handleFileChange = async (e) => {
@@ -72,6 +73,28 @@ const ImageUploader = ({
   };
 
   const displayUrl = previewUrl || value;
+
+  // ── Overlay / full mode: invisible click target, no internal UI ──
+  if (shape === 'full') {
+    return (
+      <div
+        className={`w-full h-full cursor-pointer relative ${className}`}
+        onClick={() => !uploading && inputRef.current?.click()}
+      >
+        {uploading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded-2xl">
+            <Loader2 size={28} className="text-white animate-spin" />
+          </div>
+        )}
+        {error && (
+          <div className="absolute bottom-2 left-0 right-0 flex justify-center">
+            <p className="text-[11px] bg-red-500 text-white font-semibold px-3 py-1 rounded-full">{error}</p>
+          </div>
+        )}
+        <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+      </div>
+    );
+  }
 
   return (
     <div className={`flex flex-col items-start gap-2 ${className}`}>

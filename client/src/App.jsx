@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
-import { LayoutGrid, ShoppingBag, History, Settings, LogOut, User, BarChart3, Clock, ChevronDown, MoreVertical, HelpCircle, Utensils, BookOpen, LineChart, Grid, Key, X, Loader2, Package, Plus } from 'lucide-react';
+import { LayoutGrid, ShoppingBag, History, Settings, LogOut, User, BarChart3, Clock, ChevronDown, MoreVertical, HelpCircle, Utensils, BookOpen, LineChart, Grid, Key, X, Loader2, Package, Plus, Cookie, LayoutDashboard, Menu, Mic } from 'lucide-react';
 import TableGrid from './components/TableGrid';
 import TableView from './components/TableView';
 import POSInterface from './components/POSInterface';
@@ -18,7 +18,6 @@ import { DashboardSkeleton } from './components/Skeleton';
 import ParcelView from './components/ParcelView';
 
 // ── PWA back-navigation helper ───────────────────────────────────────────────
-// Pushes a synthetic history entry so Android back has something to pop.
 const pushNav = (key) => {
   if (window.history.state?.navKey !== key) {
     window.history.pushState({ navKey: key }, '');
@@ -37,11 +36,12 @@ function App() {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [activeTab, setActiveTab] = useState('tables');
-  const [selectedTable, setSelectedTable] = useState(null); // { tableId, existingOrder }
-  const [openTableId, setOpenTableId] = useState(null);     // full-screen TableView for tables
-  const [openOrderId, setOpenOrderId] = useState(null);     // full-screen TableView for specific orders (parcels)
-  const [tableNavAction, setTableNavAction] = useState('menu'); // 'menu' | 'cart'
+  const [selectedTable, setSelectedTable] = useState(null);
+  const [openTableId, setOpenTableId] = useState(null);
+  const [openOrderId, setOpenOrderId] = useState(null);
+  const [tableNavAction, setTableNavAction] = useState('menu');
   const [isCreatingParcel, setIsCreatingParcel] = useState(false);
+  const [settingsSubSection, setSettingsSubSection] = useState('home');
   const [menuItems, setMenuItems] = useState([]);
   const [activeOrders, setActiveOrders] = useState([]);
   const [tables, setTables] = useState([]);
@@ -50,6 +50,7 @@ function App() {
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordState, setPasswordState] = useState({ current: '', new: '', confirm: '', error: '', loading: false, success: false });
+
   useEffect(() => {
     if (token) {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
@@ -120,14 +121,12 @@ function App() {
     }
   }, [token]);
 
-  /* Table click → open full-screen TableView */
   const handleTableClick = (tableId) => {
     setTableNavAction('menu');
     setOpenTableId(tableId);
-    pushNav('table-' + tableId); // back button will close TableView
+    pushNav('table-' + tableId);
   };
 
-  /* POS table click (from POS tab) → old behaviour */
   const handlePOSTableClick = (tableId, existingOrder) => {
     setSelectedTable({ tableId, existingOrder });
   };
@@ -143,14 +142,11 @@ function App() {
     fetchSubscription();
   };
 
-  // ── PWA back-button: intercept popstate so Android back navigates inside app ──
   useEffect(() => {
-    // Ensure there's always a base entry so the first back press is caught
     if (!window.history.state?.navKey) {
       window.history.replaceState({ navKey: 'home' }, '');
     }
     const handlePop = () => {
-      // If a table/order view is open, close it first
       setOpenTableId(prev => {
         if (prev) { fetchActiveOrders(); return null; }
         return prev;
@@ -163,7 +159,6 @@ function App() {
         if (prev) { fetchActiveOrders(); return false; }
         return prev;
       });
-      // If we're on a non-home tab, go back to dashboard and push home entry
       setActiveTab(prev => {
         if (prev !== 'dashboard') {
           window.history.pushState({ navKey: 'home' }, '');
@@ -176,19 +171,15 @@ function App() {
     return () => window.removeEventListener('popstate', handlePop);
   }, []);
 
-  // ── useCallback hooks MUST be before any early returns (Rules of Hooks) ────────
-  const handleTabChange = useCallback((tabId) => {
+  const handleTabChange = useCallback((tabId, subSection = 'home') => {
     setActiveTab(tabId);
+    setSettingsSubSection(subSection);
     window.dispatchEvent(new Event('close-notifications'));
-    // Push a history entry for every non-home tab so back returns here
     if (tabId !== 'dashboard') pushNav(tabId);
   }, []);
 
-  // ── AUTH GATE ────────────────────────────────────────────────────────────────────
   if (!token) return <Login onLoginSuccess={handleLoginSuccess} />;
 
-  // ── ROLE-BASED DASHBOARD ROUTING ────────────────────────────────────────────────
-  // Staff (Waiter/Kitchen) skip subscription check — they use owner's subscription
   const userRole = user?.role;
   if (userRole === 'Waiter') {
     return <WaiterDashboard user={user} onLogout={handleLogout} />;
@@ -197,16 +188,13 @@ function App() {
     return <KitchenDashboard user={user} onLogout={handleLogout} />;
   }
 
-  // ── SUBSCRIPTION GATE (Admin only) ────────────────────────────────────────────
   if (!subLoading && (!subscription || !subscription.hasSubscription)) {
     return <ChoosePlan onPlanActivated={handlePlanActivated} />;
   }
 
-  // ── LOADING ────────────────────────────────────────────────────────────────
   if (subLoading || !user) {
     return (
       <div className="flex flex-col lg:flex-row h-[100dvh] bg-white lg:p-3 gap-2 lg:gap-3 overflow-hidden">
-        {/* Sidebar skeleton */}
         <aside className="hidden lg:flex w-56 bg-white rounded-3xl flex-col py-5 px-3.5 shrink-0 border border-slate-100">
           <div className="sk-shimmer h-10 w-full rounded-xl mb-6 bg-slate-100" />
           <div className="flex-1 space-y-2">
@@ -222,7 +210,6 @@ function App() {
             </div>
           </div>
         </aside>
-        {/* Main content skeleton */}
         <main className="flex-1 overflow-hidden lg:rounded-3xl bg-white px-2 lg:px-0">
           <DashboardSkeleton />
         </main>
@@ -240,7 +227,6 @@ function App() {
       </div>
     );
   }
-
 
   const handlePasswordChange = async (e) => {
     e.preventDefault();
@@ -266,7 +252,6 @@ function App() {
     }
   };
 
-  // ── FULL-SCREEN VIEW (replaces entire UI) ──────────────────────────────────
   if (openTableId || openOrderId || isCreatingParcel) {
     return (
       <TableView
@@ -292,20 +277,19 @@ function App() {
     );
   }
 
-  // ── MAIN APP SHELL ─────────────────────────────────────────────────────────
   const tableCount = user?.tableCount || 10;
 
   const navTabs = [
-    { id: 'tables', icon: Grid, label: 'Table' },
+    { id: 'dashboard', icon: Cookie, label: 'Home' },
+    { id: 'tables', icon: Grid, label: 'Tables' },
+    { id: 'parcel', icon: Package, label: 'Parcel' },
     { id: 'pos', icon: ShoppingBag, label: 'Orders' },
-    { id: 'parcel', icon: Plus, label: 'Parcel' },
-    { id: 'sales', icon: BarChart3, label: 'Analytics' },
-    { id: 'settings', icon: Settings, label: 'Settings' },
+    { id: 'sales', icon: BarChart3, label: 'Reports' },
+    { id: 'settings', icon: Menu, label: 'More' },
   ];
 
   return (
     <div className="flex flex-col lg:flex-row h-[100dvh] bg-white lg:p-3 gap-2 lg:gap-3 overflow-hidden relative">
-      {/* Mobile Top Bar removed as requested */}
 
       {/* ── Desktop Sidebar ─────────────────────────────────────────────────────────── */}
       <aside className="hidden lg:flex w-56 bg-white rounded-3xl flex-col py-5 px-3.5 shrink-0 transition-all duration-500 z-[110] border border-slate-100">
@@ -316,7 +300,6 @@ function App() {
           </div>
         </div>
 
-
         {/* Nav: Menu */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar">
           <p className="text-[10px] text-gray-400 mb-1.5 px-2 font-semibold uppercase tracking-[0.12em]">Menu</p>
@@ -326,7 +309,7 @@ function App() {
                 key={tab.id}
                 onClick={() => handleTabChange(tab.id)}
                 className={`w-full flex items-center justify-start gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-300 text-[11px] font-bold uppercase tracking-[0.02em] ${activeTab === tab.id
-                  ? 'bg-[#FF5A36] text-white'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-100'
                   : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                   }`}
               >
@@ -344,7 +327,7 @@ function App() {
                 key={tab.id}
                 onClick={() => handleTabChange(tab.id)}
                 className={`w-full flex items-center justify-start gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-300 text-[11px] font-bold uppercase tracking-[0.02em] ${activeTab === tab.id
-                  ? 'bg-[#FF5A36] text-white'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-100'
                   : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                   }`}
               >
@@ -387,9 +370,16 @@ function App() {
             <SubscriptionBanner subscription={subscription} onDismiss={() => setBannerDismissed(true)} />
           )}
 
-          {/* Main Content Area */}
+          {activeTab === 'dashboard' && (
+            <div className="animate-in fade-in duration-500">
+              <DashboardView
+                activeOrders={activeOrders}
+                tableCount={tableCount}
+                onTabChange={handleTabChange}
+              />
+            </div>
+          )}
 
-          {/* Tables */}
           {activeTab === 'tables' && (
             <div className="animate-in fade-in duration-500">
               <TableGrid
@@ -400,7 +390,6 @@ function App() {
             </div>
           )}
 
-          {/* POS */}
           {activeTab === 'pos' && (
             <div className="animate-in fade-in duration-500">
               <POSInterface
@@ -421,7 +410,6 @@ function App() {
             </div>
           )}
 
-          {/* Parcels */}
           {activeTab === 'parcel' && (
             <div className="animate-in fade-in duration-500">
               <ParcelView
@@ -432,21 +420,28 @@ function App() {
             </div>
           )}
 
-          {/* History View removed */}
+          {activeTab === 'history' && (
+            <div className="animate-in fade-in duration-500">
+              <OrderHistory
+                activeOrders={activeOrders}
+                onOrderUpdate={fetchActiveOrders}
+                onOrderClick={(orderId) => { setTableNavAction('menu'); setOpenOrderId(orderId); }}
+              />
+            </div>
+          )}
 
-          {/* Sales */}
           {activeTab === 'sales' && (
             <div className="animate-in fade-in duration-500">
               <SalesReport />
             </div>
           )}
 
-          {/* Settings */}
           {activeTab === 'settings' && (
             <div className="fixed inset-0 z-[120] lg:static lg:z-auto lg:h-full bg-white lg:bg-transparent animate-in slide-in-from-bottom lg:fade-in duration-300">
               <SettingsPanel
                 user={user}
                 subscription={subscription}
+                initialSection={settingsSubSection}
                 onSettingsUpdate={handleSettingsUpdate}
                 onShowPassword={() => setShowPasswordModal(true)}
                 onLogout={handleLogout}
@@ -529,46 +524,113 @@ function App() {
       </main>
 
       {/* ── Mobile Bottom Nav ───────────────────────────────────────────────────────── */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 flex items-center justify-around h-[68px] z-[110] pb-safe px-1 shadow-[0_-2px_10px_rgba(0,0,0,0.02)]">
-        {navTabs.map((tab, idx) => {
-          const isActive = activeTab === tab.id;
-          const isCenter = idx === 2; // Middle item (Parcel)
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-[110] overflow-hidden" style={{ background: '#ffffff' }}>
+        <nav className="flex items-center h-[84px] w-full pb-1">
 
-          if (isCenter) {
-            return (
-              <button
-                key={tab.id}
-                onClick={() => handleTabChange(tab.id)}
-                className="flex flex-col items-center justify-center -translate-y-4"
-              >
-                <div className="w-14 h-14 bg-blue-600 rounded-full flex items-center justify-center shadow-lg shadow-blue-200 border-4 border-white active:scale-95 transition-all">
-                  <tab.icon size={26} className="text-white" strokeWidth={2.5} />
-                </div>
-                <span className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-tighter">
-                  {tab.label}
-                </span>
-              </button>
-            );
-          }
-
-          return (
+          {/* Left: Home, Items */}
+          <div className="flex flex-1 justify-around items-center">
             <button
-              key={tab.id}
-              onClick={() => handleTabChange(tab.id)}
-              className={`flex flex-col items-center justify-center w-full h-full transition-all duration-200 ${isActive ? 'text-blue-600' : 'text-slate-400'
-                }`}
+              onClick={() => handleTabChange('dashboard')}
+              className="flex flex-col items-center gap-[3px] active:scale-95 transition-transform"
             >
-              <tab.icon size={22} strokeWidth={isActive ? 2.5 : 2} className="mb-0.5" />
-              <span className={`text-[10px] font-bold transition-all ${isActive ? 'opacity-100' : 'opacity-60'}`}>
-                {tab.label}
+              <Cookie
+                size={22}
+                strokeWidth={activeTab === 'dashboard' ? 2 : 1.6}
+                color={activeTab === 'dashboard' ? '#3B82F6' : 'rgba(0,0,0,0.4)'}
+              />
+              <span
+                className="text-[11px] font-bold leading-none"
+                style={{ color: activeTab === 'dashboard' ? '#3B82F6' : 'rgba(0,0,0,0.4)' }}
+              >
+                Home
               </span>
             </button>
-          );
-        })}
-      </nav>
+
+            <button
+              onClick={() => handleTabChange('tables')}
+              className="flex flex-col items-center gap-[3px] active:scale-95 transition-transform"
+            >
+              <Grid
+                size={22}
+                strokeWidth={activeTab === 'tables' ? 2 : 1.6}
+                color={activeTab === 'tables' ? '#3B82F6' : 'rgba(0,0,0,0.4)'}
+              />
+              <span
+                className="text-[11px] font-bold leading-none"
+                style={{ color: activeTab === 'tables' ? '#3B82F6' : 'rgba(0,0,0,0.4)' }}
+              >
+                Tables
+              </span>
+            </button>
+          </div>
+
+          {/* Center FAB: Parcel */}
+          <div className="flex-shrink-0 mx-2">
+            <button
+              onClick={() => handleTabChange('parcel')}
+              className="w-[52px] h-[52px] bg-blue-600 rounded-full flex items-center justify-center active:scale-90 transition-all duration-200 shadow-[0_4px_16px_rgba(37,99,235,0.4)]"
+              style={{ marginBottom: '16px' }}
+            >
+              <Plus size={28} strokeWidth={2.8} color="#fff" />
+            </button>
+          </div>
+
+          {/* Right: Orders, Reports */}
+          <div className="flex flex-1 justify-around items-center">
+            <button
+              onClick={() => handleTabChange('pos')}
+              className="flex flex-col items-center gap-[3px] active:scale-95 transition-transform"
+            >
+              <ShoppingBag
+                size={22}
+                strokeWidth={activeTab === 'pos' ? 2 : 1.6}
+                color={activeTab === 'pos' ? '#3B82F6' : 'rgba(0,0,0,0.4)'}
+              />
+              <span
+                className="text-[11px] font-bold leading-none"
+                style={{ color: activeTab === 'pos' ? '#3B82F6' : 'rgba(0,0,0,0.4)' }}
+              >
+                Orders
+              </span>
+            </button>
+
+            <button
+              onClick={() => handleTabChange('sales')}
+              className="flex flex-col items-center gap-[3px] active:scale-95 transition-transform"
+            >
+              <BarChart3
+                size={22}
+                strokeWidth={activeTab === 'sales' ? 2 : 1.6}
+                color={activeTab === 'sales' ? '#3B82F6' : 'rgba(0,0,0,0.4)'}
+              />
+              <span
+                className="text-[11px] font-bold leading-none"
+                style={{ color: activeTab === 'sales' ? '#3B82F6' : 'rgba(0,0,0,0.4)' }}
+              >
+                Reports
+              </span>
+            </button>
+          </div>
+
+          {/* More — restored purple gradient */}
+          <button
+            onClick={() => handleTabChange('settings')}
+            className="flex-shrink-0 h-[64px] w-[62px] flex items-center justify-center active:scale-95 transition-transform"
+            style={{
+              background: 'linear-gradient(135deg, #8B5CF6 0%, #6366F1 50%, #4F46E5 100%)',
+              borderRadius: '14px 0 0 14px',
+              marginLeft: '8px',
+              marginBottom: '16px'
+            }}
+          >
+            <Menu size={24} strokeWidth={2} color="#fff" />
+          </button>
+
+        </nav>
+      </div>
+
     </div>
   );
 }
 
 export default App;
-

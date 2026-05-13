@@ -286,11 +286,6 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onManageClick, onBill
       {/* ── Header — same as TableView header ── */}
       <div className="flex items-center justify-between px-4 h-14 bg-white border-b border-slate-100 shrink-0">
         <span className="text-[17px] font-bold text-slate-900">Kitchen Display</span>
-        {/* Live dot pill */}
-        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 rounded-full border border-blue-200">
-          <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-          <span className="text-[11px] font-black text-blue-700 uppercase tracking-widest">Live</span>
-        </div>
       </div>
 
       {/* ── Search bar — identical to TableView / MobileMenuScreen ── */}

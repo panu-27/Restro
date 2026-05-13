@@ -6,7 +6,8 @@ import {
   IceCream, Search, MapPin, Phone, FileText, Receipt, Percent,
   Users, Eye, EyeOff, ChefHat, UserPlus, Key, LogOut, LayoutGrid,
   ImageIcon, ChevronRight, ChevronLeft, ChevronDown, ArrowLeft,
-  Bell, Star, Wifi, Printer, HelpCircle, MessageCircle, Share2
+  Bell, Star, Wifi, Printer, HelpCircle, MessageCircle, Share2,
+  Bluetooth, Globe, MessageSquare, Users2, RadioTower
 } from 'lucide-react';
 import { TableSettingsSkeleton } from './Skeleton';
 import ImageUploader from './ImageUploader';
@@ -85,17 +86,16 @@ const PillToggle = ({ value, onChange }) => (
 );
 
 /* ─── Screen wrapper: simulates a pushed native screen ──────────── */
-const NativeScreen = ({ title, onBack, backLabel = 'Back', children, rightAction }) => (
+const NativeScreen = ({ title, onBack, backLabel, children, rightAction }) => (
   <div className="flex flex-col h-full bg-white overflow-hidden">
     {/* Nav bar */}
-    <div className="flex items-center gap-3 px-4 h-14 bg-white border-b border-gray-100 shrink-0">
+    <div className="flex items-center justify-between px-4 h-14 bg-white border-b border-gray-100 shrink-0">
       {onBack && (
-        <button onClick={onBack} className="text-gray-700 flex items-center gap-1 active:opacity-60">
+        <button onClick={onBack} className="flex items-center gap-0.5 text-gray-900 active:opacity-60">
           <ChevronLeft size={22} strokeWidth={2.5} />
-          <span className="text-[16px] font-semibold">{backLabel}</span>
+          <span className="text-[17px] font-bold">{backLabel || title}</span>
         </button>
       )}
-      <span className="flex-1 text-center text-[17px] font-bold text-gray-900">{title}</span>
       {rightAction && <div className="text-blue-600 text-[15px] font-semibold">{rightAction}</div>}
     </div>
     <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
@@ -107,8 +107,12 @@ const NativeScreen = ({ title, onBack, backLabel = 'Back', children, rightAction
 /* ══════════════════════════════════════════════════════════════════
    MAIN COMPONENT
 ══════════════════════════════════════════════════════════════════ */
-const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, onLogout, onClose }) => {
-  const [activeSection, setActiveSection] = useState('home');
+const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, onLogout, onClose, initialSection = 'home' }) => {
+  const [activeSection, setActiveSection] = useState(initialSection);
+
+  useEffect(() => {
+    if (initialSection) setActiveSection(initialSection);
+  }, [initialSection]);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   /* ── Restaurant fields ─────────────────────────────────────────── */
@@ -128,6 +132,16 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
   /* ── Tax ───────────────────────────────────────────────────────── */
   const [taxEnabled, setTaxEnabled] = useState(false);
   const [taxes, setTaxes] = useState([]);
+
+  /* ── Printer ───────────────────────────────────────────────────── */
+  const [printerTab, setPrinterTab] = useState('bluetooth');
+  const [printerPermissionGranted, setPrinterPermissionGranted] = useState(false);
+  const [printerScanning, setPrinterScanning] = useState(false);
+
+  const handleGrantPrinterPermission = () => {
+    setPrinterScanning(true);
+    setTimeout(() => { setPrinterPermissionGranted(true); setPrinterScanning(false); }, 1500);
+  };
 
   /* ── Menu ──────────────────────────────────────────────────────── */
   const [menuItems, setMenuItems] = useState([]);
@@ -462,14 +476,36 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
       </div>
 
       {/* Section 2 */}
-      <SectionLabel>Team</SectionLabel>
+      <SectionLabel>Reach & Marketing</SectionLabel>
       <div className="mx-4 mb-3">
         <Card>
-          <SectionRow icon={Users} label="Staff Management" sublabel={`${staffList.length} members`} onPress={() => setActiveSection('staff')} />
+          <SectionRow icon={Users} label="Regular Customers" sublabel="View loyalty and repeat visits" onPress={() => { }} />
+          <Divider className="ml-[72px]" />
+          <SectionRow icon={MessageSquare} label="Manage WhatsApp" sublabel="Connect your WhatsApp Business" onPress={() => { }} />
+          <Divider className="ml-[72px]" />
+          <SectionRow icon={RadioTower} label="WhatsApp Marketing" sublabel="Send bulk offers & updates" onPress={() => { }} />
+          <Divider className="ml-[72px]" />
+          <SectionRow icon={Globe} label="Google Profile Manager" sublabel="Manage your Google listing" onPress={() => { }} />
         </Card>
       </div>
 
-      {/* Section 3 */}
+      {/* Section 3 — Team */}
+      <SectionLabel>Team</SectionLabel>
+      <div className="mx-4 mb-3">
+        <Card>
+          <SectionRow icon={Users2} label="Staff Management" sublabel={`${staffList.length} members`} onPress={() => setActiveSection('staff')} />
+        </Card>
+      </div>
+
+      {/* Section 4 — Hardware */}
+      <SectionLabel>Hardware</SectionLabel>
+      <div className="mx-4 mb-3">
+        <Card>
+          <SectionRow icon={Printer} label="Printer" sublabel="Connect Bluetooth or USB printer" onPress={() => setActiveSection('printer')} />
+        </Card>
+      </div>
+
+      {/* Section 5 — Account */}
       <SectionLabel>Account</SectionLabel>
       <div className="mx-4 mb-3">
         <Card>
@@ -502,18 +538,48 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
   /* ── RESTAURANT PROFILE ─────────────────────────────────────────── */
   const renderRestaurantScreen = () => (
     <NativeScreen title="Business Details" onBack={() => setActiveSection('home')}>
-      {/* Logo */}
-      <div className="flex flex-col items-center py-8 bg-white border-b border-gray-100">
-        <div className="relative mb-3">
-          <div className="w-24 h-24 rounded-full bg-gray-100 border-2 border-gray-200 overflow-hidden flex items-center justify-center">
-            {restaurantLogo
-              ? <img src={restaurantLogo} alt="" className="w-full h-full object-cover" />
-              : <Store size={32} className="text-gray-300" />}
+      {/* ── Logo Drop Area ── */}
+      <div className="mx-4 mt-5 mb-4">
+        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.12em] mb-2 px-1">Restaurant Logo</p>
+        <div className="relative rounded-2xl overflow-hidden border border-gray-200 bg-gray-50"
+          style={{ aspectRatio: '16/9' }}>
+          {restaurantLogo ? (
+            <img src={restaurantLogo} alt="Logo" className="w-full h-full object-cover" />
+          ) : (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none">
+              <div className="w-16 h-16 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center">
+                <Store size={28} className="text-gray-300" />
+              </div>
+              <p className="text-[13px] font-semibold text-gray-400">Tap to upload logo</p>
+              <p className="text-[11px] text-gray-300">PNG, JPG up to 5 MB</p>
+            </div>
+          )}
+
+          {/* ✅ FIX: ImageUploader always covers full area — tapping anywhere triggers file picker */}
+          <div className="absolute inset-0">
+            <ImageUploader
+              value={restaurantLogo}
+              onChange={setRestaurantLogo}
+              label=""
+              shape="full"
+              folder="restro/logos"
+              className="w-full h-full"
+            />
           </div>
+
+          {/* Remove button — stopPropagation so it doesn't re-open the picker */}
+          {restaurantLogo && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setRestaurantLogo(''); }}
+              className="absolute top-3 right-3 w-8 h-8 bg-black/50 rounded-full flex items-center justify-center text-white active:scale-95 transition-all z-10"
+            >
+              <X size={14} strokeWidth={2.5} />
+            </button>
+          )}
         </div>
-        <ImageUploader value={restaurantLogo} onChange={setRestaurantLogo} label="Upload Logo" shape="circle" />
       </div>
 
+      {/* ── Business Information ── */}
       <SectionLabel>Business Information</SectionLabel>
       <div className="mx-4 mb-3">
         <Card>
@@ -523,22 +589,25 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
         </Card>
       </div>
 
+      {/* ── Legal Details ── */}
       <SectionLabel>Legal Details</SectionLabel>
-      <div className="mx-4 mb-5">
+      <div className="mx-4 mb-3">
         <Card>
           <NativeInput label="GST Number (GSTIN)" value={gstNumber} onChange={setGstNumber} placeholder="22AAAAA0000A1Z5" icon={FileText} />
           <NativeInput label="FSSAI License No." value={fssaiNumber} onChange={setFssaiNumber} placeholder="12345678901234" icon={FileText} />
         </Card>
       </div>
 
-      {/* Save */}
-      <div className="px-4 pb-8">
+      <div className="h-24" />
+
+      {/* ── Sticky Save Footer ── */}
+      <div className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 z-20">
         <button
           onClick={handleSaveSettings}
           disabled={settingsSaving}
-          className="w-full py-4 bg-blue-600 text-white rounded-2xl text-[16px] font-bold active:scale-[0.98] transition-all shadow-md shadow-blue-200 disabled:opacity-50"
+          className="w-full py-4 bg-blue-600 text-white rounded-2xl text-[16px] font-bold active:scale-[0.98] transition-all shadow-lg shadow-blue-100 disabled:opacity-50"
         >
-          {settingsSaving ? 'Saving...' : 'Update Details'}
+          {settingsSaving ? 'Saving…' : 'Update Details'}
         </button>
       </div>
     </NativeScreen>
@@ -563,7 +632,7 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
       {taxEnabled && (
         <>
           <SectionLabel>Tax Entries</SectionLabel>
-          <div className="mx-4 mb-4 space-y-2">
+          <div className="mx-4 mb-4 space-y-2 pb-16">
             {taxes.map((tax, i) => (
               <Card key={i}>
                 <div className="flex items-center gap-3 px-4 py-3">
@@ -618,11 +687,14 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
         </>
       )}
 
-      <div className="px-4 pb-8">
+      <div className="h-24" />
+
+      {/* Sticky Save Footer */}
+      <div className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 z-20">
         <button
           onClick={handleSaveSettings}
           disabled={settingsSaving}
-          className="w-full py-4 bg-blue-600 text-white rounded-2xl text-[16px] font-bold active:scale-[0.98] transition-all shadow-md shadow-blue-200 disabled:opacity-50"
+          className="w-full py-4 bg-blue-600 text-white rounded-2xl text-[16px] font-bold active:scale-[0.98] transition-all shadow-lg shadow-blue-100 disabled:opacity-50"
         >
           {settingsSaving ? 'Saving...' : 'Save Tax Settings'}
         </button>
@@ -770,26 +842,36 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
             {/* Item Image */}
             <div>
               <label className="block text-[13px] font-medium text-gray-500 mb-2">Item Image</label>
-              <div className="relative group">
+              <div className="relative">
                 <div className="w-full aspect-[16/9] rounded-2xl bg-white border border-gray-200 overflow-hidden flex flex-col items-center justify-center gap-3">
                   {data.image ? (
                     <img src={data.image} alt="" className="w-full h-full object-cover" />
                   ) : (
-                    <>
+                    <div className="pointer-events-none flex flex-col items-center gap-3">
                       <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center">
                         <ImageIcon size={24} className="text-gray-300" />
                       </div>
                       <p className="text-[14px] font-medium text-gray-400">Upload Item Image</p>
-                    </>
+                    </div>
                   )}
-                  <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <ImageUploader value={data.image} onChange={url => setData({ ...data, image: url })} label="" shape="full" />
+                  {/* ✅ FIX: Always-on overlay — tapping anywhere on the image area opens file picker */}
+                  <div className="absolute inset-0">
+                    <ImageUploader
+                      value={data.image}
+                      onChange={url => setData({ ...data, image: url })}
+                      label=""
+                      shape="full"
+                    />
                   </div>
                 </div>
-                {!data.image && (
-                  <div className="absolute top-4 right-4 w-6 h-6 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center">
-                    <Plus size={14} strokeWidth={3} />
-                  </div>
+                {/* Remove button — stopPropagation so it doesn't re-open the picker */}
+                {data.image && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setData({ ...data, image: '' }); }}
+                    className="absolute top-3 right-3 w-8 h-8 bg-black/50 rounded-full flex items-center justify-center text-white active:scale-95 transition-all z-10"
+                  >
+                    <X size={14} strokeWidth={2.5} />
+                  </button>
                 )}
               </div>
             </div>
@@ -821,7 +903,6 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
                   placeholder="Tap to Enter"
                   className="w-full bg-white border border-gray-200 rounded-xl py-3.5 px-4 text-[15px] outline-none focus:border-blue-400 font-bold placeholder:text-gray-300"
                 />
-
               </div>
             </div>
 
@@ -1190,14 +1271,6 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
   /* ── STAFF ────────────────────────────────────────────────────── */
   const renderStaffScreen = () => (
     <NativeScreen title="Manage Staff" onBack={() => setActiveSection('home')}>
-      <div className="px-4 pt-4 pb-2">
-        <button
-          onClick={() => { setShowAddStaff(!showAddStaff); setStaffError(''); }}
-          className="w-full py-3.5 bg-blue-600 text-white rounded-2xl text-[15px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-md shadow-blue-200"
-        >
-          <UserPlus size={18} strokeWidth={2.5} /> Add Staff
-        </button>
-      </div>
 
       {/* Add staff form */}
       {showAddStaff && (
@@ -1330,7 +1403,105 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
           </div>
         </div>
       )}
-      <div className="h-4" />
+      <div className="h-24" />
+
+      {/* Sticky Footer */}
+      {!showAddStaff && (
+        <div className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 z-20">
+          <button
+            onClick={() => { setShowAddStaff(true); setStaffError(''); }}
+            className="w-full py-4 bg-blue-600 text-white rounded-2xl text-[15px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-lg shadow-blue-100"
+          >
+            <UserPlus size={20} strokeWidth={2.5} /> Add New Staff Member
+          </button>
+        </div>
+      )}
+    </NativeScreen>
+  );
+
+  /* ── PRINTER ──────────────────────────────────────────────────── */
+  const renderPrinterScreen = () => (
+    <NativeScreen title="Printer" onBack={() => setActiveSection('home')}>
+      {/* Bluetooth / USB tabs */}
+      <div className="flex border-b border-gray-100 bg-white sticky top-0 z-10">
+        {[['bluetooth', 'Bluetooth', Bluetooth], ['usb', 'USB', Printer]].map(([id, label, Icon]) => (
+          <button
+            key={id}
+            onClick={() => { setPrinterTab(id); setPrinterPermissionGranted(false); setPrinterScanning(false); }}
+            className={cn(
+              'flex-1 flex items-center justify-center gap-2 py-4 text-[15px] font-bold border-b-2 transition-colors',
+              printerTab === id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400'
+            )}
+          >
+            <Icon size={16} />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Content area */}
+      {!printerPermissionGranted ? (
+        <div className="flex flex-col items-center justify-center px-8 pt-16 pb-32 text-center">
+          <div className="w-52 h-52 mb-8 relative">
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-44 h-44 rounded-full border-2 border-blue-50" />
+            </div>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-32 h-32 rounded-full border-2 border-blue-100" />
+            </div>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-20 h-20 rounded-full bg-blue-50 flex items-center justify-center">
+                {printerTab === 'bluetooth'
+                  ? <Bluetooth size={36} className="text-blue-400" />
+                  : <Printer size={36} className="text-blue-400" />}
+              </div>
+            </div>
+          </div>
+          <h2 className="text-[20px] font-bold text-gray-900 mb-3">Permission Required</h2>
+          <p className="text-[14px] text-gray-400 leading-relaxed max-w-xs">
+            {printerTab === 'bluetooth'
+              ? 'Please grant Bluetooth permission to connect to your thermal receipt printer.'
+              : 'Please grant USB access permission to connect to your USB thermal printer.'}
+          </p>
+        </div>
+      ) : printerScanning ? (
+        <div className="flex flex-col items-center justify-center px-8 pt-24 pb-32 text-center">
+          <div className="w-16 h-16 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-6" />
+          <p className="text-[16px] font-bold text-gray-900">Scanning for printers…</p>
+          <p className="text-[13px] text-gray-400 mt-2">Make sure your printer is on and nearby</p>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center px-8 pt-24 pb-32 text-center">
+          <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+            <Printer size={28} className="text-gray-300" />
+          </div>
+          <p className="text-[16px] font-bold text-gray-900">No printers found</p>
+          <p className="text-[13px] text-gray-400 mt-2">Turn on your printer and try scanning again</p>
+          <button
+            onClick={() => { setPrinterScanning(true); setTimeout(() => setPrinterScanning(false), 2000); }}
+            className="mt-6 px-6 py-2.5 bg-blue-50 text-blue-600 rounded-xl text-[14px] font-bold active:scale-95 transition-all"
+          >
+            Scan Again
+          </button>
+        </div>
+      )}
+
+      {/* Sticky Footer */}
+      <div className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 z-20">
+        <button
+          onClick={handleGrantPrinterPermission}
+          disabled={printerScanning}
+          className="w-full py-4 bg-blue-600 text-white rounded-2xl text-[16px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-lg shadow-blue-100 disabled:opacity-60"
+        >
+          {printerScanning
+            ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Connecting…</>
+            : printerPermissionGranted
+              ? <><Check size={20} /> Permission Granted</>
+              : printerTab === 'bluetooth'
+                ? <><Bluetooth size={20} /> Grant Bluetooth Permission</>
+                : <><Printer size={20} /> Grant USB Permission</>}
+        </button>
+      </div>
     </NativeScreen>
   );
 
@@ -1343,6 +1514,7 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
       case 'tables': return renderTablesScreen();
       case 'billing': return renderBillingScreen();
       case 'staff': return renderStaffScreen();
+      case 'printer': return renderPrinterScreen();
       default: return renderHomeScreen();
     }
   };

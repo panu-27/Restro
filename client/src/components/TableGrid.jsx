@@ -276,22 +276,6 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
       <div className="flex items-center justify-between px-4 h-14 bg-white border-b border-slate-100 shrink-0">
         <span className="text-[17px] font-bold text-slate-900">Tables Display</span>
         <div className="flex items-center gap-2">
-          {!readOnly && (
-            <>
-              <button
-                onClick={() => setShowAddAreaModal(true)}
-                className="px-3 py-1.5 border border-slate-200 rounded-lg text-[11px] font-bold text-slate-600 bg-white active:scale-95"
-              >
-                + Section
-              </button>
-              <button
-                onClick={() => { setAddToArea(areaOptions[0] || 'Main Floor'); setShowAddModal(true); }}
-                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[11px] font-bold active:scale-95 shadow-md shadow-blue-200"
-              >
-                + Table
-              </button>
-            </>
-          )}
         </div>
       </div>
 
@@ -329,7 +313,7 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
         </div>
       </div>
 
-      {/* ── Stats strip (Filters) ── */}
+      {/* ── Stats strip (Filters) ──
       <div className="flex justify-between gap-1.5 px-3 pb-3 shrink-0">
         <button
           onClick={() => setActiveStatusFilter('All')}
@@ -370,7 +354,7 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
           <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
           <span className="text-[10px] font-bold text-slate-600">{totalAvailable} Free</span>
         </button>
-      </div>
+      </div> */}
 
       {/* ── Table grid ── */}
       <div className="flex-1 overflow-y-auto px-4 pb-28" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(env(safe-area-inset-bottom) + 112px)' }}>

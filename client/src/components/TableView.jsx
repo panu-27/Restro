@@ -6,7 +6,7 @@ import {
   Coffee, IceCream, Utensils, ArrowLeft, ArrowRight, CreditCard, Users, SplitSquareHorizontal,
   Package, CheckCircle2, History, Mic, MicOff, User,
   Settings, ClipboardList, ChevronRight, Image as ImageIcon, ChevronDown, ChevronUp,
-  ChevronLeft
+  ChevronLeft, Trash2
 } from 'lucide-react';
 
 // ——— Utility ———————————————————————————————————————————————————————————————————————————————————
@@ -80,6 +80,18 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
   const [showDiscardModal, setShowDiscardModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+
+  const handleDeleteOrder = async () => {
+    if (!orderId) return;
+    try {
+      await axios.delete(`/api/orders/${orderId}`);
+      onClose();
+    } catch (err) {
+      console.error('Delete failed:', err);
+      alert('Failed to delete order.');
+    }
+  };
 
   const handleBack = () => {
     const hasUnsaved = Object.values(roundItems).some(items => items.length > 0);
@@ -877,6 +889,36 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
     </div>
   );
 
+  const renderDeleteModal = () => (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-[28px] w-full max-w-[320px] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+        <div className="p-8 text-center">
+          <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Trash2 size={28} className="text-red-500" />
+          </div>
+          <h3 className="text-[20px] font-black text-slate-900 mb-2">Delete Permanently?</h3>
+          <p className="text-[14px] text-slate-500 leading-relaxed">
+            This action cannot be undone. This order will be removed from your history forever.
+          </p>
+        </div>
+        <div className="flex flex-col border-t border-slate-100">
+          <button
+            onClick={handleDeleteOrder}
+            className="w-full py-4 text-[15px] font-bold text-red-500 active:bg-red-50 transition-colors"
+          >
+            Yes, Delete it
+          </button>
+          <button
+            onClick={() => setShowDeleteModal(false)}
+            className="w-full py-4 text-[15px] font-bold text-slate-400 border-t border-slate-100 active:bg-slate-50 transition-colors uppercase tracking-widest"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   // ── Transfer Modal ────────────────────────────────────────────────────────────────────────
   const renderTransferModal = () => {
     // Group tables by area/section, exclude current table
@@ -1088,6 +1130,11 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
             <button onClick={() => setShowTransferModal(true)} className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 transition-colors">Transfer</button>
             <button onClick={addPart} className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 transition-colors">Split</button>
           </>}
+          {isReadOnly && isHistoryView && (
+            <button onClick={() => setShowDeleteModal(true)} className="w-9 h-9 flex items-center justify-center rounded-xl bg-red-50 border border-red-100 text-red-500 hover:bg-red-100 transition-colors shrink-0 ml-1">
+              <Trash2 size={16} />
+            </button>
+          )}
         </div>
 
         {parts.length > 1 && (
@@ -1099,7 +1146,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                 <button key={p.id} onClick={() => setActivePart(idx)} className={cn('flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all', activePart === idx ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300')}>
                   <Users size={11} />{p.label}
                   {its.length > 0 && <span className={cn('text-[9px] font-bold px-1 py-0.5 rounded-full', activePart === idx ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500')}>₹{tot.toFixed(0)}</span>}
-                  <span onClick={e => { e.stopPropagation(); removePart(idx); }} className="w-3.5 h-3.5 flex items-center justify-center rounded-full text-xs cursor-pointer text-slate-400 hover:text-red-500">×</span>
+                  <span key={`remove-${p.id}`} onClick={e => { e.stopPropagation(); removePart(idx); }} className="w-3.5 h-3.5 flex items-center justify-center rounded-full text-xs cursor-pointer text-slate-400 hover:text-red-500">×</span>
                 </button>
               );
             })}
@@ -1152,7 +1199,11 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                 </div>
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                  {filteredMenu.map(item => renderMenuItemCard({ item }))}
+                  {filteredMenu.map(item => (
+                    <div key={item._id}>
+                      {renderMenuItemCard({ item })}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -1279,6 +1330,11 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
           <button className="w-9 h-9 flex items-center justify-center rounded-lg text-slate-500">
             <Settings size={18} />
           </button>
+          {isReadOnly && isHistoryView && (
+            <button onClick={() => setShowDeleteModal(true)} className="w-9 h-9 flex items-center justify-center rounded-lg text-red-500 bg-red-50 border border-red-100 ml-1">
+              <Trash2 size={18} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -1451,7 +1507,11 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
               {cartItems.map(item => {
                 const menuItem = menuItems.find(m => item.menuId === m._id || item.menuId.startsWith(m._id));
                 if (!menuItem) return null;
-                return renderMenuItemCard({ item: menuItem, overrideQty: item.qty });
+                return (
+                  <div key={item.menuId}>
+                    {renderMenuItemCard({ item: menuItem, overrideQty: item.qty })}
+                  </div>
+                );
               })}
             </div>
           </div>
@@ -1579,6 +1639,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
 
       {/* Modals */}
       {showDiscardModal && renderDiscardModal()}
+      {showDeleteModal && renderDeleteModal()}
       {selectedItemForVars && renderVariationsModal({ item: selectedItemForVars, onClose: () => setSelectedItemForVars(null) })}
       {showTransferModal && renderTransferModal()}
 
