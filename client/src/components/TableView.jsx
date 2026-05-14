@@ -71,6 +71,8 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   const [paymentType, setPaymentType] = useState('Paid');
   const [guestNote, setGuestNote] = useState('');
   const [paymentMode, setPaymentMode] = useState('Cash');
+  const [cashAmount, setCashAmount] = useState(0);
+  const [onlineAmount, setOnlineAmount] = useState(0);
   const [selectedItemForVars, setSelectedItemForVars] = useState(null);
   // Mobile screens: 'menu' | 'cart'
   const [mobileScreen, setMobileScreen] = useState(initialScreen || 'menu');
@@ -610,6 +612,8 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
       paymentType,
       guestNote: paymentType === 'Guest' ? guestNote : '',
       paymentMode,
+      cashAmount,
+      onlineAmount,
       timestamp: new Date().toLocaleString('en-IN'),
     };
   };
@@ -658,7 +662,9 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
       await axios.patch(`/api/orders/${oid}/status`, {
         status: 'Paid', paymentType,
         guestNote: paymentType === 'Guest' ? guestNote : '',
-        paymentMode: paymentType === 'Guest' ? 'Guest' : paymentMode,
+        paymentMode: paymentType === 'Guest' ? 'Guest' : (paymentMode === 'Split' ? 'Split' : (paymentMode === 'Cash' ? 'Cash' : 'Online')),
+        cashAmount: paymentMode === 'Split' ? Number(cashAmount) : (paymentMode === 'Cash' ? bill.total : 0),
+        onlineAmount: paymentMode === 'Split' ? Number(onlineAmount) : (paymentMode === 'Cash' ? 0 : bill.total),
         customerPhone: phone.length >= 10 ? phone : ''
       });
       if (hasWA) window.open(`https://wa.me/91${phone}?text=${encodeURIComponent(waMessage(bill))}`, '_blank');
@@ -802,8 +808,8 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   const activeTotal = totalOf(activeSub, activeTaxes);
   const cartItemCount = activeAllItems.reduce((s, i) => s + i.qty, 0);
 
-  // Payment modes for cart screen - matching screenshot exactly
-  const paymentModes = ['Cash', 'UPI', 'PhonePe', 'Google Pay'];
+  // Payment modes for cart screen - simplified
+  const paymentModes = ['Cash', 'UPI', 'Split'];
 
   // ── Variations modal ──────────────────────────────────────────────────────────────────────
   const renderVariationsModal = ({ item, onClose }) => {
@@ -1262,13 +1268,48 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                     <input type="tel" value={phoneOf(currentPartId)} onChange={e => setPartPhones(prev => ({ ...prev, [currentPartId]: e.target.value }))} placeholder="Mobile (optional)"
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 pl-9 pr-3 outline-none text-xs text-slate-700 placeholder:text-slate-400 focus:border-[#ff5a36] transition-colors" maxLength={10} />
                   </div>
-                  {!isReadOnly && !isWaiter && (
-                    <div className="flex bg-slate-100 p-0.5 rounded-full relative overflow-hidden shadow-inner">
-                      <div className={cn("absolute top-0.5 bottom-0.5 w-[calc(50%-2px)] rounded-full shadow-sm bg-emerald-500 transition-all duration-300", paymentMode === 'Online' ? "translate-x-0" : "translate-x-[calc(100%+4px)]")} />
-                      <button onClick={() => setPaymentMode('Online')} className={cn("flex-1 py-2 text-[10px] font-bold uppercase tracking-wide relative z-10 rounded-full transition-colors", paymentMode === 'Online' ? "text-white" : "text-slate-400")}>Online</button>
-                      <button onClick={() => setPaymentMode('Cash')} className={cn("flex-1 py-2 text-[10px] font-bold uppercase tracking-wide relative z-10 rounded-full transition-colors", paymentMode === 'Cash' ? "text-white" : "text-slate-400")}>Cash</button>
+                    <div className="flex flex-col gap-2">
+                      <div className="flex bg-slate-100 p-0.5 rounded-full relative overflow-hidden shadow-inner">
+                        <div className={cn("absolute top-0.5 bottom-0.5 w-[calc(33.33%-2px)] rounded-full shadow-sm bg-emerald-500 transition-all duration-300", 
+                          paymentMode === 'UPI' || paymentMode === 'Online' ? "translate-x-0" : 
+                          paymentMode === 'Cash' ? "translate-x-[calc(100%+2px)]" : 
+                          "translate-x-[calc(200%+4px)]")} />
+                        <button onClick={() => { setPaymentMode('UPI'); setOnlineAmount(activeTotal); setCashAmount(0); }} className={cn("flex-1 py-2 text-[10px] font-bold uppercase tracking-wide relative z-10 rounded-full transition-colors", (paymentMode === 'UPI' || paymentMode === 'Online') ? "text-white" : "text-slate-400")}>UPI</button>
+                        <button onClick={() => { setPaymentMode('Cash'); setCashAmount(activeTotal); setOnlineAmount(0); }} className={cn("flex-1 py-2 text-[10px] font-bold uppercase tracking-wide relative z-10 rounded-full transition-colors", paymentMode === 'Cash' ? "text-white" : "text-slate-400")}>Cash</button>
+                        <button onClick={() => { setPaymentMode('Split'); setCashAmount(Math.floor(activeTotal/2)); setOnlineAmount(activeTotal - Math.floor(activeTotal/2)); }} className={cn("flex-1 py-2 text-[10px] font-bold uppercase tracking-wide relative z-10 rounded-full transition-colors", paymentMode === 'Split' ? "text-white" : "text-slate-400")}>Split</button>
+                      </div>
+                      
+                      {paymentMode === 'Split' && (
+                        <div className="flex gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                          <div className="flex-1">
+                            <label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">Cash</label>
+                            <input 
+                              type="number" 
+                              value={cashAmount} 
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setCashAmount(val);
+                                setOnlineAmount(Math.max(0, activeTotal - val));
+                              }}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold outline-none focus:border-emerald-500"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">Online</label>
+                            <input 
+                              type="number" 
+                              value={onlineAmount} 
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setOnlineAmount(val);
+                                setCashAmount(Math.max(0, activeTotal - val));
+                              }}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold outline-none focus:border-emerald-500"
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
                   {!isReadOnly && !isWaiter ? (
                     <button
                       onClick={() => handleSettle(currentPartId, 'none')}
@@ -1479,6 +1520,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   // ── MOBILE CART SCREEN ─────────────────────────────────────────────────────────────────────
   const renderMobileCartScreen = () => {
     const bill = buildBill(currentPartId);
+    const activeTotal = bill.total;
     const cartItems = activeAllItems;
 
     return (
@@ -1564,11 +1606,16 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
           {/* Payment Type card */}
           <div className="mx-4 mb-3 rounded-2xl border border-slate-200 bg-white px-4 py-4">
             <p className="text-[14px] font-semibold text-slate-800 mb-3">Payment Type</p>
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-2 flex-wrap mb-4">
               {paymentModes.map(mode => (
                 <button
                   key={mode}
-                  onClick={() => setPaymentMode(mode)}
+                  onClick={() => {
+                    setPaymentMode(mode);
+                    if (mode === 'Cash') { setCashAmount(activeTotal); setOnlineAmount(0); }
+                    else if (mode === 'Split') { setCashAmount(Math.floor(activeTotal/2)); setOnlineAmount(activeTotal - Math.floor(activeTotal/2)); }
+                    else { setOnlineAmount(activeTotal); setCashAmount(0); }
+                  }}
                   className={cn(
                     'px-4 py-2 rounded-full text-[13px] font-semibold border transition-all',
                     paymentMode === mode
@@ -1580,6 +1627,37 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                 </button>
               ))}
             </div>
+
+            {paymentMode === 'Split' && (
+              <div className="flex gap-3 animate-in fade-in slide-in-from-top-2 duration-200 p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                <div className="flex-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase mb-1.5 block">Cash Amt</label>
+                  <input 
+                    type="number" 
+                    value={cashAmount} 
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setCashAmount(val);
+                      setOnlineAmount(Math.max(0, activeTotal - val));
+                    }}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[15px] font-black text-slate-800 outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase mb-1.5 block">Online Amt</label>
+                  <input 
+                    type="number" 
+                    value={onlineAmount} 
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setOnlineAmount(val);
+                      setCashAmount(Math.max(0, activeTotal - val));
+                    }}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[15px] font-black text-slate-800 outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Bill Details card */}

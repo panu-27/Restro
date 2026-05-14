@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
-import { LayoutGrid, ShoppingBag, History, Settings, LogOut, User, BarChart3, Clock, ChevronDown, MoreVertical, HelpCircle, Utensils, BookOpen, LineChart, Grid, Key, X, Loader2, Package, Plus, Cookie, LayoutDashboard, Menu, Mic } from 'lucide-react';
+import { LayoutGrid, ShoppingBag, History, Settings, LogOut, User, BarChart3, Clock, ChevronDown, MoreVertical, HelpCircle, Utensils, BookOpen, LineChart, Grid, Key, X, Loader2, Package, Plus, Cookie, LayoutDashboard, Menu, Mic, Table2, Armchair, ChefHat, Coffee, ChartNoAxesColumnIncreasing } from 'lucide-react';
 import TableGrid from './components/TableGrid';
 import TableView from './components/TableView';
 import POSInterface from './components/POSInterface';
@@ -526,7 +526,7 @@ function App() {
 
       {/* ── Mobile Bottom Nav ───────────────────────────────────────────────────────── */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-[110] overflow-hidden" style={{ background: '#ffffff' }}>
-        <nav className="flex items-center h-[64px] w-full pb-3">
+        <nav className="flex items-center h-[74px] w-full ">
 
           {/* Left: Home, Items */}
           <div className="flex flex-1 justify-around items-center">
@@ -535,7 +535,7 @@ function App() {
               className="flex flex-col items-center gap-[3px] active:scale-95 transition-transform"
             >
               <Cookie
-                size={22}
+                size={20}
                 strokeWidth={activeTab === 'dashboard' ? 2 : 1.6}
                 color={activeTab === 'dashboard' ? '#3B82F6' : 'rgba(0,0,0,0.4)'}
               />
@@ -551,8 +551,8 @@ function App() {
               onClick={() => handleTabChange('tables')}
               className="flex flex-col items-center gap-[3px] active:scale-95 transition-transform"
             >
-              <Grid
-                size={22}
+              <Armchair
+                size={20}
                 strokeWidth={activeTab === 'tables' ? 2 : 1.6}
                 color={activeTab === 'tables' ? '#3B82F6' : 'rgba(0,0,0,0.4)'}
               />
@@ -583,7 +583,7 @@ function App() {
               className="flex flex-col items-center gap-[3px] active:scale-95 transition-transform"
             >
               <ShoppingBag
-                size={22}
+                size={20}
                 strokeWidth={activeTab === 'pos' ? 2 : 1.6}
                 color={activeTab === 'pos' ? '#3B82F6' : 'rgba(0,0,0,0.4)'}
               />
@@ -599,8 +599,8 @@ function App() {
               onClick={() => handleTabChange('sales')}
               className="flex flex-col items-center gap-[3px] active:scale-95 transition-transform"
             >
-              <BarChart3
-                size={22}
+              <ChartNoAxesColumnIncreasing
+                size={20}
                 strokeWidth={activeTab === 'sales' ? 2 : 1.6}
                 color={activeTab === 'sales' ? '#3B82F6' : 'rgba(0,0,0,0.4)'}
               />
@@ -624,7 +624,7 @@ function App() {
               marginBottom: '8px'
             }}
           >
-            <Menu size={24} strokeWidth={2} color="#fff" />
+            <Menu size={22} strokeWidth={2} color="#fff" />
           </button>
 
         </nav>

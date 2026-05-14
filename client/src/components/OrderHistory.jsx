@@ -54,7 +54,7 @@ const OrderHistory = ({ onOrderClick }) => {
     <div className="min-h-screen bg-white pb-32 animate-in fade-in duration-700 font-sans">
 
       {/* ── Header ─────────────────────────────────────────────────── */}
-      <header className="px-5 pt-6 pb-4 bg-white border-b border-slate-50">
+      <header className="sticky top-0 z-30 px-5 pt-6 pb-4 bg-white/90 backdrop-blur-md border-b border-slate-100">
         <div className="flex items-start justify-between mb-5">
           <div>
             <h1 className="text-[17px] font-bold text-slate-900">Order History</h1>

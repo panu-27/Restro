@@ -318,7 +318,7 @@ const SalesReport = () => {
     return (salesData.dailyBreakdown || [])
       .map(d => ({
         label: new Date(d.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }),
-        orders: d.orders, dineIn: d.dineIn, parcel: d.parcel, total: d.total,
+        orders: d.orders, dineIn: d.dineIn, parcel: d.parcel, cash: d.cash || 0, online: d.online || 0, total: d.total,
         rawDate: d.date
       }))
       .sort((a, b) => b.rawDate.localeCompare(a.rawDate));
@@ -450,6 +450,51 @@ const SalesReport = () => {
               <span className="text-[13px] font-black uppercase tracking-widest" style={{ color: BLUE }}>View Order Reports</span>
               <ChevronRight size={15} style={{ color: BLUE }} strokeWidth={3} />
             </button>
+          </div>
+        </div>
+
+        {/* ── COLLECTION BREAKDOWN ── */}
+        <div className="mt-6">
+          <SectionLabel>Collection Breakdown</SectionLabel>
+          <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+            <div className="grid grid-cols-2">
+              <div className="p-5 border-r border-slate-100">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Physical Currency Total</p>
+                </div>
+                <p className="text-[20px] font-black text-slate-900">{fmt(salesData?.totalCash)}</p>
+                <p className="text-[11px] font-bold text-slate-400 mt-1">Cash in Hand</p>
+              </div>
+              <div className="p-5">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-2 h-2 rounded-full bg-blue-500" />
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">UPI Total</p>
+                </div>
+                <p className="text-[20px] font-black text-slate-900">{fmt(salesData?.totalOnline)}</p>
+                <p className="text-[11px] font-bold text-slate-400 mt-1">Digital Collection</p>
+              </div>
+            </div>
+            <div className="px-5 pb-5">
+              <div className="h-2 bg-slate-100 rounded-full overflow-hidden flex">
+                <div 
+                  className="h-full bg-emerald-500 transition-all duration-1000" 
+                  style={{ width: `${(salesData?.totalCash / (salesData?.settledRevenue || 1)) * 100}%` }} 
+                />
+                <div 
+                  className="h-full bg-blue-500 transition-all duration-1000" 
+                  style={{ width: `${(salesData?.totalOnline / (salesData?.settledRevenue || 1)) * 100}%` }} 
+                />
+              </div>
+              <div className="flex justify-between mt-2">
+                <p className="text-[9px] font-black text-emerald-600 uppercase tracking-tighter">
+                  {Math.round((salesData?.totalCash / (salesData?.settledRevenue || 1)) * 100)}% Cash
+                </p>
+                <p className="text-[9px] font-black text-blue-600 uppercase tracking-tighter">
+                  {Math.round((salesData?.totalOnline / (salesData?.settledRevenue || 1)) * 100)}% Online
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -684,6 +729,23 @@ const SalesReport = () => {
                     <div className="flex flex-col text-right">
                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Parcel</span>
                       <span className="text-[13px] font-bold text-slate-700">{fmt(row.parcel)}</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 pt-3 mt-3 border-t border-slate-50 border-dashed">
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      <div>
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Cash</p>
+                        <p className="text-[12px] font-black text-slate-800">{fmt(row.cash)}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 justify-end">
+                      <div className="text-right">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Online</p>
+                        <p className="text-[12px] font-black text-slate-800">{fmt(row.online)}</p>
+                      </div>
+                      <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
                     </div>
                   </div>
                 </div>

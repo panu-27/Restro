@@ -24,7 +24,9 @@ const orderSchema = new mongoose.Schema({
   taxBreakdown: [{ name: String, percentage: Number, amount: Number }], // Individual tax lines
   totalAmount: { type: Number, required: true, default: 0 }, // Final amount after tax
   paymentType: { type: String, enum: ['Paid', 'Guest'], default: 'Paid' },
-  paymentMode: { type: String, enum: ['Cash', 'Online'], default: 'Online' },
+  paymentMode: { type: String, enum: ['Cash', 'Online', 'Split'], default: 'Online' },
+  cashAmount: { type: Number, default: 0 },
+  onlineAmount: { type: Number, default: 0 },
   guestNote: { type: String, default: '' },
   status: { type: String, enum: ['Pending', 'Served', 'Paid', 'Cancelled'], default: 'Pending' },
   currentRound: { type: Number, default: 1 }, // Track which round we're on

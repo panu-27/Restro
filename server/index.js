@@ -815,12 +815,14 @@ app.patch('/api/orders/:orderId/items/:itemId/serve', auth, async (req, res) => 
 
 app.patch('/api/orders/:id/status', auth, async (req, res) => {
   try {
-    const { status, customerPhone, paymentMode, paymentType, guestNote } = req.body;
+    const { status, customerPhone, paymentMode, paymentType, guestNote, cashAmount, onlineAmount } = req.body;
     const updateData = { status };
     if (customerPhone) updateData.customerPhone = customerPhone;
     if (paymentMode) updateData.paymentMode = paymentMode;
     if (paymentType) updateData.paymentType = paymentType;
     if (guestNote !== undefined) updateData.guestNote = guestNote;
+    if (cashAmount !== undefined) updateData.cashAmount = cashAmount;
+    if (onlineAmount !== undefined) updateData.onlineAmount = onlineAmount;
     
     const order = await Order.findByIdAndUpdate(req.params.id, updateData, { new: true });
     if (!order) return res.status(404).json({ error: 'Order not found' });
@@ -1186,13 +1188,41 @@ app.get('/api/analytics/sales', auth, async (req, res) => {
       createdAt: { $gte: prevStart, $lte: prevEnd }
     });
 
-    const paidOrders = orders.filter(o => o.status === 'Paid');
-    const unpaidOrders = orders.filter(o => o.status !== 'Paid');
-    const guestOrders = orders.filter(o => o.paymentType === 'Guest');
+    const paidOrders = orders.filter(o => (o.status || '').toLowerCase() === 'paid');
+    const unpaidOrders = orders.filter(o => (o.status || '').toLowerCase() !== 'paid');
+    const guestOrders = orders.filter(o => (o.paymentType || '').toLowerCase() === 'guest');
 
     const totalRevenue = orders.reduce((sum, o) => sum + o.totalAmount, 0);
     const settledRevenue = paidOrders.reduce((sum, o) => sum + o.totalAmount, 0);
     const unpaidRevenue = unpaidOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+
+    const totalCash = paidOrders.reduce((sum, orderDoc) => {
+      const o = orderDoc.toObject ? orderDoc.toObject() : orderDoc;
+      const mode = (o.paymentMode || '').toLowerCase();
+      const total = Number(o.totalAmount || 0);
+      const cash = Number(o.cashAmount || 0);
+
+      if (mode === 'cash') return sum + total;
+      if (mode === 'split') {
+        return sum + cash;
+      }
+      return sum;
+    }, 0);
+
+    const totalOnline = paidOrders.reduce((sum, orderDoc) => {
+      const o = orderDoc.toObject ? orderDoc.toObject() : orderDoc;
+      const mode = (o.paymentMode || '').toLowerCase();
+      const total = Number(o.totalAmount || 0);
+      const cash = Number(o.cashAmount || 0);
+      const online = Number(o.onlineAmount || 0);
+
+      if (mode === 'split') {
+        if (cash + online === 0) return sum + total;
+        return sum + online;
+      }
+      if (mode !== 'cash' && mode !== 'guest' && mode !== '') return sum + total;
+      return sum;
+    }, 0);
     
     const prevTotalRevenue = prevOrders.reduce((sum, o) => sum + o.totalAmount, 0);
     const prevTotalOrders = prevOrders.length;
@@ -1235,17 +1265,34 @@ app.get('/api/analytics/sales', auth, async (req, res) => {
         const d = new Date(end);
         d.setDate(d.getDate() - i);
         const dayStr = d.toISOString().split('T')[0];
-        dailyMap[dayStr] = { date: dayStr, orders: 0, dineIn: 0, parcel: 0, total: 0, avgOrder: 0 };
+        dailyMap[dayStr] = { date: dayStr, orders: 0, dineIn: 0, parcel: 0, cash: 0, online: 0, total: 0, avgOrder: 0 };
       }
     }
     
-    orders.forEach(o => {
+    orders.forEach(orderDoc => {
+      const o = orderDoc.toObject ? orderDoc.toObject() : orderDoc;
       const day = new Date(o.createdAt).toISOString().split('T')[0];
-      if (!dailyMap[day]) dailyMap[day] = { date: day, orders: 0, dineIn: 0, parcel: 0, total: 0, avgOrder: 0 };
+      if (!dailyMap[day]) dailyMap[day] = { date: day, orders: 0, dineIn: 0, parcel: 0, cash: 0, online: 0, total: 0, avgOrder: 0 };
+      
+      const isPaid = (o.status || '').toLowerCase() === 'paid';
+      const mode = (o.paymentMode || '').toLowerCase();
+
       dailyMap[day].orders++;
       dailyMap[day].total += o.totalAmount;
+      
       if (o.orderType === 'Dine-in') dailyMap[day].dineIn += o.totalAmount;
       else dailyMap[day].parcel += o.totalAmount;
+
+      if (isPaid) {
+        if (mode === 'cash') dailyMap[day].cash += Number(o.totalAmount || 0);
+        else if (mode === 'split') {
+          dailyMap[day].cash += Number(o.cashAmount || 0);
+          dailyMap[day].online += Number(o.onlineAmount || 0);
+        }
+        else if (mode !== 'guest' && mode !== '') {
+          dailyMap[day].online += Number(o.totalAmount || 0);
+        }
+      }
     });
 
     Object.values(dailyMap).forEach(d => { d.avgOrder = d.orders > 0 ? Math.round(d.total / d.orders) : 0; });
@@ -1276,6 +1323,8 @@ app.get('/api/analytics/sales', auth, async (req, res) => {
       totalRevenue,
       settledRevenue,
       unpaidRevenue,
+      totalCash,
+      totalOnline,
       prevTotalRevenue,
       prevTotalOrders,
       totalOrders: orders.length,

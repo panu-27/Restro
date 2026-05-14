@@ -96,7 +96,7 @@ export const DashboardView = ({ activeOrders = [], tableCount = 10, onTabChange,
     <div className="flex flex-col min-h-full bg-white pb-32">
 
       {/* ── Top Header ── */}
-      <div className="flex items-center justify-between px-5 pt-5 pb-4">
+      <div className="sticky top-0 z-30 flex items-center justify-between px-5 pt-5 pb-4 bg-white/90 backdrop-blur-md border-b border-slate-100">
         <button
           className="flex items-center gap-1.5"
           onClick={() => onTabChange && onTabChange('settings')}
