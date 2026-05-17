@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import {
   ChevronDown, ChevronRight, ArrowLeft, Download,
   Calendar, Trophy, X, Search, Activity, Users, History,
   Package, Utensils, BarChart3, IndianRupee, ShoppingBag,
-  TrendingUp, AlertCircle, FileText, Box, ImageIcon
+  TrendingUp, AlertCircle, FileText, Box, ImageIcon, SlidersHorizontal, ListFilter
 } from 'lucide-react';
 
 /* ─── utils ─── */
@@ -54,7 +55,7 @@ const PillToggle = ({ options, value, onChange }) => (
 const OutlinedTab = ({ options, value, onChange }) => (
   <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
     {options.map(o => (
-      <button key={o.id} onClick={() => onChange(o.id)}
+      <button key={o.id} onClick={() => { onChange(o.id); }}
         className={cn(
           'px-4 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap',
           value === o.id
@@ -68,18 +69,41 @@ const OutlinedTab = ({ options, value, onChange }) => (
 );
 
 /* matches dashboard detail screen back header */
-const ScreenHeader = ({ title, onBack, right }) => (
-  <header className="bg-white px-5 pt-6 pb-5 border-b border-slate-100 sticky top-0 z-20">
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-3">
-        <button onClick={onBack}
-          className="w-9 h-9 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center active:scale-90 transition-transform">
-          <ArrowLeft size={18} className="text-slate-600" />
-        </button>
-        <h1 className="text-[17px] font-bold text-slate-900 uppercase tracking-tight">{title}</h1>
+const ScreenHeader = ({ title, subtitle, onBack, right, filterContent, showFilters, onToggleFilters, activeFilterLabel, searchBar }) => (
+  <header className="sticky top-0 z-30 px-5 pt-6 pb-4 bg-white/90 backdrop-blur-md border-b border-slate-100">
+    <div className="flex items-start justify-between mb-5">
+      <div className="flex items-start gap-3">
+        <div>
+          <h1 className="text-[17px] font-bold text-slate-900">{title}</h1>
+        </div>
       </div>
-      {right}
+      <div className="flex flex-col items-end gap-2">
+        <div className="flex items-center gap-2">
+          {right}
+          <button
+            onClick={onToggleFilters}
+            className={cn(
+              "w-9 h-9 rounded-xl flex items-center justify-center transition-all border",
+              showFilters ? "bg-slate-900 border-slate-900 text-white shadow-lg" : "bg-white border-slate-200 text-slate-500 shadow-sm"
+            )}
+          >
+            {showFilters ? <X size={18} /> : <SlidersHorizontal size={18} />}
+          </button>
+        </div>
+      </div>
     </div>
+    
+    {searchBar && (
+      <div className="mb-4">
+        {searchBar}
+      </div>
+    )}
+
+    {showFilters && (
+      <div className="animate-in slide-in-from-top-4 duration-300">
+        {filterContent}
+      </div>
+    )}
   </header>
 );
 
@@ -250,8 +274,25 @@ const BreakdownTable = ({ rows, total }) => (
    MAIN
 ════════════════════════════════════════════════════════════════ */
 const SalesReport = () => {
-  const [screen, setScreen] = useState('overview');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const screen = searchParams.get('report') || 'overview';
+  const selectedItemId = searchParams.get('itemId');
+
+  const setScreen = (s, id = null) => {
+    const newParams = new URLSearchParams(searchParams);
+    if (s === 'overview') {
+      newParams.delete('report');
+      newParams.delete('itemId');
+    } else {
+      newParams.set('report', s);
+      if (id) newParams.set('itemId', id);
+      else newParams.delete('itemId');
+    }
+    setSearchParams(newParams);
+  };
+
   const [period, setPeriod] = useState('week');
+  const [showFilters, setShowFilters] = useState(false);
   const [loading, setLoading] = useState(true);
   const [salesData, setSalesData] = useState(null);
   const [stockTab, setStockTab] = useState('low');
@@ -260,8 +301,8 @@ const SalesReport = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
-  const [selectedItem, setSelectedItem] = useState(null);
-  const [csvOpen, setCsvOpen] = useState(false);
+  const csvOpen = false; // Simplified for brevity or keep if needed
+  const [csvOpenState, setCsvOpenState] = useState(false);
   const csvRef = useRef(null);
 
   useEffect(() => {
@@ -270,7 +311,7 @@ const SalesReport = () => {
   }, [period, customFrom, customTo]);
 
   useEffect(() => {
-    const h = (e) => { if (csvRef.current && !csvRef.current.contains(e.target)) setCsvOpen(false); };
+    const h = (e) => { if (csvRef.current && !csvRef.current.contains(e.target)) setCsvOpenState(false); };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, []);
@@ -287,7 +328,7 @@ const SalesReport = () => {
   };
 
   const handleExport = async (p, from, to) => {
-    setCsvOpen(false);
+    setCsvOpenState(false);
     try {
       let url = `/api/analytics/export?period=${p}`;
       if (p === 'custom' && from && to) url += `&from=${from}&to=${to}`;
@@ -324,6 +365,12 @@ const SalesReport = () => {
       .sort((a, b) => b.rawDate.localeCompare(a.rawDate));
   }, [salesData, period]);
 
+  const selectedItem = useMemo(() => {
+    if (!selectedItemId || !salesData) return null;
+    const items = salesData.allItemsSold || salesData.topItems || [];
+    return items.find(i => i._id === selectedItemId);
+  }, [selectedItemId, salesData]);
+
   const periodOptions = [
     { id: 'today', label: 'Today' },
     { id: 'week', label: 'Week' },
@@ -332,22 +379,6 @@ const SalesReport = () => {
   ];
 
   const periodLabel = periodOptions.find(o => o.id === period)?.label || 'Period';
-
-  /* ── shared filter bar (used in sub-screens) ── */
-  const FilterBar = () => (
-    <div className="px-5 py-4 border-b border-slate-100">
-      <OutlinedTab options={periodOptions} value={period} onChange={setPeriod} />
-      {period === 'custom' && (
-        <div className="flex items-center gap-2 mt-3">
-          <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-            className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-[12px] font-bold text-slate-700 outline-none focus:border-[#4B6FFF]" />
-          <span className="text-slate-300 font-bold">–</span>
-          <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-            className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-[12px] font-bold text-slate-700 outline-none focus:border-[#4B6FFF]" />
-        </div>
-      )}
-    </div>
-  );
 
   /* ── Skeleton ── */
   if (loading && screen === 'overview') return (
@@ -370,47 +401,69 @@ const SalesReport = () => {
     <div className="min-h-screen bg-white pb-32 font-sans">
 
       {/* Header — identical structure to DashboardView top header */}
-      <header className="px-5 pt-6 pb-4 bg-white border-b border-slate-100 sticky top-0 z-10">
+      <header className="px-5 pt-6 pb-4 bg-white border-b border-slate-100 sticky top-0 z-30 shadow-sm">
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-[17px] font-bold text-slate-900">Business Overview</h1>
-
-          {/* Export CSV — small inline button like dashboard settings button */}
-          <div className="relative" ref={csvRef}>
-            <button onClick={() => setCsvOpen(o => !o)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-[12px] font-bold text-slate-600 active:scale-95 transition-transform shadow-sm">
-              <Download size={14} style={{ color: BLUE }} />
-              Export
-              <ChevronDown size={12} className="text-slate-400"
-                style={{ transform: csvOpen ? 'rotate(180deg)' : 'none', transition: '0.2s' }} />
+          <div>
+            <h1 className="text-[17px] font-bold text-slate-900">Business Overview</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={cn(
+                "px-3 py-1.5 rounded-xl flex items-center gap-2 transition-all border text-[11px] font-black uppercase tracking-widest",
+                showFilters ? "bg-slate-900 border-slate-900 text-white" : "bg-white border-slate-200 text-slate-500 shadow-sm"
+              )}
+            >
+              <SlidersHorizontal size={14} />
+              {showFilters ? 'Close' : periodOptions.find(p => p.id === period)?.label || 'Filters'}
             </button>
-            {csvOpen && (
-              <div className="absolute right-0 top-full mt-2 w-44 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden z-50">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-4 py-3 border-b border-slate-50">Download</p>
-                {[{ id: 'today', label: 'Today' }, { id: 'week', label: 'This Week' }, { id: 'month', label: 'This Month' }].map(p => (
-                  <button key={p.id} onClick={() => handleExport(p.id)}
-                    className="w-full flex items-center justify-between px-4 py-3 text-[13px] font-bold text-slate-700 hover:bg-slate-50 active:bg-slate-100 text-left transition-colors">
-                    {p.label}
-                    <Download size={11} className="text-slate-300" />
-                  </button>
-                ))}
-              </div>
-            )}
+
+            {/* Export CSV — small inline button like dashboard settings button */}
+            <div className="relative" ref={csvRef}>
+              <button onClick={() => setCsvOpenState(o => !o)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-[11px] font-black uppercase tracking-widest text-slate-600 active:scale-95 transition-transform shadow-sm">
+                <Download size={14} style={{ color: BLUE }} />
+                CSV
+              </button>
+              {csvOpenState && (
+                <div className="absolute right-0 top-full mt-2 w-44 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden z-50 animate-in slide-in-from-top-2 duration-200">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-4 py-3 border-b border-slate-50">Download</p>
+                  {[{ id: 'today', label: 'Today' }, { id: 'week', label: 'This Week' }, { id: 'month', label: 'This Month' }].map(p => (
+                    <button key={p.id} onClick={() => handleExport(p.id)}
+                      className="w-full flex items-center justify-between px-4 py-3 text-[13px] font-bold text-slate-700 hover:bg-slate-50 active:bg-slate-100 text-left transition-colors">
+                      {p.label}
+                      <Download size={11} className="text-slate-300" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Period toggle — same as dashboard's "week / month" bg-slate-50 pill */}
-        <div className="flex items-center gap-3 overflow-x-auto no-scrollbar">
-          <PillToggle options={periodOptions} value={period} onChange={setPeriod} />
-          {period === 'custom' && (
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-                className="border border-slate-200 rounded-xl px-3 py-1.5 text-[12px] font-bold text-slate-700 outline-none focus:border-[#4B6FFF]" />
-              <span className="text-slate-300 font-bold text-sm">–</span>
-              <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-                className="border border-slate-200 rounded-xl px-3 py-1.5 text-[12px] font-bold text-slate-700 outline-none focus:border-[#4B6FFF]" />
+        {showFilters && (
+          <div className="mt-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 animate-in slide-in-from-top-2 duration-300">
+            <div className="flex flex-col gap-4">
+              <PillToggle
+                options={periodOptions}
+                value={period}
+                onChange={(val) => {
+                  setPeriod(val);
+                  if (val !== 'custom') setShowFilters(false);
+                }}
+              />
+              {period === 'custom' && (
+                <div className="flex items-center gap-2">
+                  <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                    className="flex-1 bg-white border border-slate-200 rounded-xl px-4 py-3 text-[13px] font-bold text-slate-700 outline-none focus:border-[#4B6FFF]" />
+                  <span className="text-slate-300 font-bold">–</span>
+                  <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+                    className="flex-1 bg-white border border-slate-200 rounded-xl px-4 py-3 text-[13px] font-bold text-slate-700 outline-none focus:border-[#4B6FFF]" />
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </header>
 
       <div className="px-5">
@@ -447,7 +500,7 @@ const SalesReport = () => {
             </div>
             <button onClick={() => setScreen('orders')}
               className="w-full flex items-center justify-end gap-1.5 px-4 py-3.5 border-t border-slate-100 active:bg-slate-50 transition-colors">
-              <span className="text-[13px] font-black uppercase tracking-widest" style={{ color: BLUE }}>View Order Reports</span>
+              <span className="text-[13px] font-black uppercase tracking-widest" style={{ color: BLUE }}>View Sales Report</span>
               <ChevronRight size={15} style={{ color: BLUE }} strokeWidth={3} />
             </button>
           </div>
@@ -461,7 +514,7 @@ const SalesReport = () => {
               <div className="p-5 border-r border-slate-100">
                 <div className="flex items-center gap-2 mb-2">
                   <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Physical Currency Total</p>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Cash Total</p>
                 </div>
                 <p className="text-[20px] font-black text-slate-900">{fmt(salesData?.totalCash)}</p>
                 <p className="text-[11px] font-bold text-slate-400 mt-1">Cash in Hand</p>
@@ -597,7 +650,7 @@ const SalesReport = () => {
                     const pct = (item.revenue / (salesData.topItems[0]?.revenue || 1)) * 100;
                     return (
                       <div key={i}
-                        onClick={() => { setSelectedItem(item); setScreen('item_detail'); }}
+                        onClick={() => { setScreen('item_detail', item._id); }}
                         className="flex items-center gap-4 px-4 py-4 hover:bg-slate-50/60 transition-colors cursor-pointer">
                         <div className="w-14 h-14 rounded-xl bg-slate-50 border border-slate-100 overflow-hidden shrink-0 flex items-center justify-center">
                           {item.image ? (
@@ -667,29 +720,58 @@ const SalesReport = () => {
   if (screen === 'orders') return (
     <div className="min-h-screen bg-white pb-32 animate-in fade-in duration-500">
       <ScreenHeader
-        title="Order Reports"
+        title="Sales Report"
+        subtitle="Daily Registry"
         onBack={() => setScreen('overview')}
+        showFilters={showFilters}
+        onToggleFilters={() => setShowFilters(!showFilters)}
+        activeFilterLabel={`${periodOptions.find(p => p.id === period)?.label || 'Today'} Overview`}
+        searchBar={
+          <div className="relative group w-full">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#4B6FFF] transition-colors" size={16} />
+            <input
+              type="text"
+              placeholder="Search date (e.g. 13 May, Monday)..."
+              className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:bg-white focus:border-[#4B6FFF] focus:ring-4 focus:ring-[#4B6FFF]/10 transition-all text-[15px] text-slate-700 placeholder:text-slate-400 font-medium"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+        }
+        filterContent={
+          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 mb-4">
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center gap-3 overflow-x-auto no-scrollbar">
+                <PillToggle
+                  options={periodOptions}
+                  value={period}
+                  onChange={(val) => {
+                    setPeriod(val);
+                    if (val !== 'custom') setShowFilters(false);
+                  }}
+                />
+              </div>
+              {period === 'custom' && (
+                <div className="flex items-center gap-2 animate-in fade-in zoom-in-95 duration-200">
+                  <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                    className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-[12px] font-bold text-slate-700 outline-none focus:border-[#4B6FFF]" />
+                  <span className="text-slate-300 font-bold">–</span>
+                  <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+                    className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-[12px] font-bold text-slate-700 outline-none focus:border-[#4B6FFF]" />
+                </div>
+              )}
+            </div>
+          </div>
+        }
         right={
           <button onClick={() => handleExport(period)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-[12px] font-bold text-slate-600 active:scale-95 transition-transform">
-            <Download size={14} style={{ color: BLUE }} /> CSV
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-[11px] font-black uppercase tracking-widest text-slate-600 active:scale-95 transition-transform bg-white shadow-sm">
+            <Download size={13} style={{ color: BLUE }} /> CSV
           </button>
         }
       />
-      <FilterBar />
 
       <div className="px-5 mt-6">
-        {/* Search Bar matching OrderHistory */}
-        <div className="relative group mb-6">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#4B6FFF] transition-colors" size={16} />
-          <input
-            type="text"
-            placeholder="Search date (e.g. 13 May, Monday)..."
-            className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:bg-white focus:border-[#4B6FFF] focus:ring-4 focus:ring-[#4B6FFF]/10 transition-all text-[15px] text-slate-700 placeholder:text-slate-400 font-medium"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
 
         <div className="flex items-center gap-2.5 mb-5">
           <div className="w-8 h-8 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-500">
@@ -774,21 +856,53 @@ const SalesReport = () => {
   ════════════════════════════════════════════════════════════ */
   if (screen === 'items') return (
     <div className="min-h-screen bg-white pb-32 animate-in fade-in duration-500">
-      <ScreenHeader title="Item Reports" onBack={() => setScreen('overview')} />
-      <FilterBar />
+      <ScreenHeader
+        title="Item Reports"
+        subtitle="Performance Registry"
+        onBack={() => setScreen('overview')}
+        showFilters={showFilters}
+        onToggleFilters={() => setShowFilters(!showFilters)}
+        activeFilterLabel={`${periodOptions.find(p => p.id === period)?.label || 'Today'} Performance`}
+        searchBar={
+          <div className="relative group w-full">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#4B6FFF] transition-colors" size={16} />
+            <input
+              type="text"
+              placeholder="Search items by name..."
+              className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:bg-white focus:border-[#4B6FFF] focus:ring-4 focus:ring-[#4B6FFF]/10 transition-all text-[15px] text-slate-700 placeholder:text-slate-400 font-medium"
+              value={itemSearch}
+              onChange={(e) => setItemSearch(e.target.value)}
+            />
+          </div>
+        }
+        filterContent={
+          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 mb-4">
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center gap-3 overflow-x-auto no-scrollbar">
+                <PillToggle
+                  options={periodOptions}
+                  value={period}
+                  onChange={(val) => {
+                    setPeriod(val);
+                    if (val !== 'custom') setShowFilters(false);
+                  }}
+                />
+              </div>
+              {period === 'custom' && (
+                <div className="flex items-center gap-2 animate-in fade-in zoom-in-95 duration-200">
+                  <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                    className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-[12px] font-bold text-slate-700 outline-none focus:border-[#4B6FFF]" />
+                  <span className="text-slate-300 font-bold">–</span>
+                  <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+                    className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-[12px] font-bold text-slate-700 outline-none focus:border-[#4B6FFF]" />
+                </div>
+              )}
+            </div>
+          </div>
+        }
+      />
 
       <div className="px-5 mt-6">
-        {/* Search Bar matching OrderHistory */}
-        <div className="relative group mb-6">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#4B6FFF] transition-colors" size={16} />
-          <input
-            type="text"
-            placeholder="Search items by name..."
-            className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:bg-white focus:border-[#4B6FFF] focus:ring-4 focus:ring-[#4B6FFF]/10 transition-all text-[15px] text-slate-700 placeholder:text-slate-400 font-medium"
-            value={itemSearch}
-            onChange={(e) => setItemSearch(e.target.value)}
-          />
-        </div>
 
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-2.5">
@@ -813,7 +927,7 @@ const SalesReport = () => {
               .filter(item => item.name.toLowerCase().includes(itemSearch.toLowerCase()))
               .map((item, i) => (
                 <div key={i}
-                  onClick={() => { setSelectedItem(item); setScreen('item_detail'); }}
+                  onClick={() => { setScreen('item_detail', item._id); }}
                   className="group flex gap-4 bg-white border border-slate-200 rounded-2xl p-4 transition-all hover:border-[#4B6FFF] hover:shadow-lg hover:shadow-[#4B6FFF]/5 cursor-pointer">
                   <div className="w-16 h-16 rounded-xl bg-slate-50 border border-slate-100 overflow-hidden shrink-0 flex items-center justify-center">
                     {item.image ? (

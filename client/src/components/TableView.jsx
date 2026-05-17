@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import {
   X, Plus, Minus, Search, Printer, MessageCircle,
@@ -6,7 +7,7 @@ import {
   Coffee, IceCream, Utensils, ArrowLeft, ArrowRight, CreditCard, Users, SplitSquareHorizontal,
   Package, CheckCircle2, History, Mic, MicOff, User,
   Settings, ClipboardList, ChevronRight, Image as ImageIcon, ChevronDown, ChevronUp,
-  ChevronLeft, Trash2
+  ChevronLeft, Trash2, Check, Pizza, Box, Columns, Lock, LayoutGrid
 } from 'lucide-react';
 
 // ——— Utility ———————————————————————————————————————————————————————————————————————————————————
@@ -30,9 +31,9 @@ const categoryIcon = (cat) => {
 };
 
 let _counter = 1;
-const newPart = (n) => ({
+const newPart = (n, tableId) => ({
   id: `part-${Date.now()}-${_counter++}`,
-  label: `Part ${n}`,
+  label: tableId ? (n === 1 ? tableId : `${tableId}-Part${n}`) : `Parcel #${n}`,
   rounds: [],
 });
 
@@ -48,22 +49,36 @@ const VegDot = ({ category }) => {
 };
 
 // ── Main Component ────────────────────────────────────────────────────────────────────────────
-const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onClose, onCheckoutComplete, initialScreen }) => {
+const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onClose, onCheckoutComplete, initialScreen, showToast, onScreenChange }) => {
 
   // ── State ─────────────────────────────────────────────────────────────────────────────────
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const [parts, setParts] = useState([]);
   const [activePart, setActivePart] = useState(0);
   const [roundItems, setRoundItems] = useState({});
+  const [isEditingCart, setIsEditingCart] = useState(false);
+  const [tempRoundItems, setTempRoundItems] = useState({});
+  const [tempParts, setTempParts] = useState([]);
   const [partPhones, setPartPhones] = useState({});
   const [partOrderIds, setPartOrderIds] = useState({});
   const [partOrderNumbers, setPartOrderNumbers] = useState({});
   const [roundMsg, setRoundMsg] = useState(false);
   const [isDispatching, setIsDispatching] = useState(false);
   const [search, setSearch] = useState('');
+  const [categoryLayout, setCategoryLayout] = useState(() => localStorage.getItem('restro_category_layout') || 'horizontal'); // 'horizontal' or 'vertical'
+  const [tempCategoryLayout, setTempCategoryLayout] = useState(categoryLayout);
+  const [tempVariations, setTempVariations] = useState({}); // { varId: qty }
+
+  // Persist category layout
+  useEffect(() => {
+    localStorage.setItem('restro_category_layout', categoryLayout);
+  }, [categoryLayout]);
+  const [showSettings, setShowSettings] = useState(false);
   const [catFilter, setCatFilter] = useState('All');
-  const [settled, setSettled] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [showTransferModal, setShowTransferModal] = useState(false);
   const [availableTables, setAvailableTables] = useState([]);
   const [selectedTransferTable, setSelectedTransferTable] = useState('');
   const [isListening, setIsListening] = useState(false);
@@ -73,16 +88,128 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   const [paymentMode, setPaymentMode] = useState('Cash');
   const [cashAmount, setCashAmount] = useState(0);
   const [onlineAmount, setOnlineAmount] = useState(0);
+
+  // Derived modal/state from URL
+  const modalParam = searchParams.get('modal');
+  const itemIdParam = searchParams.get('itemId');
+  const isCreatingParcel = !tableId && !orderId;
+  const orderType = tableId ? 'Dine-in' : 'Parcel';
+
   const [selectedItemForVars, setSelectedItemForVars] = useState(null);
-  // Mobile screens: 'menu' | 'cart'
-  const [mobileScreen, setMobileScreen] = useState(initialScreen || 'menu');
+  const [showDiscardModal, setShowDiscardModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+
+  // Sync state with URL params
+  useEffect(() => {
+    if (modalParam === 'variations' && itemIdParam) {
+      const item = menuItems.find(i => i._id === itemIdParam);
+      if (item) {
+        setSelectedItemForVars(item);
+        const initial = {};
+        const currentItems = isEditingCart ? allItemsForPart(currentPartIdRef.current) : (roundItems[currentPartIdRef.current] || []);
+        (item.variations || []).forEach(v => {
+          const varId = `${item._id}_${v.name}`;
+          const ex = currentItems.find(it => it.menuId === varId);
+          initial[varId] = ex ? ex.qty : 0;
+        });
+        setTempVariations(initial);
+      }
+    } else {
+      setSelectedItemForVars(null);
+      setTempVariations({});
+    }
+
+    setShowDiscardModal(modalParam === 'discard');
+    setShowDeleteModal(modalParam === 'delete');
+    setShowTransferModal(modalParam === 'transfer');
+  }, [modalParam, itemIdParam, menuItems, isEditingCart]);
+
+  // ── Navigation level refs (used inside popstate — avoids stale closures) ──
+  const activeModalRef = useRef(modalParam);
+  activeModalRef.current = modalParam;
+  const activeScreenRef = useRef(initialScreen || 'menu');
+  // Keep in sync with URL-driven initialScreen
+  useEffect(() => { activeScreenRef.current = initialScreen || 'menu'; }, [initialScreen]);
+
+  // Keep a ref in sync with roundItems so the popstate handler can always read fresh values
+  const roundItemsRef = useRef(roundItems);
+  useEffect(() => { roundItemsRef.current = roundItems; }, [roundItems]);
+  const tableIdRef = useRef(tableId);
+  tableIdRef.current = tableId;
+
+  // Sync unsaved status with window for global interceptors
+  useEffect(() => {
+    const hasUnsaved = Object.values(roundItems).some(items => items.length > 0);
+    window.restro_has_unsaved = hasUnsaved;
+    return () => { window.restro_has_unsaved = false; };
+  }, [roundItems]);
+
+  // ── URL helpers (push a real history entry so back works) ──────────────────
+  const _buildUrl = (overrides = {}) => {
+    const p = new URLSearchParams();
+    if (tableId) p.set('tableId', tableId);
+    else if (orderId) p.set('orderId', orderId);
+    else p.set('newParcel', 'true');
+    const screen = overrides.screen ?? activeScreenRef.current;
+    p.set('screen', screen);
+    if (overrides.modal) p.set('modal', overrides.modal);
+    if (overrides.itemId) p.set('itemId', overrides.itemId);
+    return `${window.location.pathname}?${p.toString()}`;
+  };
+
+  const openModal = (name, extra = {}) => {
+    activeModalRef.current = name;
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('modal', name);
+    if (extra.itemId) newParams.set('itemId', extra.itemId);
+    // Push natively via React Router
+    setSearchParams(newParams);
+  };
+
+  const closeModals = () => {
+    activeModalRef.current = null;
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('screen', 'menu'); // Always force screen=menu on modal close!
+    newParams.delete('modal');
+    newParams.delete('itemId');
+    // We replace here because UI-based closing shouldn't leave dead modal history entries,
+    // though native back button will pop them naturally.
+    setSearchParams(newParams, { replace: true });
+    setShowTransferModal(false);
+    setShowDiscardModal(false);
+    setShowDeleteModal(false);
+    setSelectedItemForVars(null);
+    setTempVariations({});
+    setShowSettings(false);
+  };
+
+  const openVariations = (item) => {
+    activeModalRef.current = 'variations';
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('modal', 'variations');
+    newParams.set('itemId', item._id);
+    setSearchParams(newParams);
+  };
+
+  // mobileScreen is driven entirely by URL (initialScreen prop from App.jsx)
+  const mobileScreen = searchParams.get('screen') || 'menu';
+
+  useEffect(() => {
+    if (mobileScreen === 'cart') {
+      setTempRoundItems(JSON.parse(JSON.stringify(roundItems)));
+      setTempParts(JSON.parse(JSON.stringify(parts)));
+      setIsEditingCart(true);
+    } else {
+      setIsEditingCart(false);
+    }
+  }, [mobileScreen]);
+
   // Customer details expand
   const [customerDetailsOpen, setCustomerDetailsOpen] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
-  const [showDiscardModal, setShowDiscardModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const handleDeleteOrder = async () => {
     if (!orderId) return;
@@ -96,40 +223,107 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   };
 
   const handleBack = () => {
-    const hasUnsaved = Object.values(roundItems).some(items => items.length > 0);
-    if (hasUnsaved) {
-      setShowDiscardModal(true);
-    } else {
-      onClose();
-    }
+    window.history.back();
   };
 
   const billRef = useRef(null);
   const isSavingRef = useRef(false);
 
+  // ── BACK BUTTON HANDLING ─────────────────────────────────────────────────────
+  //
+  // Mobile Native Protective History Stack:
+  // - We listen to popstate to detect back-presses
+  // - If back is pressed on a modal (settings, variations, transfer, etc.), we return normally to base menu/cart
+  // - If back is pressed on the Unsaved popup (modal=discard), we just close the popup and stay on screen
+  // - If back is pressed on screen=menu or screen=cart and a draft exists, we trap the event and open the Unsaved popup
+  // - Otherwise, we exit TableView normally
+  //
+  const previousUrlRef = useRef(window.location.search);
+
+  useEffect(() => {
+    previousUrlRef.current = window.location.search;
+  }, [searchParams]);
+
+  useEffect(() => {
+    // 1. Push the tvTrap state so we always have a history item to intercept exit
+    if (!window.history.state?.tvTrap) {
+      window.history.pushState({ tvTrap: true }, '', window.location.href);
+    }
+
+    const handlePopState = (e) => {
+      const currentParams = new URLSearchParams(window.location.search);
+      const currentScreen = currentParams.get('screen') || 'menu';
+      const currentModal = currentParams.get('modal');
+
+      const activeModal = activeModalRef.current;
+      const activeScreen = activeScreenRef.current;
+
+      // Case A & B: If any modal was open and user pressed back -> force screen to menu, closing the modal
+      if (activeModal && !currentModal) {
+        const newParams = new URLSearchParams(window.location.search);
+        newParams.set('screen', 'menu');
+        newParams.delete('modal');
+        newParams.delete('itemId');
+        
+        // Sync browser location first
+        window.history.replaceState(window.history.state, '', `${window.location.pathname}?${newParams.toString()}`);
+        setSearchParams(newParams, { replace: true });
+        return;
+      }
+
+      // Case C: If user was on base menu or cart and pressed back (attempting to exit TableView)
+      const wasBaseUrl = (activeScreen === 'menu' || activeScreen === 'cart') && !activeModal;
+
+      if (!e.state?.tvTrap) {
+        // They popped our trap! They are attempting to exit TableView
+        if (activeModal) {
+          // Resist back press when any modal is open!
+          // Re-push the trap state and force screen to menu
+          window.history.pushState({ tvTrap: true }, '', window.location.href);
+          const newParams = new URLSearchParams(window.location.search);
+          newParams.set('screen', 'menu');
+          newParams.delete('modal');
+          newParams.delete('itemId');
+          window.history.replaceState({ tvTrap: true }, '', `${window.location.pathname}?${newParams.toString()}`);
+          setSearchParams(newParams, { replace: true });
+        } else if (wasBaseUrl) {
+          // Exit TableView cleanly directly to /tables (discarding changes by default since drafts aren't saved!)
+          if (tableIdRef.current) {
+            try {
+              localStorage.removeItem(`restro_draft_${tableIdRef.current}`);
+            } catch (_) { }
+          }
+          setRoundItems({});
+          onClose();
+          navigate('/tables', { replace: true });
+        }
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Draft cache ──────────────────────────────────────────────────────────────────────────
   const draftKey = tableId ? `restro_draft_${tableId}` : null;
 
   const saveDraft = (currentParts, roundItemsMap) => {
-    if (!draftKey) return;
-    try {
-      const snapshot = currentParts.map(p => ({
-        label: p.label,
-        items: roundItemsMap[p.id] || []
-      }));
-      const hasAny = snapshot.some(s => s.items.length > 0);
-      if (hasAny) localStorage.setItem(draftKey, JSON.stringify(snapshot));
-      else localStorage.removeItem(draftKey);
-    } catch { }
+    // Completely disable localStorage draft saving
+    return;
   };
 
   const loadDraft = () => {
-    if (!draftKey) return null;
-    try { const v = localStorage.getItem(draftKey); return v ? JSON.parse(v) : null; }
-    catch { return null; }
+    // Completely disable loading drafts from localStorage
+    return null;
   };
 
-  const clearDraft = () => { if (draftKey) { try { localStorage.removeItem(draftKey); } catch { } } };
+  const clearDraft = () => {
+    if (draftKey) {
+      try {
+        localStorage.removeItem(draftKey);
+      } catch { }
+    }
+  };
 
   const applyDraft = (loadedParts, draft) => {
     if (!draft || !draft.length) return;
@@ -152,16 +346,31 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
           active = [res.data];
         } else if (tableId) {
           const res = await axios.get('/api/orders/active');
-          active = res.data.filter(o => o.tableId === tableId && o.orderType === 'Dine-in');
+          active = res.data
+            .filter(o => o.tableId === tableId && o.orderType === 'Dine-in')
+            .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)); // Oldest first
         }
 
         if (active.length > 0) {
-          const loadedParts = active.map((o, idx) => ({
-            id: `part-${o._id}`,
-            label: o.partLabel || (o.orderType === 'Parcel' ? o.customerName || `Parcel #${idx + 1}` : `Part ${idx + 1}`),
-            rounds: [{ roundNumber: 1, items: o.items.map(i => ({ ...i, qty: i.quantity })) }],
-            status: o.status
-          }));
+          const loadedParts = active.map((o, idx) => {
+            const expectedLabel = active.length === 1
+              ? (tableId || o.tableId)
+              : `${tableId}-Part${idx + 1}`;
+
+            // Self-healing: if DB label is wrong/duplicate/generic, sync the correct one
+            if (active.length > 1 && o.partLabel !== expectedLabel) {
+              axios.patch(`/api/orders/${o._id}/label`, { partLabel: expectedLabel }).catch(console.error);
+            }
+
+            return {
+              id: `part-${o._id}`,
+              label: o.orderType === 'Parcel'
+                ? (o.customerName || o.partLabel || `Parcel #${idx + 1}`)
+                : expectedLabel,
+              rounds: [{ roundNumber: 1, items: o.items.map(i => ({ ...i, qty: i.quantity })) }],
+              status: o.status
+            };
+          });
           const orderIds = {};
           const orderNumbers = {};
           const initPhones = {};
@@ -181,13 +390,12 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
           setPartPhones(initPhones);
           applyDraft(loadedParts, loadDraft());
         } else {
-          const p1 = newPart(1);
-          if (tableId) p1.label = `Table ${tableId.replace('Table ', '')}`;
+          const p1 = newPart(1, tableId);
           const draft = loadDraft();
           if (draft && draft.length > 1) {
             const restoredParts = draft.map((d, i) => {
-              const p = newPart(i + 1);
-              p.label = d.label || `Part ${i + 1}`;
+              const p = newPart(i + 1, tableId);
+              p.label = d.label || (tableId ? `${tableId}-Part${i + 1}` : `Parcel #${i + 1}`);
               return p;
             });
             setParts(restoredParts);
@@ -199,7 +407,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
         }
       } catch (err) {
         console.error('Failed to init TableView:', err);
-        setParts([newPart(1)]);
+        setParts([newPart(1, tableId)]);
       } finally {
         setLoading(false);
       }
@@ -244,11 +452,38 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   const menuItemsRef = useRef(menuItems);
   currentPartIdRef.current = currentPartId;
   menuItemsRef.current = menuItems;
-  const currentRoundOf = (partId) => roundItems[partId] || [];
+
+  const hasUnsavedCartChanges = () => {
+    if (!isEditingCart) return false;
+    const pid = currentPartIdRef.current;
+    if (!pid) return false;
+
+    // Compare unsaved items
+    const currentUnsaved = JSON.stringify(roundItems[pid] || []);
+    const tempUnsaved = JSON.stringify(tempRoundItems[pid] || []);
+    if (currentUnsaved !== tempUnsaved) return true;
+
+    // Compare saved items (parts rounds)
+    const currentPart = parts.find(p => p.id === pid);
+    const tempPart = tempParts.find(p => p.id === pid);
+    const currentPartRounds = JSON.stringify(currentPart?.rounds || []);
+    const tempPartRounds = JSON.stringify(tempPart?.rounds || []);
+    if (currentPartRounds !== tempPartRounds) return true;
+
+    return false;
+  };
+
+  const hasUnsavedCartChangesRef = useRef(false);
+  useEffect(() => {
+    hasUnsavedCartChangesRef.current = hasUnsavedCartChanges();
+  });
+
+  const currentRoundOf = (partId) => (isEditingCart ? tempRoundItems[partId] : roundItems[partId]) || [];
   const phoneOf = (partId) => partPhones[partId] || '';
 
   const allItemsForPart = (partId) => {
-    const part = parts.find(p => p.id === partId);
+    const currentParts = isEditingCart ? tempParts : parts;
+    const part = currentParts.find(p => p.id === partId);
     if (!part) return [];
     const mergedMap = new Map();
     part.rounds.flatMap(r => r.items).forEach(si => {
@@ -271,24 +506,90 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
 
   // ── Part operations ───────────────────────────────────────────────────────────────────────
   const addPart = () => {
-    const n = parts.length + 1;
-    const p = newPart(n);
+    // If we're splitting for the first time, rename Part 1 to T1-Part1
+    if (parts.length === 1 && tableId && !parts[0].label.includes('-Part')) {
+      const p1Id = partOrderIds[parts[0].id];
+      if (p1Id) {
+        axios.patch(`/api/orders/${p1Id}/label`, { partLabel: `${tableId}-Part1` }).catch(console.error);
+      }
+      setParts(prev => [
+        { ...prev[0], label: `${tableId}-Part1` },
+        newPart(2, tableId)
+      ]);
+      setActivePart(1);
+      return;
+    }
+
+    // Scan for highest number in all current labels
+    let maxNum = 0;
+    parts.forEach(p => {
+      const match = p.label.match(/Part\s*(\d+)/i) || p.label.match(/#\s*(\d+)/);
+      if (match) {
+        const n = parseInt(match[1]);
+        if (n > maxNum) maxNum = n;
+      }
+    });
+
+    // The next number must be higher than current parts count AND the highest label found
+    const nextNum = Math.max(parts.length, maxNum) + 1;
+    const p = newPart(nextNum, tableId);
     setParts(prev => [...prev, p]);
     setActivePart(parts.length);
   };
 
-  const removePart = (idx) => {
+  const removePart = async (idx) => {
     if (parts.length === 1) return;
-    setParts(prev => prev.filter((_, i) => i !== idx));
+    const targetPart = parts[idx];
+    const items = allItemsForPart(targetPart.id);
+    const unsaved = currentRoundOf(targetPart.id);
+
+    // If part has items (saved or unsaved), ask for confirmation
+    if (items.length > 0 || unsaved.length > 0) {
+      if (!window.confirm(`Are you sure you want to remove ${targetPart.label}? All items in this part will be lost.`)) {
+        return;
+      }
+    }
+
+    // If it's already a saved order, delete it from the backend
+    const oid = partOrderIds[targetPart.id];
+    if (oid) {
+      try {
+        await axios.delete(`/api/orders/${oid}`);
+      } catch (err) {
+        console.error('Failed to delete order from backend:', err);
+      }
+    }
+
+    const newParts = parts.filter((_, i) => i !== idx);
+
+    // If we're back to 1 part, rename it back to just the table name
+    if (newParts.length === 1 && tableId) {
+      const lastPart = newParts[0];
+      const lastOid = partOrderIds[lastPart.id];
+      if (lastOid) {
+        await axios.patch(`/api/orders/${lastOid}/label`, { partLabel: tableId }).catch(console.error);
+      }
+      newParts[0] = { ...lastPart, label: tableId };
+    }
+
+    setParts(newParts);
     setActivePart(prev => (prev >= idx && prev > 0 ? prev - 1 : prev));
   };
 
   // ── Cart operations ───────────────────────────────────────────────────────────────────────
   const addItem = (item) => updateQty(item._id, 1);
 
+  const updateRoundItemsState = (updater) => {
+    if (isEditingCart) {
+      setTempRoundItems(updater);
+    } else {
+      setRoundItems(updater);
+    }
+  };
+
   const addVariationItem = (item, variation) => {
     const varId = `${item._id}_${variation.name}`;
-    setRoundItems(prev => {
+    updateRoundItemsState(prev => {
       const list = [...(prev[currentPartId] || [])];
       const ex = list.find(i => i.menuId === varId);
       if (ex) return { ...prev, [currentPartId]: list.map(i => i.menuId === varId ? { ...i, qty: i.qty + 1 } : i) };
@@ -298,7 +599,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
 
   const removeVariationItem = (item, variation) => {
     const varId = `${item._id}_${variation.name}`;
-    setRoundItems(prev => {
+    updateRoundItemsState(prev => {
       const list = [...(prev[currentPartId] || [])];
       const ex = list.find(i => i.menuId === varId);
       if (!ex) return prev;
@@ -309,7 +610,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
 
   const updateQty = (menuId, delta) => {
     if (delta > 0) {
-      setRoundItems(prev => {
+      updateRoundItemsState(prev => {
         const list = [...(prev[currentPartId] || [])];
         const exIdx = list.findIndex(i => i.menuId === menuId);
         if (exIdx >= 0) {
@@ -323,10 +624,10 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
       return;
     }
 
-    const curRound = roundItems[currentPartId] || [];
+    const curRound = (isEditingCart ? tempRoundItems[currentPartId] : roundItems[currentPartId]) || [];
     const inCurrent = curRound.find(i => i.menuId === menuId);
     if (inCurrent) {
-      setRoundItems(prev => {
+      updateRoundItemsState(prev => {
         const list = (prev[currentPartId] || [])
           .map(i => i.menuId === menuId ? { ...i, qty: i.qty + delta } : i)
           .filter(i => i.qty > 0);
@@ -335,38 +636,64 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
       return;
     }
 
-    let finalRoundsForSync = null;
-    setParts(prev => {
-      const pIdx = prev.findIndex(x => x.id === currentPartId);
-      if (pIdx === -1) return prev;
-      const p = prev[pIdx];
-      const newRounds = p.rounds.map(r => ({ ...r, items: [...r.items] }));
-      let decremented = false;
-      for (let i = newRounds.length - 1; i >= 0; i--) {
-        const exIdx = newRounds[i].items.findIndex(x => x.menuId === menuId);
-        if (exIdx >= 0) {
-          const newItems = [...newRounds[i].items];
-          newItems[exIdx] = { ...newItems[exIdx], qty: newItems[exIdx].qty + delta };
-          if (newItems[exIdx].qty <= 0) newItems.splice(exIdx, 1);
-          newRounds[i].items = newItems;
-          decremented = true;
-          break;
+    if (isEditingCart) {
+      setTempParts(prev => {
+        const pIdx = prev.findIndex(x => x.id === currentPartId);
+        if (pIdx === -1) return prev;
+        const p = prev[pIdx];
+        const newRounds = p.rounds.map(r => ({ ...r, items: [...r.items] }));
+        let decremented = false;
+        for (let i = newRounds.length - 1; i >= 0; i--) {
+          const exIdx = newRounds[i].items.findIndex(x => x.menuId === menuId);
+          if (exIdx >= 0) {
+            const newItems = [...newRounds[i].items];
+            newItems[exIdx] = { ...newItems[exIdx], qty: newItems[exIdx].qty + delta };
+            if (newItems[exIdx].qty <= 0) newItems.splice(exIdx, 1);
+            newRounds[i].items = newItems;
+            decremented = true;
+            break;
+          }
         }
-      }
-      if (!decremented) return prev;
-      const finalRounds = newRounds.filter(r => r.items.length > 0);
-      finalRoundsForSync = finalRounds;
-      const newPrev = [...prev];
-      newPrev[pIdx] = { ...p, rounds: finalRounds };
-      return newPrev;
-    });
+        if (!decremented) return prev;
+        const finalRounds = newRounds.filter(r => r.items.length > 0);
+        const newPrev = [...prev];
+        newPrev[pIdx] = { ...p, rounds: finalRounds };
+        return newPrev;
+      });
+    } else {
+      let finalRoundsForSync = null;
+      setParts(prev => {
+        const pIdx = prev.findIndex(x => x.id === currentPartId);
+        if (pIdx === -1) return prev;
+        const p = prev[pIdx];
+        const newRounds = p.rounds.map(r => ({ ...r, items: [...r.items] }));
+        let decremented = false;
+        for (let i = newRounds.length - 1; i >= 0; i--) {
+          const exIdx = newRounds[i].items.findIndex(x => x.menuId === menuId);
+          if (exIdx >= 0) {
+            const newItems = [...newRounds[i].items];
+            newItems[exIdx] = { ...newItems[exIdx], qty: newItems[exIdx].qty + delta };
+            if (newItems[exIdx].qty <= 0) newItems.splice(exIdx, 1);
+            newRounds[i].items = newItems;
+            decremented = true;
+            break;
+          }
+        }
+        if (!decremented) return prev;
+        const finalRounds = newRounds.filter(r => r.items.length > 0);
+        finalRoundsForSync = finalRounds;
+        const newPrev = [...prev];
+        newPrev[pIdx] = { ...p, rounds: finalRounds };
+        return newPrev;
+      });
 
-    setTimeout(() => {
-      if (finalRoundsForSync && partOrderIds[currentPartId]) {
-        const flattenedItems = finalRoundsForSync.flatMap(r => r.items.map(i => ({ ...i, quantity: i.qty, round: r.roundNumber })));
-        axios.put(`/api/orders/${partOrderIds[currentPartId]}/items`, { items: flattenedItems }).catch(console.error);
-      }
-    }, 0);
+      setTimeout(() => {
+        if (finalRoundsForSync && partOrderIds[currentPartId]) {
+          const flattenedItems = finalRoundsForSync.flatMap(r => r.items.map(i => ({ ...i, quantity: i.qty, round: r.roundNumber })));
+          axios.put(`/api/orders/${partOrderIds[currentPartId]}/items`, { items: flattenedItems }).catch(console.error);
+        }
+      }, 0);
+    }
   };
 
   const saveRound = async (partId, options = {}) => {
@@ -430,15 +757,8 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
     }
     try {
       await axios.patch(`/api/orders/${oid}/transfer`, { newTableId: selectedTransferTable });
-      const idx = parts.findIndex(p => p.id === currentPartId);
-      const newParts = parts.filter(p => p.id !== currentPartId);
-      if (newParts.length === 0) {
-        onClose?.();
-      } else {
-        setParts(newParts);
-        setActivePart(Math.min(idx, newParts.length - 1));
-        setShowTransferModal(false);
-      }
+      // After transfer, always go back to the table grid as requested
+      onClose?.();
     } catch (err) {
       console.error('Transfer failed:', err);
       alert('Error transferring table.');
@@ -596,7 +916,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   // ── Bill / WA message builders ────────────────────────────────────────────────────────────
   const buildBill = (partId) => {
     const part = parts.find(p => p.id === partId);
-    const items = allItemsForPart(partId);
+    const items = allItemsForPart(partId).filter(i => i.qty > 0);
     const sub = subtotalOf(items);
     const txList = taxListOf(sub);
     const total = totalOf(sub, txList);
@@ -669,36 +989,135 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
       });
       if (hasWA) window.open(`https://wa.me/91${phone}?text=${encodeURIComponent(waMessage(bill))}`, '_blank');
       if (doPrint) window.print();
-      const idx = parts.findIndex(p => p.id === partId);
-      const newParts = parts.filter(p => p.id !== partId);
-      if (newParts.length === 0) {
-        setSettled(true);
-        setTimeout(() => { onCheckoutComplete?.(); onClose?.(); }, 1800);
-        return;
+      showToast?.('Settled', bill.orderNumber ? String(bill.orderNumber).padStart(4, '0') : '');
+      // If only 1 part remains, revert it to table name and sync to backend BEFORE completing
+      const remaining = parts.filter(p => p.id !== partId);
+      if (remaining.length === 1 && tableId) {
+        const lastPart = remaining[0];
+        const lastOid = partOrderIds[lastPart.id];
+        if (lastOid) {
+          await axios.patch(`/api/orders/${lastOid}/label`, { partLabel: tableId }).catch(console.error);
+        }
+        setParts([{ ...lastPart, label: tableId }]);
+      } else {
+        setParts(remaining);
       }
-      setParts(newParts);
-      setActivePart(Math.min(idx, newParts.length - 1));
+
+      onCheckoutComplete?.();
     } catch (err) {
       console.error('Settlement failed:', err);
       alert('Error finalizing payment on server.');
     }
   };
 
+  const handleSaveCartChanges = async (shouldNavigateToMenu = true) => {
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
+    try {
+      // Let's clean up tempParts to remove any qty === 0 items
+      const cleanedParts = tempParts.map(p => {
+        if (p.id !== currentPartId) return p;
+        return {
+          ...p,
+          rounds: p.rounds.map(r => ({
+            ...r,
+            items: r.items.filter(i => i.qty > 0)
+          })).filter(r => r.items.length > 0)
+        };
+      });
+
+      // Let's clean up tempRoundItems to remove any qty === 0 items
+      const cleanedRoundItemsMap = {
+        ...tempRoundItems,
+        [currentPartId]: (tempRoundItems[currentPartId] || []).filter(i => i.qty > 0)
+      };
+
+      // Check if the entire order is now empty (no items left across all parts)
+      const hasAnySavedItems = cleanedParts.some(p => p.rounds.some(r => r.items.some(i => i.qty > 0)));
+      const hasAnyUnsavedItems = Object.values(cleanedRoundItemsMap).some(list => list.some(i => i.qty > 0));
+      const hasAnyItemsLeft = hasAnySavedItems || hasAnyUnsavedItems;
+
+      if (!hasAnyItemsLeft) {
+        const oid = partOrderIds[currentPartId];
+        if (oid) {
+          await axios.delete(`/api/orders/${oid}`);
+        }
+        setParts([]);
+        setRoundItems({});
+        setIsEditingCart(false);
+        clearDraft();
+        if (shouldNavigateToMenu) {
+          navigate('/tables');
+        }
+        return;
+      }
+
+      // 1. Commit the parts state (decreased/deleted saved items) to backend
+      const part = cleanedParts.find(p => p.id === currentPartId);
+      const oid = partOrderIds[currentPartId];
+      if (part && oid) {
+        const flattenedItems = part.rounds.flatMap(r => r.items.map(i => ({ ...i, quantity: i.qty, round: r.roundNumber })));
+        await axios.put(`/api/orders/${oid}/items`, { items: flattenedItems });
+      }
+
+      // 2. Commit the new unsaved items (from tempRoundItems) to backend
+      const newUnsavedItems = cleanedRoundItemsMap[currentPartId] || [];
+      if (newUnsavedItems.length > 0) {
+        if (oid) {
+          await axios.patch(`/api/orders/${oid}/add-items`, { items: newUnsavedItems.map(i => ({ ...i, quantity: i.qty })) });
+        } else {
+          // If no order ID exists yet, saveRound will create a new order on the backend!
+          setRoundItems(cleanedRoundItemsMap);
+          setParts(cleanedParts);
+          const savedId = await saveRound(currentPartId, { closeAfterSave: false });
+          if (!savedId) throw new Error("Failed to create order");
+          setIsEditingCart(false);
+          if (shouldNavigateToMenu) {
+            navigate('/tables');
+          }
+          return;
+        }
+      }
+
+      // 3. Update real React state with our cleaned temp state
+      setParts(cleanedParts);
+      setRoundItems(prev => ({ ...prev, [currentPartId]: [] })); // Clear the unsaved items since they are saved!
+      setIsEditingCart(false);
+
+      // Save draft to localStorage (which is now empty for this table)
+      saveDraft(cleanedParts, { ...roundItems, [currentPartId]: [] });
+
+      if (shouldNavigateToMenu) {
+        navigate('/tables');
+      }
+
+      // Show success toast/message
+      setRoundMsg(true);
+      setTimeout(() => setRoundMsg(false), 2000);
+
+    } catch (err) {
+      console.error('Failed to save cart changes:', err);
+      alert('Failed to save changes. Please try again.');
+      throw err;
+    } finally {
+      isSavingRef.current = false;
+    }
+  };
+
   // Confirm & Save from cart screen
   const handleConfirmAndSave = async () => {
-    const unsaved = currentRoundOf(currentPartId);
-    let oid = partOrderIds[currentPartId];
-    if (unsaved.length > 0) {
-      const savedId = await saveRound(currentPartId);
-      if (savedId) oid = savedId;
-    }
-    if (!oid) { alert('No items to save.'); return; }
+    // Save changes first
+    await handleSaveCartChanges(false);
     // Settle with chosen paymentMode
     await handleSettle(currentPartId, 'none');
   };
 
   const handleKOTHold = async () => {
-    await saveRound(currentPartId, { closeAfterSave: true });
+    if (isEditingCart) {
+      await handleSaveCartChanges(true);
+    } else {
+      await saveRound(currentPartId, { closeAfterSave: true });
+    }
   };
 
   const handleKOTBill = async () => {
@@ -709,7 +1128,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
       if (savedId) oid = savedId;
     }
     if (!oid && activeAllItems.length === 0) { alert('No items added yet.'); return; }
-    setMobileScreen('cart');
+    onScreenChange?.('cart');
   };
 
   // ── Print area ────────────────────────────────────────────────────────────────────────────
@@ -771,6 +1190,31 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
     );
   };
 
+  // ── Derived for active part ────────────────────────────────────────────────────────────────
+  const activePartData = parts[activePart];
+  const isReadOnly = isHistoryView || activePartData?.status === 'Paid' || activePartData?.status === 'Cancelled';
+  const isWaiter = user?.role === 'Waiter';
+  const activeAllItems = activePartData ? allItemsForPart(activePartData.id) : [];
+  const activeCurrent = currentRoundOf(currentPartId);
+  const activeSub = subtotalOf(activeAllItems);
+  const activeTaxes = taxListOf(activeSub);
+  const activeTotal = totalOf(activeSub, activeTaxes);
+  const cartItemCount = activeAllItems.reduce((s, i) => s + i.qty, 0);
+
+  // Auto-adjust split or cash/online amounts when total cart value changes
+  useEffect(() => {
+    if (paymentMode === 'Cash') {
+      setCashAmount(activeTotal);
+      setOnlineAmount(0);
+    } else if (paymentMode === 'Split') {
+      setCashAmount(Math.floor(activeTotal / 2));
+      setOnlineAmount(activeTotal - Math.floor(activeTotal / 2));
+    } else {
+      setOnlineAmount(activeTotal);
+      setCashAmount(0);
+    }
+  }, [activeTotal, paymentMode]);
+
   // ── LOADING ───────────────────────────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -783,31 +1227,6 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
     );
   }
 
-  if (settled) {
-    return (
-      <div className="h-screen bg-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce">
-            <CheckCircle2 size={40} className="text-emerald-500" />
-          </div>
-          <h2 className="text-2xl font-black text-gray-900 mb-2">All settled! 🎉</h2>
-          <p className="text-gray-400">{tableId} is now free.</p>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Derived for active part ────────────────────────────────────────────────────────────────
-  const activePartData = parts[activePart];
-  const isReadOnly = isHistoryView || activePartData?.status === 'Paid' || activePartData?.status === 'Cancelled';
-  const isWaiter = user?.role === 'Waiter';
-  const activeAllItems = activePartData ? allItemsForPart(activePartData.id) : [];
-  const activeCurrent = currentRoundOf(currentPartId);
-  const activeSub = subtotalOf(activeAllItems);
-  const activeTaxes = taxListOf(activeSub);
-  const activeTotal = totalOf(activeSub, activeTaxes);
-  const cartItemCount = activeAllItems.reduce((s, i) => s + i.qty, 0);
-
   // Payment modes for cart screen - simplified
   const paymentModes = ['Cash', 'UPI', 'Split'];
 
@@ -815,80 +1234,203 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   const renderVariationsModal = ({ item, onClose }) => {
     if (!item) return null;
     return (
-      <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
-        <div className="bg-white rounded-t-3xl w-full max-w-lg p-6 pb-10" onClick={e => e.stopPropagation()}>
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="font-black text-slate-900 text-lg">{item.name}</p>
-              <p className="text-xs text-slate-400">Choose a variation</p>
+      <div className="fixed inset-0 z-[500] flex items-end justify-center bg-black/60 backdrop-blur-sm p-0" onClick={closeModals}>
+        <div className="bg-white rounded-t-2xl w-full flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[85vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+          {/* Header - Item Name focused */}
+          <div className="flex items-start gap-3 px-6 py-4 border-b border-slate-50 shrink-0">
+            <button onClick={closeModals} className="w-10 h-10 -ml-2 -mt-1.5 flex items-center justify-center text-slate-900 active:scale-95 transition-all">
+              <ChevronLeft size={24} strokeWidth={2.5} />
+            </button>
+            <h3 className="font-black text-slate-900 text-[18px] tracking-tight leading-snug">
+              {item.name} <span className="text-slate-400 font-bold">(Choose Options)</span>
+            </h3>
+          </div>
+
+          {/* List - Clean White UI */}
+          <div className="flex-1 overflow-y-auto px-4 py-6 bg-white no-scrollbar">
+            <div className="space-y-3">
+              {(item.variations || []).map(v => {
+                const varId = `${item._id}_${v.name}`;
+                const qty = tempVariations[varId] || 0;
+                return (
+                  <div key={v.name} className="flex items-center gap-3 p-3.5 rounded-2xl border border-slate-100 bg-white shadow-sm">
+                    {/* Left: Image */}
+                    <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-50 shrink-0 border border-slate-100">
+                      {item.image ? (
+                        <img src={item.image} alt={v.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-slate-200">
+                          <Utensils size={20} />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Center: Info */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[14px] font-black text-slate-900 leading-tight truncate">{v.name}</p>
+                      <p className="text-[12px] font-bold text-emerald-600 mt-1">₹{v.price}</p>
+                    </div>
+
+                    {/* Right: Controls */}
+                    <div className="flex items-center gap-2.5 bg-slate-50 p-1.5 rounded-xl shrink-0 border border-slate-100">
+                      <button
+                        onClick={() => {
+                          setTempVariations(prev => ({ ...prev, [varId]: Math.max(0, (prev[varId] || 0) - 1) }));
+                        }}
+                        disabled={qty === 0}
+                        className={cn(
+                          'w-8 h-8 flex items-center justify-center rounded-lg transition-all',
+                          qty === 0 ? 'text-slate-200' : 'bg-white text-slate-900 shadow-sm active:scale-90'
+                        )}
+                      >
+                        <Minus size={14} strokeWidth={3} />
+                      </button>
+                      <span className={cn('w-5 text-center text-[14px] font-black', qty > 0 ? 'text-slate-900' : 'text-slate-300')}>{qty}</span>
+                      <button
+                        onClick={() => {
+                          setTempVariations(prev => ({ ...prev, [varId]: (prev[varId] || 0) + 1 }));
+                        }}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg text-white bg-blue-600 shadow-md active:scale-90 transition-all"
+                      >
+                        <Plus size={14} strokeWidth={3} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"><X size={16} /></button>
           </div>
-          <div className="space-y-2">
-            {(item.variations || []).map(v => {
-              const varId = `${item._id}_${v.name}`;
-              const inCart = activeCurrent.find(i => i.menuId === varId);
-              const qty = inCart?.qty || 0;
-              return (
-                <div key={v.name} className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-xl border border-slate-100">
-                  <div>
-                    <p className="font-bold text-slate-800 text-sm">{item.name}</p>
-                    <p className="text-xs text-slate-500">{v.name} · ₹{v.price}</p>
-                  </div>
-                  <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
-                    <button onClick={() => removeVariationItem(item, v)} disabled={qty === 0}
-                      className={cn('w-7 h-7 flex items-center justify-center rounded-lg transition-all', qty === 0 ? 'opacity-30 cursor-not-allowed' : 'text-blue-600 hover:bg-blue-50')}>
-                      <Minus size={14} strokeWidth={3} />
-                    </button>
-                    <span className={cn('w-5 text-center text-sm font-black', qty > 0 ? 'text-slate-900' : 'text-slate-400')}>{qty}</span>
-                    <button onClick={() => addVariationItem(item, v)}
-                      className="w-7 h-7 flex items-center justify-center rounded-lg text-white bg-blue-600 shadow-sm active:scale-90 transition-all">
-                      <Plus size={14} strokeWidth={3} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+
+          {/* Footer - KOT Style Buttons */}
+          <div className="p-4 bg-white border-t border-slate-100 flex gap-3 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-8px_30px_rgba(0,0,0,0.04)]">
+            <button
+              onClick={closeModals}
+              className="flex-1 py-3.5 rounded-xl font-bold text-[13px] border border-slate-300 bg-white text-slate-800 active:scale-[0.97] transition-all tracking-wide shadow-sm"
+            >
+              Discard Changes
+            </button>
+            <button
+              onClick={() => {
+                if (isEditingCart) {
+                  // 1. Update tempRoundItems
+                  setTempRoundItems(prev => {
+                    const list = [...(prev[currentPartId] || [])];
+                    const filtered = list.filter(it => !it.menuId.startsWith(`${item._id}_`));
+
+                    const newItems = [];
+                    (item.variations || []).forEach(v => {
+                      const varId = `${item._id}_${v.name}`;
+                      const q = tempVariations[varId] || 0;
+
+                      // Check if it's a saved item
+                      const originalPart = parts.find(p => p.id === currentPartId);
+                      const isSaved = originalPart?.rounds.some(r => r.items.some(it => it.menuId === varId));
+
+                      if (!isSaved) {
+                        // For unsaved items, keep it even if q is 0 when isEditingCart is true
+                        newItems.push({ menuId: varId, name: `${item.name} (${v.name})`, price: v.price, qty: q });
+                      }
+                    });
+
+                    return { ...prev, [currentPartId]: [...filtered, ...newItems] };
+                  });
+
+                  // 2. Update tempParts
+                  setTempParts(prev => {
+                    return prev.map(p => {
+                      if (p.id !== currentPartId) return p;
+                      const newRounds = p.rounds.map(r => {
+                        const newItems = r.items.map(it => {
+                          if (it.menuId.startsWith(`${item._id}_`)) {
+                            const q = tempVariations[it.menuId] !== undefined ? tempVariations[it.menuId] : it.qty;
+                            return { ...it, qty: q };
+                          }
+                          return it;
+                        });
+                        return { ...r, items: newItems };
+                      });
+                      return { ...p, rounds: newRounds };
+                    });
+                  });
+                } else {
+                  // Apply all temp variations to the main roundItems
+                  setRoundItems(prev => {
+                    const list = [...(prev[currentPartId] || [])];
+                    // Filter out existing variation items for THIS parent item
+                    const filtered = list.filter(it => !it.menuId.startsWith(`${item._id}_`));
+
+                    // Add back new ones from tempVariations if qty > 0
+                    const newItems = [];
+                    (item.variations || []).forEach(v => {
+                      const varId = `${item._id}_${v.name}`;
+                      const q = tempVariations[varId] || 0;
+                      if (q > 0) {
+                        newItems.push({ menuId: varId, name: `${item.name} (${v.name})`, price: v.price, qty: q });
+                      }
+                    });
+
+                    return { ...prev, [currentPartId]: [...filtered, ...newItems] };
+                  });
+                }
+                closeModals();
+              }}
+              className="flex-1 py-3.5 rounded-xl font-bold text-[13px] text-white bg-blue-600 active:scale-[0.97] transition-all shadow-md shadow-blue-200 tracking-wide"
+            >
+              Save Selection
+            </button>
           </div>
-          <button onClick={onClose} className="mt-4 w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm">Done</button>
         </div>
       </div>
     );
   };
 
   const renderDiscardModal = () => (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-[28px] w-full max-w-[320px] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/60 backdrop-blur-sm p-0">
+      <div className="bg-white rounded-t-2xl w-full overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-300 pb-[env(safe-area-inset-bottom)]" onClick={e => e.stopPropagation()}>
+        {/* Grabber Handle */}
+        <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-1" />
+
         <div className="p-8 text-center">
           <div className="w-16 h-16 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-4">
             <ShoppingCart size={28} className="text-[#FF5A36]" />
           </div>
           <h3 className="text-[20px] font-black text-slate-900 mb-2">Unsaved Items!</h3>
-          <p className="text-[14px] text-slate-500 leading-relaxed">
-            You have items in your cart that aren't saved to KOT.
+          <p className="text-[14px] text-slate-500 leading-relaxed px-4">
+            You have items that aren't sent to kitchen. What would you like to do?
           </p>
         </div>
-        <div className="flex flex-col border-t border-slate-100">
+
+        {/* Footer */}
+        <div className="flex flex-col gap-2.5 p-6 border-t border-slate-100 bg-slate-50/50">
+          <div className="flex gap-2.5">
+            <button
+              onClick={() => {
+                setRoundItems({}); // Explicitly clear local unsaved state
+                clearDraft(); // Clear localStorage draft
+                onClose(); // Exit TableView completely
+              }}
+              className="flex-1 py-4 rounded-xl font-bold text-[14px] border border-red-200 bg-white text-red-500 active:scale-[0.98] transition-all"
+            >
+              Discard Unsaved
+            </button>
+            <button
+              onClick={() => {
+                closeModals();
+                handleKOTHold();
+                // If we were in cart, we might want to stay in TableView (menu) after save, 
+                // but handleKOTHold with closeAfterSave: true will close it. 
+                // That's usually what "KOT & Exit" implies.
+              }}
+              className="flex-1 py-4 rounded-xl font-bold text-[14px] border border-slate-300 bg-white text-slate-900 active:scale-[0.98] transition-all shadow-sm"
+            >
+              KOT & Exit
+            </button>
+          </div>
           <button
-            onClick={() => {
-              clearDraft();
-              onClose();
-            }}
-            className="w-full py-4 text-[15px] font-bold text-red-500 active:bg-red-50 transition-colors"
+            onClick={closeModals}
+            className="w-full py-4 rounded-xl font-bold text-[14px] text-white bg-slate-900 active:scale-[0.98] transition-all shadow-xl shadow-slate-200"
           >
-            Discard All
-          </button>
-          <button
-            onClick={onClose}
-            className="w-full py-4 text-[15px] font-bold text-slate-900 border-t border-slate-100 active:bg-slate-50 transition-colors"
-          >
-            Save as Draft
-          </button>
-          <button
-            onClick={() => setShowDiscardModal(false)}
-            className="w-full py-4 text-[15px] font-bold text-slate-400 border-t border-slate-100 active:bg-slate-50 transition-colors uppercase tracking-widest"
-          >
-            Cancel
+            Cancel (Keep Editing)
           </button>
         </div>
       </div>
@@ -896,8 +1438,8 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   );
 
   const renderDeleteModal = () => (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-[28px] w-full max-w-[320px] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/60 backdrop-blur-sm p-0" onClick={closeModals}>
+      <div className="bg-white rounded-t-2xl w-full overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-300" onClick={e => e.stopPropagation()}>
         <div className="p-8 text-center">
           <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
             <Trash2 size={28} className="text-red-500" />
@@ -915,7 +1457,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
             Yes, Delete it
           </button>
           <button
-            onClick={() => setShowDeleteModal(false)}
+            onClick={closeModals}
             className="w-full py-4 text-[15px] font-bold text-slate-400 border-t border-slate-100 active:bg-slate-50 transition-colors uppercase tracking-widest"
           >
             Cancel
@@ -926,6 +1468,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   );
 
   // ── Transfer Modal ────────────────────────────────────────────────────────────────────────
+
   const renderTransferModal = () => {
     // Group tables by area/section, exclude current table
     const otherTables = availableTables.filter(t => t.tableId !== tableId);
@@ -938,61 +1481,91 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
     const sectionNames = Object.keys(sections);
 
     return (
-      <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowTransferModal(false)}>
-        <div className="bg-white rounded-t-3xl w-full max-w-md flex flex-col" style={{ height: '75vh' }} onClick={e => e.stopPropagation()}>
-          {/* Handle */}
-          <div className="flex justify-center pt-3 pb-1 shrink-0">
-            <div className="w-10 h-1 bg-slate-200 rounded-full" />
+      <div className="fixed inset-0 z-[400] bg-white flex flex-col animate-in slide-in-from-bottom duration-300" onClick={e => e.stopPropagation()}>
+        {/* Header - Minimalist Style with Right-Aligned Table ID */}
+        <div className="flex items-center gap-2 px-3 h-16 border-b border-slate-50 shrink-0">
+          <button onClick={closeModals} className="w-10 h-10 flex items-center justify-center text-slate-900 active:scale-95 transition-all">
+            <ChevronLeft size={28} strokeWidth={2.5} />
+          </button>
+          <h3 className="font-black text-slate-900 text-[19px] tracking-tight ml-1">
+            Transfer Order
+          </h3>
+          <div className="flex-1" />
+          <div className="pr-3">
+            <span className="text-[19px] font-black text-blue-600 uppercase tracking-tight leading-none">{tableId || parts[activePart]?.label || 'Current'}</span>
           </div>
+        </div>
 
-          {/* Header */}
-          <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 shrink-0">
-            <div>
-              <p className="font-black text-slate-900 text-base">Transfer Table</p>
-              <p className="text-[11px] text-slate-400 mt-0.5">Move order from <span className="font-bold text-slate-600">{tableId}</span> to another table</p>
+        {/* Scrollable table list - Clean White UI with Black Text */}
+        <div className="flex-1 overflow-y-auto px-6 py-8 no-scrollbar bg-white">
+          {sectionNames.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-900">
+              <LayoutGrid size={48} strokeWidth={1} className="mb-4 opacity-10" />
+              <p className="text-sm font-black uppercase tracking-widest">No available tables</p>
             </div>
-            <button onClick={() => setShowTransferModal(false)} className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-500"><X size={16} /></button>
-          </div>
-
-          {/* Scrollable section list */}
-          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-            {sectionNames.length === 0 ? (
-              <p className="text-sm text-slate-400 text-center py-8">No other tables available</p>
-            ) : (
-              sectionNames.map(area => (
+          ) : (
+            <div className="max-w-4xl mx-auto w-full space-y-12 pb-20">
+              {sectionNames.map(area => (
                 <div key={area}>
-                  {/* Section label */}
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{area}</p>
-                  {/* Tables grid */}
-                  <div className="grid grid-cols-4 gap-2">
-                    {sections[area].map(t => (
-                      <button
-                        key={t._id || t.tableId}
-                        onClick={() => setSelectedTransferTable(t.tableId)}
-                        className={cn(
-                          'py-3 rounded-xl text-sm font-bold border transition-all',
-                          selectedTransferTable === t.tableId
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200'
-                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-300 hover:bg-blue-50'
-                        )}
-                      >
-                        {t.tableId}
-                      </button>
-                    ))}
+                  <div className="flex items-center gap-4 mb-6">
+                    <p className="text-[11px] font-black text-slate-900 uppercase tracking-[0.3em]">{area}</p>
+                    <div className="flex-1 h-px bg-slate-200" />
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
+                    {sections[area].map(t => {
+                      const isOccupied = t.status === 'Occupied';
+                      const isSelected = selectedTransferTable === t.tableId;
+                      const isSelf = t.tableId === tableId;
+
+                      return (
+                        <button
+                          key={t._id || t.tableId}
+                          onClick={() => !isSelf && setSelectedTransferTable(t.tableId)}
+                          disabled={isSelf}
+                          className={cn(
+                            "relative h-24 flex flex-col items-center justify-center rounded-2xl border-2 transition-all duration-300",
+                            isSelf
+                              ? "bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed opacity-50"
+                              : isSelected
+                                ? "bg-blue-600 border-blue-600 text-white shadow-xl shadow-blue-500/30 active:scale-95"
+                                : isOccupied
+                                  ? "bg-blue-50/50 border-blue-100 text-slate-900 hover:border-blue-400 hover:shadow-lg active:scale-95"
+                                  : "bg-white border-slate-100 text-slate-900 hover:border-blue-400 hover:shadow-lg active:scale-95"
+                          )}
+                        >
+                          <span className="text-2xl font-black tracking-tight">{t.tableId}</span>
+                          <span className={cn("text-[10px] font-black uppercase tracking-widest mt-1", isSelected ? "text-blue-100" : (isOccupied ? "text-blue-600" : "text-slate-400"))}>
+                            {isSelf ? "Current" : (isOccupied ? "Occupied" : "Empty")}
+                          </span>
+                          {isSelected && <div className="absolute -top-2 -right-2 w-7 h-7 bg-white text-blue-600 rounded-full flex items-center justify-center border-2 border-blue-600 shadow-lg animate-in zoom-in-50 duration-200"><Check size={14} strokeWidth={4} /></div>}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
-              ))
-            )}
-          </div>
+              ))}
+            </div>
+          )}
+        </div>
 
-          {/* Footer */}
-          <div className="px-5 py-4 border-t border-slate-100 shrink-0" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}>
+        {/* Footer - Sticky */}
+        <div className="p-4 bg-white border-t border-slate-100 flex gap-3 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-8px_30px_rgba(0,0,0,0.04)]">
+          <div className="max-w-xl mx-auto w-full flex gap-3">
             <button
-              onClick={handleTransfer}
-              disabled={!selectedTransferTable}
-              className="w-full py-3.5 bg-blue-600 text-white rounded-2xl font-bold text-sm disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-blue-200 transition-all active:scale-[0.98]"
+              onClick={closeModals}
+              className="flex-1 py-3 rounded-xl font-bold text-[13px] border border-slate-300 bg-white text-slate-800 active:scale-[0.97] transition-all tracking-wide shadow-sm"
             >
-              {selectedTransferTable ? `Transfer to ${selectedTransferTable}` : 'Select a table'}
+              Go Back
+            </button>
+            <button
+              onClick={() => handleTransfer(selectedTransferTable)}
+              disabled={!selectedTransferTable}
+              className={cn(
+                "flex-1 py-3 rounded-xl font-bold text-[13px] text-white bg-blue-600 active:scale-[0.97] transition-all shadow-md tracking-wide",
+                !selectedTransferTable ? "opacity-40 cursor-not-allowed" : "shadow-blue-200"
+              )}
+            >
+              Confirm Move
             </button>
           </div>
         </div>
@@ -1002,7 +1575,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
 
 
   // ── Menu Item Card — name outside, controls anchored bottom-right ─────────────────────────
-  const renderMenuItemCard = ({ item, overrideQty }) => {
+  const renderMenuItemCard = ({ item, overrideQty, key }) => {
     const hasVars = item.variations?.length >= 2;
     const isSingleVar = item.variations?.length === 1;
 
@@ -1020,20 +1593,20 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
     const handleAdd = (e) => {
       e?.stopPropagation();
       if (isReadOnly) return;
-      if (hasVars) setSelectedItemForVars(item);
+      if (hasVars) openVariations(item);
       else if (isSingleVar) addVariationItem(item, item.variations[0]);
       else addItem(item);
     };
     const handleRemove = (e) => {
       e?.stopPropagation();
       if (isReadOnly) return;
-      if (hasVars) setSelectedItemForVars(item);
+      if (hasVars) openVariations(item);
       else if (isSingleVar) removeVariationItem(item, item.variations[0]);
       else updateQty(item._id, -1);
     };
 
     return (
-      <div className="flex flex-col gap-1.5">
+      <div key={key} className="flex flex-col gap-1.5">
         {/* ── Card box — image only, no name inside ── */}
         <div
           className="relative rounded-2xl overflow-hidden bg-[#f2f2f7] border border-slate-200/80 shadow-sm"
@@ -1065,7 +1638,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
             className="absolute bottom-2 right-2 z-10 flex items-center justify-end"
             onClick={e => e.stopPropagation()}
           >
-            {totalQty > 0 ? (
+            {(totalQty > 0 || (isEditingCart && overrideQty !== undefined)) ? (
               /* Blue pill: [−] [count] [+] */
               <div className="flex items-center bg-blue-600 rounded-lg overflow-hidden shadow-sm">
                 <button
@@ -1133,11 +1706,11 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
             {activeAllItems.length > 0 && <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-full", rightOpen ? "bg-white/20 text-white" : "bg-orange-50 text-[#FF5A36]")}>₹{activeTotal.toFixed(0)}</span>}
           </button>
           {!isReadOnly && parts.length > 0 && <>
-            <button onClick={() => setShowTransferModal(true)} className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 transition-colors">Transfer</button>
+            <button onClick={() => openModal('transfer')} className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 transition-colors">Transfer</button>
             <button onClick={addPart} className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 transition-colors">Split</button>
           </>}
           {isReadOnly && isHistoryView && (
-            <button onClick={() => setShowDeleteModal(true)} className="w-9 h-9 flex items-center justify-center rounded-xl bg-red-50 border border-red-100 text-red-500 hover:bg-red-100 transition-colors shrink-0 ml-1">
+            <button onClick={() => openModal('delete')} className="w-9 h-9 flex items-center justify-center rounded-xl bg-red-50 border border-red-100 text-red-500 hover:bg-red-100 transition-colors shrink-0 ml-1">
               <Trash2 size={16} />
             </button>
           )}
@@ -1268,48 +1841,48 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                     <input type="tel" value={phoneOf(currentPartId)} onChange={e => setPartPhones(prev => ({ ...prev, [currentPartId]: e.target.value }))} placeholder="Mobile (optional)"
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 pl-9 pr-3 outline-none text-xs text-slate-700 placeholder:text-slate-400 focus:border-[#ff5a36] transition-colors" maxLength={10} />
                   </div>
-                    <div className="flex flex-col gap-2">
-                      <div className="flex bg-slate-100 p-0.5 rounded-full relative overflow-hidden shadow-inner">
-                        <div className={cn("absolute top-0.5 bottom-0.5 w-[calc(33.33%-2px)] rounded-full shadow-sm bg-emerald-500 transition-all duration-300", 
-                          paymentMode === 'UPI' || paymentMode === 'Online' ? "translate-x-0" : 
-                          paymentMode === 'Cash' ? "translate-x-[calc(100%+2px)]" : 
-                          "translate-x-[calc(200%+4px)]")} />
-                        <button onClick={() => { setPaymentMode('UPI'); setOnlineAmount(activeTotal); setCashAmount(0); }} className={cn("flex-1 py-2 text-[10px] font-bold uppercase tracking-wide relative z-10 rounded-full transition-colors", (paymentMode === 'UPI' || paymentMode === 'Online') ? "text-white" : "text-slate-400")}>UPI</button>
-                        <button onClick={() => { setPaymentMode('Cash'); setCashAmount(activeTotal); setOnlineAmount(0); }} className={cn("flex-1 py-2 text-[10px] font-bold uppercase tracking-wide relative z-10 rounded-full transition-colors", paymentMode === 'Cash' ? "text-white" : "text-slate-400")}>Cash</button>
-                        <button onClick={() => { setPaymentMode('Split'); setCashAmount(Math.floor(activeTotal/2)); setOnlineAmount(activeTotal - Math.floor(activeTotal/2)); }} className={cn("flex-1 py-2 text-[10px] font-bold uppercase tracking-wide relative z-10 rounded-full transition-colors", paymentMode === 'Split' ? "text-white" : "text-slate-400")}>Split</button>
-                      </div>
-                      
-                      {paymentMode === 'Split' && (
-                        <div className="flex gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
-                          <div className="flex-1">
-                            <label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">Cash</label>
-                            <input 
-                              type="number" 
-                              value={cashAmount} 
-                              onChange={(e) => {
-                                const val = Number(e.target.value);
-                                setCashAmount(val);
-                                setOnlineAmount(Math.max(0, activeTotal - val));
-                              }}
-                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold outline-none focus:border-emerald-500"
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">Online</label>
-                            <input 
-                              type="number" 
-                              value={onlineAmount} 
-                              onChange={(e) => {
-                                const val = Number(e.target.value);
-                                setOnlineAmount(val);
-                                setCashAmount(Math.max(0, activeTotal - val));
-                              }}
-                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold outline-none focus:border-emerald-500"
-                            />
-                          </div>
-                        </div>
-                      )}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex bg-slate-100 p-0.5 rounded-full relative overflow-hidden shadow-inner">
+                      <div className={cn("absolute top-0.5 bottom-0.5 w-[calc(33.33%-2px)] rounded-full shadow-sm bg-emerald-500 transition-all duration-300",
+                        paymentMode === 'UPI' || paymentMode === 'Online' ? "translate-x-0" :
+                          paymentMode === 'Cash' ? "translate-x-[calc(100%+2px)]" :
+                            "translate-x-[calc(200%+4px)]")} />
+                      <button onClick={() => { setPaymentMode('UPI'); setOnlineAmount(activeTotal); setCashAmount(0); }} className={cn("flex-1 py-2 text-[10px] font-bold uppercase tracking-wide relative z-10 rounded-full transition-colors", (paymentMode === 'UPI' || paymentMode === 'Online') ? "text-white" : "text-slate-400")}>UPI</button>
+                      <button onClick={() => { setPaymentMode('Cash'); setCashAmount(activeTotal); setOnlineAmount(0); }} className={cn("flex-1 py-2 text-[10px] font-bold uppercase tracking-wide relative z-10 rounded-full transition-colors", paymentMode === 'Cash' ? "text-white" : "text-slate-400")}>Cash</button>
+                      <button onClick={() => { setPaymentMode('Split'); setCashAmount(Math.floor(activeTotal / 2)); setOnlineAmount(activeTotal - Math.floor(activeTotal / 2)); }} className={cn("flex-1 py-2 text-[10px] font-bold uppercase tracking-wide relative z-10 rounded-full transition-colors", paymentMode === 'Split' ? "text-white" : "text-slate-400")}>Split</button>
                     </div>
+
+                    {paymentMode === 'Split' && (
+                      <div className="flex gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <div className="flex-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">Cash</label>
+                          <input
+                            type="number"
+                            value={cashAmount}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setCashAmount(val);
+                              setOnlineAmount(Math.max(0, activeTotal - val));
+                            }}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">Online</label>
+                          <input
+                            type="number"
+                            value={onlineAmount}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setOnlineAmount(val);
+                              setCashAmount(Math.max(0, activeTotal - val));
+                            }}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   {!isReadOnly && !isWaiter ? (
                     <button
                       onClick={() => handleSettle(currentPartId, 'none')}
@@ -1351,14 +1924,19 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
             </select>
           ) : (
             <span className="text-slate-900 font-bold text-[17px] truncate">
-              {tableId || parts[0]?.label || 'Add Order'}
+              {parts[0]?.label || tableId || 'Add Order'}
             </span>
           )}
+          {/* {activeTotal > 0 && (
+            <span className="ml-2 text-[14px] font-black text-blue-600 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-lg shrink-0">
+              ₹{activeTotal.toFixed(0)}
+            </span>
+          )} */}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {!isReadOnly && (
+          {!isReadOnly && !isCreatingParcel && !searchParams.get('newParcel') && orderType !== 'Parcel' && (
             <>
-              <button onClick={() => setShowTransferModal(true)}
+              <button onClick={() => openModal('transfer')}
                 className="px-3 py-1.5 border border-slate-200 rounded-lg text-[11px] font-bold text-slate-600 bg-white active:scale-95">
                 Transfer
               </button>
@@ -1368,11 +1946,87 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
               </button>
             </>
           )}
-          <button className="w-9 h-9 flex items-center justify-center rounded-lg text-slate-500">
-            <Settings size={18} />
+          <button
+            onClick={() => {
+              setTempCategoryLayout(categoryLayout);
+              openModal('settings');
+            }}
+            className={cn("w-10 h-10 flex items-center justify-center rounded-2xl transition-all shadow-sm active:scale-90", searchParams.get('modal') === 'settings' ? "bg-slate-900 text-white shadow-lg" : "text-slate-600 bg-white border border-slate-200")}>
+            <Settings size={18} strokeWidth={2.5} />
           </button>
+
+          {searchParams.get('modal') === 'settings' && (
+            <div className="fixed inset-0 z-[500] flex items-end justify-center bg-black/60 backdrop-blur-sm p-0" onClick={closeModals}>
+              <div className="bg-white rounded-t-2xl w-full flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-300 overflow-hidden" onClick={e => e.stopPropagation()}>
+                {/* Header - Super Minimal */}
+                <div className="flex items-center gap-3 px-5 h-14 border-b border-slate-50 shrink-0">
+                  <button onClick={closeModals} className="w-8 h-8 -ml-1 flex items-center justify-center text-slate-900 active:scale-95 transition-all">
+                    <ChevronLeft size={22} strokeWidth={2.5} />
+                  </button>
+                  <h3 className="font-black text-slate-900 text-[15px] tracking-tight">
+                    Interface Settings
+                  </h3>
+                </div>
+
+                {/* Content - Single Column Minimal List */}
+                <div className="px-5 py-6 bg-white">
+                  <div className="space-y-1">
+                    {[
+                      { id: 'horizontal', label: 'Horizontal Bar' },
+                      { id: 'vertical', label: 'Vertical Sidebar' }
+                    ].map(opt => (
+                      <button
+                        key={opt.id}
+                        onClick={() => { setTempCategoryLayout(opt.id); }}
+                        className="w-full flex items-center justify-between py-4 group"
+                      >
+                        <span className={cn(
+                          "text-[14px] font-bold transition-colors",
+                          tempCategoryLayout === opt.id ? "text-slate-900" : "text-slate-400 group-hover:text-slate-600"
+                        )}>
+                          {opt.label}
+                        </span>
+
+                        {/* Custom Radio Button */}
+                        <div className={cn(
+                          "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all",
+                          tempCategoryLayout === opt.id
+                            ? "border-slate-900 bg-slate-900"
+                            : "border-slate-200 bg-transparent"
+                        )}>
+                          {tempCategoryLayout === opt.id && (
+                            <div className="w-1.5 h-1.5 bg-white rounded-full" />
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Footer - KOT Style Confirmation */}
+                <div className="p-4 bg-white border-t border-slate-100 flex gap-3 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-8px_30px_rgba(0,0,0,0.04)]">
+                  <button
+                    onClick={closeModals}
+                    className="flex-1 py-3.5 rounded-xl font-bold text-[13px] border border-slate-300 bg-white text-slate-800 active:scale-[0.97] transition-all tracking-wide shadow-sm"
+                  >
+                    Discard Changes
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCategoryLayout(tempCategoryLayout);
+                      localStorage.setItem('restro_category_layout', tempCategoryLayout);
+                      closeModals();
+                    }}
+                    className="flex-1 py-3.5 rounded-xl font-bold text-[13px] text-white bg-blue-600 active:scale-[0.97] transition-all shadow-md shadow-blue-200 tracking-wide"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           {isReadOnly && isHistoryView && (
-            <button onClick={() => setShowDeleteModal(true)} className="w-9 h-9 flex items-center justify-center rounded-lg text-red-500 bg-red-50 border border-red-100 ml-1">
+            <button onClick={() => openModal('delete')} className="w-9 h-9 flex items-center justify-center rounded-lg text-red-500 bg-red-50 border border-red-100 ml-1">
               <Trash2 size={18} />
             </button>
           )}
@@ -1417,23 +2071,25 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
         </div>
       )}
 
-      {/* Category chips */}
-      <div className="flex gap-2 px-4 pb-2.5 bg-white overflow-x-auto shrink-0" style={{ scrollbarWidth: 'none' }}>
-        {categories.map(cat => (
-          <button
-            key={cat}
-            onClick={() => setCatFilter(cat)}
-            className={cn(
-              'px-4 py-1.5 rounded-full text-[12px] font-bold whitespace-nowrap border shrink-0 transition-all',
-              catFilter === cat
-                ? 'bg-white border-blue-500 text-blue-600'
-                : 'bg-white border-slate-200 text-slate-600'
-            )}
-          >
-            {cat.toUpperCase()}
-          </button>
-        ))}
-      </div>
+      {/* Category chips / Sidebar Logic */}
+      {categoryLayout === 'horizontal' && (
+        <div className="flex gap-2 px-4 pb-2.5 bg-white overflow-x-auto shrink-0 no-scrollbar">
+          {categories.map(cat => (
+            <button
+              key={cat}
+              onClick={() => setCatFilter(cat)}
+              className={cn(
+                'px-4 py-1.5 rounded-full text-[12px] font-bold whitespace-nowrap border shrink-0 transition-all',
+                catFilter === cat
+                  ? 'bg-white border-blue-500 text-blue-600 shadow-sm'
+                  : 'bg-white border-slate-200 text-slate-600'
+              )}
+            >
+              {cat.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Parts tabs when split */}
       {parts.length > 1 && (
@@ -1455,18 +2111,48 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
         </div>
       )}
 
-      {/* Menu grid — scrollable, padding bottom for sticky bar */}
-      <div className="flex-1 overflow-y-auto bg-white px-3 pt-3 pb-40" style={{ scrollbarWidth: 'none' }}>
-        {filteredMenu.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-            <Utensils size={32} strokeWidth={1} className="mb-3 opacity-30" />
-            <p className="text-sm">No items found</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-3 gap-2.5">
-            {filteredMenu.map(item => renderMenuItemCard({ item }))}
+      <div className="flex-1 flex overflow-hidden">
+        {categoryLayout === 'vertical' && (
+          <div className="w-20 bg-slate-50 border-r border-slate-100 overflow-y-auto no-scrollbar shrink-0 flex flex-col pt-2 pb-40">
+            {categories.map(cat => (
+              <button
+                key={cat}
+                onClick={() => setCatFilter(cat)}
+                className={cn(
+                  'flex flex-col items-center py-4 px-1 gap-1.5 transition-all relative',
+                  catFilter === cat ? 'bg-white text-blue-600' : 'text-slate-400'
+                )}
+              >
+                {catFilter === cat && <div className="absolute right-0 top-2 bottom-2 w-1 bg-blue-600 rounded-l-full" />}
+                <div className={cn(
+                  "w-10 h-10 rounded-xl flex items-center justify-center transition-all",
+                  catFilter === cat ? "bg-blue-50" : "bg-transparent"
+                )}>
+                  {cat === 'All' ? <Utensils size={18} /> :
+                    cat.toLowerCase().includes('drink') ? <Coffee size={18} /> :
+                      cat.toLowerCase().includes('pizza') ? <Pizza size={18} /> :
+                        <Box size={18} />}
+                </div>
+                <span className={cn("text-[9px] font-black uppercase tracking-tighter text-center leading-none px-1", catFilter === cat ? "text-blue-700" : "text-slate-500")}>
+                  {cat}
+                </span>
+              </button>
+            ))}
           </div>
         )}
+
+        <div className="flex-1 overflow-y-auto bg-white px-3 pt-3 pb-40 no-scrollbar">
+          {filteredMenu.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+              <Utensils size={32} strokeWidth={1} className="mb-3 opacity-30" />
+              <p className="text-sm">No items found</p>
+            </div>
+          ) : (
+            <div className={cn("grid gap-2.5", categoryLayout === 'vertical' ? "grid-cols-2" : "grid-cols-3")}>
+              {filteredMenu.map(item => renderMenuItemCard({ item, key: item._id }))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── Sticky Bottom Bar ── */}
@@ -1476,7 +2162,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
         {/* View Cart row — only when items exist */}
         {activeAllItems.length > 0 && (
           <button
-            onClick={() => setMobileScreen('cart')}
+            onClick={() => onScreenChange?.('cart')}
             className="w-full flex items-center px-4 py-3 mb-1 border-b border-slate-200 bg-white active:bg-slate-50 transition-colors gap-2"
           >
             <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -1509,7 +2195,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
               (activeAllItems.length === 0 || isReadOnly) ? 'opacity-40 cursor-not-allowed' : ''
             )}
           >
-            KOT & Settle
+            {activeAllItems.length > 0 ? `KOT & Settle (₹${activeTotal.toFixed(0)})` : 'KOT & Settle'}
           </button>
         </div>
       </div>
@@ -1528,10 +2214,11 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
 
         {/* Header — Cart title + table number on right */}
         <div className="flex items-center px-4 h-14 bg-white border-b border-slate-100 shrink-0">
-          <button onClick={() => setMobileScreen('menu')} className="mr-3 text-slate-800 active:scale-95">
+          <button onClick={() => onScreenChange?.('menu')} className="mr-3 text-slate-800 active:scale-95">
             <ChevronLeft size={24} strokeWidth={2.5} />
           </button>
           <span className="text-[17px] font-bold text-slate-900 flex-1">Cart</span>
+
           {tableId && (
             <span className="text-[12px] font-black text-slate-500 bg-slate-100 px-3 py-1.5 rounded-md">
               Table No : {tableId}
@@ -1613,7 +2300,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                   onClick={() => {
                     setPaymentMode(mode);
                     if (mode === 'Cash') { setCashAmount(activeTotal); setOnlineAmount(0); }
-                    else if (mode === 'Split') { setCashAmount(Math.floor(activeTotal/2)); setOnlineAmount(activeTotal - Math.floor(activeTotal/2)); }
+                    else if (mode === 'Split') { setCashAmount(Math.floor(activeTotal / 2)); setOnlineAmount(activeTotal - Math.floor(activeTotal / 2)); }
                     else { setOnlineAmount(activeTotal); setCashAmount(0); }
                   }}
                   className={cn(
@@ -1632,9 +2319,9 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
               <div className="flex gap-3 animate-in fade-in slide-in-from-top-2 duration-200 p-3 bg-slate-50 rounded-2xl border border-slate-100">
                 <div className="flex-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase mb-1.5 block">Cash Amt</label>
-                  <input 
-                    type="number" 
-                    value={cashAmount} 
+                  <input
+                    type="number"
+                    value={cashAmount}
                     onChange={(e) => {
                       const val = Number(e.target.value);
                       setCashAmount(val);
@@ -1645,9 +2332,9 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                 </div>
                 <div className="flex-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase mb-1.5 block">Online Amt</label>
-                  <input 
-                    type="number" 
-                    value={onlineAmount} 
+                  <input
+                    type="number"
+                    value={onlineAmount}
                     onChange={(e) => {
                       const val = Number(e.target.value);
                       setOnlineAmount(val);
@@ -1677,11 +2364,32 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                   <span className="text-[13px] text-slate-600">₹{t.amt.toFixed(2)}</span>
                 </div>
               ))}
-              {activeTaxes.length > 0 && (
-                <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                  <span className="text-[14px] font-bold text-slate-800">Total</span>
-                  <span className="text-[14px] font-bold text-slate-800">₹{activeTotal.toFixed(0)}</span>
-                </div>
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                <span className="text-[14px] font-black text-slate-800">Total Amount</span>
+                <span className="text-[16px] font-black text-blue-600">₹{activeTotal.toFixed(0)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Final Bill Items Summary Card */}
+          <div className="mx-4 mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-4">
+            <p className="text-[14px] font-semibold text-slate-800 mb-3">Items in Bill</p>
+            <div className="space-y-3">
+              {cartItems.filter(i => i.qty > 0).map((item, idx) => {
+                const menuItem = menuItems.find(m => item.menuId === m._id || item.menuId.startsWith(m._id));
+                const name = item.name || menuItem?.name || 'Item';
+                return (
+                  <div key={idx} className="flex justify-between items-center text-[13px] pb-2 border-b border-slate-50 last:border-0 last:pb-0">
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-800">{name}</span>
+                      <span className="text-[11px] text-slate-400">₹{item.price} × {item.qty}</span>
+                    </div>
+                    <span className="font-bold text-slate-700">₹{item.price * item.qty}</span>
+                  </div>
+                );
+              })}
+              {cartItems.filter(i => i.qty > 0).length === 0 && (
+                <p className="text-center text-xs text-slate-400 py-2">No items to bill</p>
               )}
             </div>
           </div>
@@ -1690,17 +2398,30 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
           <div className="h-24" />
         </div>
 
-        {/* Confirm & Save button — fixed bottom */}
-        <div className="absolute bottom-0 left-0 right-0 px-4 py-3 bg-white border-t border-slate-100"
+        {/* Footer Buttons — fixed bottom */}
+        <div className="absolute bottom-0 left-0 right-0 px-3 py-3 bg-white border-t border-slate-100 flex gap-2.5"
           style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
           <button
-            onClick={async () => {
-              await handleSettle(currentPartId, 'none');
-            }}
-            disabled={activeAllItems.length === 0}
-            className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold text-[13px] tracking-wide active:scale-[0.98] transition-all shadow-md shadow-blue-200 disabled:opacity-50"
+            onClick={() => handleKOTHold()}
+            disabled={isReadOnly}
+            className={cn(
+              'flex-1 py-3.5 rounded-xl font-bold text-[13px] border border-slate-300 bg-white text-slate-800 active:scale-[0.97] transition-all tracking-wide',
+              isReadOnly ? 'opacity-40 cursor-not-allowed' : 'shadow-sm'
+            )}
           >
-            Confirm & Save
+            {roundMsg ? '✓ Saved!' : 'Save Changes'}
+          </button>
+          <button
+            onClick={async () => {
+              await handleConfirmAndSave();
+            }}
+            disabled={activeAllItems.length === 0 || isReadOnly}
+            className={cn(
+              'flex-1 py-3.5 rounded-xl font-bold text-[13px] text-white bg-blue-600 active:scale-[0.97] transition-all shadow-md shadow-blue-200 tracking-wide',
+              (activeAllItems.length === 0 || isReadOnly) ? 'opacity-40 cursor-not-allowed' : ''
+            )}
+          >
+            {activeTotal > 0 ? `Confirm & Bill (₹${activeTotal.toFixed(0)})` : 'Confirm & Bill'}
           </button>
         </div>
       </div>
@@ -1716,7 +2437,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
       {activePartData && renderPrintBill({ partId: activePartData.id })}
 
       {/* Modals */}
-      {showDiscardModal && renderDiscardModal()}
+      {(showDiscardModal || modalParam === 'unsaved') && renderDiscardModal()}
       {showDeleteModal && renderDeleteModal()}
       {selectedItemForVars && renderVariationsModal({ item: selectedItemForVars, onClose: () => setSelectedItemForVars(null) })}
       {showTransferModal && renderTransferModal()}

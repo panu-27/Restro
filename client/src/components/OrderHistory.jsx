@@ -58,7 +58,6 @@ const OrderHistory = ({ onOrderClick }) => {
         <div className="flex items-start justify-between mb-5">
           <div>
             <h1 className="text-[17px] font-bold text-slate-900">Order History</h1>
-            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest mt-1">Registry Archive</p>
           </div>
           <div className="flex flex-col items-end gap-2">
             <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
@@ -143,6 +142,11 @@ const OrderHistory = ({ onOrderClick }) => {
                       <div className="flex items-center gap-2 mb-1">
                         {order.orderType === 'Dine-in' ? <Utensils size={12} className="text-slate-400" /> : <Package size={12} className="text-slate-400" />}
                         <span className="text-[15px] font-black text-slate-900 tracking-tight">#{order.orderNumber ? formatOrderNumber(order.orderNumber) : '----'}</span>
+                        {order.tableId && (
+                          <span className="text-[10px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100">
+                            {order.partLabel || order.tableId}
+                          </span>
+                        )}
                         <div className={cn(
                           "px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider",
                           isCancelled ? "bg-rose-50 text-rose-600" :

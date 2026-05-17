@@ -31,7 +31,7 @@ const getUrgency = (dateString) => {
   return 'ok';
 };
 
-const OrderCard = ({ order, onToggleServe, onCancelOrder, updatingItems, onManageClick, onBillClick }) => {
+const OrderCard = ({ order, activeOrders, onToggleServe, onCancelOrder, updatingItems, onManageClick, onBillClick }) => {
   const [expanded, setExpanded] = useState(true);
 
   const label = order.tableId || order.customerName || 'Walk-in';
@@ -63,10 +63,31 @@ const OrderCard = ({ order, onToggleServe, onCancelOrder, updatingItems, onManag
       // onClick={() => setExpanded(v => !v)}
       >
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[15px] font-bold text-slate-900 uppercase tracking-tight">
-            {label}
+          <span className="text-[15px] font-black text-slate-900 uppercase tracking-tight">
+            {isParcel 
+              ? (order.customerName || order.partLabel || 'Walk-in') 
+              : (order.tableId || 'Walk-in')}
           </span>
-          <span className="text-[11px] text-slate-400 font-medium">
+          {order.tableId && (
+            (() => {
+              // Get all active orders for this table
+              const tableOrders = activeOrders
+                .filter(o => o.tableId === order.tableId && o.status !== 'Paid' && o.status !== 'Cancelled')
+                .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+              
+              // Only show badge if there are actually multiple orders
+              if (tableOrders.length > 1) {
+                const partNum = tableOrders.findIndex(o => o._id === order._id) + 1;
+                return (
+                  <span className="text-[9px] font-black bg-slate-900 text-white px-1.5 py-0.5 rounded uppercase tracking-wider shadow-sm">
+                    Part {partNum}
+                  </span>
+                );
+              }
+              return null;
+            })()
+          )}
+          <span className="text-[11px] text-slate-400 font-medium ml-1">
             {isParcel ? 'Parcel' : 'Dine-in'}
           </span>
         </div>
@@ -365,6 +386,7 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onManageClick, onBill
               <OrderCard
                 key={order._id}
                 order={order}
+                activeOrders={activeOrders}
                 onToggleServe={handleToggleServe}
                 onCancelOrder={handleCancelOrder}
                 updatingItems={updatingItems}

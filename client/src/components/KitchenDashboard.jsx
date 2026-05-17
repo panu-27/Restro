@@ -203,7 +203,28 @@ const KitchenDashboard = ({ user, onLogout }) => {
                         <span className={`text-[10px] font-black uppercase tracking-wider ${config.text}`}>{config.label}</span>
                       </div>
                       {order.tableId && (
-                        <span className="text-sm font-black text-slate-800">{order.tableId}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-900 font-black text-[19px] tracking-tight">
+                            {order.tableId}
+                          </span>
+                          {order.tableId && (
+                            (() => {
+                              const tableOrders = activeOrders
+                                .filter(o => o.tableId === order.tableId && o.status !== 'Paid' && o.status !== 'Cancelled')
+                                .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+                              
+                              if (tableOrders.length > 1) {
+                                const partNum = tableOrders.findIndex(o => o._id === order._id) + 1;
+                                return (
+                                  <span className="text-[10px] font-black bg-slate-900 text-white px-2 py-1 rounded-md uppercase tracking-wider shadow-sm">
+                                    Part {partNum}
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })()
+                          )}
+                        </div>
                       )}
                       {order.orderType === 'Parcel' && (
                         <span className="text-[10px] font-bold text-purple-600 bg-purple-100 px-2 py-0.5 rounded-md border border-purple-200 shadow-sm">PARCEL</span>

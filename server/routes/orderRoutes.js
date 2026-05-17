@@ -7,6 +7,7 @@ router.get('/active', auth, orderController.getActiveOrders);
 router.post('/', auth, orderController.createOrder);
 router.patch('/:id/status', auth, orderController.updateOrderStatus);
 router.patch('/:id/transfer', auth, orderController.transferOrder);
+router.patch('/:id/label', auth, orderController.updateOrderLabel);
 router.get('/', auth, orderController.getAllOrders);
 router.delete('/:id', auth, orderController.deleteOrder);
 

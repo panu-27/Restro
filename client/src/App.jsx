@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
-import { LayoutGrid, ShoppingBag, History, Settings, LogOut, User, BarChart3, Clock, ChevronDown, MoreVertical, HelpCircle, Utensils, BookOpen, LineChart, Grid, Key, X, Loader2, Package, Plus, Cookie, LayoutDashboard, Menu, Mic, Table2, Armchair, ChefHat, Coffee, ChartNoAxesColumnIncreasing } from 'lucide-react';
+import { LayoutGrid, ShoppingBag, History, Settings, LogOut, User, BarChart3, Clock, ChevronDown, MoreVertical, HelpCircle, Utensils, BookOpen, LineChart, Grid, Key, X, Loader2, Package, Plus, Cookie, LayoutDashboard, Menu, Mic, Table2, Armchair, ChefHat, Coffee, ChartNoAxesColumnIncreasing, CheckCircle2 } from 'lucide-react';
+import { useNavigate, useLocation, Routes, Route, Navigate, useSearchParams } from 'react-router-dom';
 import TableGrid from './components/TableGrid';
 import TableView from './components/TableView';
 import POSInterface from './components/POSInterface';
@@ -17,12 +18,7 @@ import NotificationBell from './components/NotificationBell';
 import { DashboardSkeleton } from './components/Skeleton';
 import ParcelView from './components/ParcelView';
 
-// ── PWA back-navigation helper ───────────────────────────────────────────────
-const pushNav = (key) => {
-  if (window.history.state?.navKey !== key) {
-    window.history.pushState({ navKey: key }, '');
-  }
-};
+// Navigation helper removed in favor of react-router-dom
 
 const BrandLogo = ({ className = '' }) => (
   <img
@@ -33,14 +29,14 @@ const BrandLogo = ({ className = '' }) => (
 );
 
 function App() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token'));
-  const [activeTab, setActiveTab] = useState('tables');
-  const [selectedTable, setSelectedTable] = useState(null);
-  const [openTableId, setOpenTableId] = useState(null);
-  const [openOrderId, setOpenOrderId] = useState(null);
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [tableNavAction, setTableNavAction] = useState('menu');
-  const [isCreatingParcel, setIsCreatingParcel] = useState(false);
   const [settingsSubSection, setSettingsSubSection] = useState('home');
   const [menuItems, setMenuItems] = useState([]);
   const [activeOrders, setActiveOrders] = useState([]);
@@ -50,6 +46,38 @@ function App() {
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordState, setPasswordState] = useState({ current: '', new: '', confirm: '', error: '', loading: false, success: false });
+  const [toast, setToast] = useState(null);
+
+  // Sync state with URL
+  useEffect(() => {
+    const path = location.pathname;
+    if (path === '/') {
+      setActiveTab('dashboard');
+    } else if (path.startsWith('/tables')) {
+      setActiveTab('tables');
+    } else if (path.startsWith('/parcel')) {
+      setActiveTab('parcel');
+    } else if (path.startsWith('/pos')) {
+      setActiveTab('pos');
+    } else if (path.startsWith('/sales')) {
+      setActiveTab('sales');
+    } else if (path.startsWith('/settings')) {
+      setActiveTab('settings');
+    } else if (path.startsWith('/history')) {
+      setActiveTab('history');
+    }
+  }, [location]);
+
+  // Derive modal states from URL search params
+  const openTableId = searchParams.get('tableId');
+  const openOrderId = searchParams.get('orderId');
+  const isCreatingParcel = searchParams.get('newParcel') === 'true';
+  const tableScreen = searchParams.get('screen') || 'menu';
+
+  const showToast = (message, sub) => {
+    setToast({ message, sub });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   useEffect(() => {
     if (token) {
@@ -123,12 +151,11 @@ function App() {
 
   const handleTableClick = (tableId) => {
     setTableNavAction('menu');
-    setOpenTableId(tableId);
-    pushNav('table-' + tableId);
+    setSearchParams({ tableId, screen: 'menu' });
   };
 
   const handlePOSTableClick = (tableId, existingOrder) => {
-    setSelectedTable({ tableId, existingOrder });
+    navigate(`?tableId=${encodeURIComponent(tableId)}&screen=menu`);
   };
 
   const handlePlanActivated = () => {
@@ -142,41 +169,91 @@ function App() {
     fetchSubscription();
   };
 
+  // ── Overlay state refs (used by both TableGrid and Parcel back handlers) ──
+  const locationRef = useRef(location);
+  useEffect(() => { locationRef.current = location; }, [location]);
+  const openTableIdRef = useRef(searchParams.get('tableId'));
+  const openOrderIdRef = useRef(searchParams.get('orderId'));
+  const isCreatingParcelRef = useRef(searchParams.get('newParcel') === 'true');
   useEffect(() => {
-    if (!window.history.state?.navKey) {
-      window.history.replaceState({ navKey: 'home' }, '');
-    }
-    const handlePop = () => {
-      setOpenTableId(prev => {
-        if (prev) { fetchActiveOrders(); return null; }
-        return prev;
-      });
-      setOpenOrderId(prev => {
-        if (prev) { fetchActiveOrders(); return null; }
-        return prev;
-      });
-      setIsCreatingParcel(prev => {
-        if (prev) { fetchActiveOrders(); return false; }
-        return prev;
-      });
-      setActiveTab(prev => {
-        if (prev !== 'dashboard') {
-          window.history.pushState({ navKey: 'home' }, '');
-          return 'dashboard';
+    openTableIdRef.current = searchParams.get('tableId');
+    openOrderIdRef.current = searchParams.get('orderId');
+    isCreatingParcelRef.current = searchParams.get('newParcel') === 'true';
+  }, [searchParams]);
+
+  // ── Native Mobile Navigation Stabilizers ──
+  useEffect(() => {
+    const isInsideTableView = searchParams.get('tableId') || searchParams.get('orderId') || searchParams.get('newParcel') === 'true';
+
+    if (location.pathname !== '/dashboard' && location.pathname !== '/' && !isInsideTableView) {
+      // Push an app trap state
+      window.history.pushState({ appTrap: true }, '', window.location.href);
+
+      const handlePop = (e) => {
+        if (!e.state?.appTrap) {
+          // Back pressed on any sub-page -> go directly to dashboard
+          navigate('/dashboard', { replace: true });
         }
-        return prev;
-      });
-    };
-    window.addEventListener('popstate', handlePop);
-    return () => window.removeEventListener('popstate', handlePop);
+      };
+
+      window.addEventListener('popstate', handlePop);
+      return () => window.removeEventListener('popstate', handlePop);
+    }
+  }, [location.pathname, navigate, searchParams]);
+
+  useEffect(() => {
+    if (location.pathname === '/dashboard' || location.pathname === '/') {
+      // Clear active overlays & search params on dashboard tab
+      if (searchParams.toString()) {
+        setSearchParams({}, { replace: true });
+      }
+
+      // Trap state to prevent going back to settings/tables from dashboard
+      window.history.pushState({ dashboardTrap: true }, '', window.location.href);
+
+      const handlePop = (e) => {
+        if (!e.state?.dashboardTrap) {
+          // Back pressed on dashboard -> close/exit native-like
+          try {
+            window.close();
+          } catch (_) {}
+          window.history.pushState({ dashboardTrap: true }, '', window.location.href);
+        }
+      };
+
+      window.addEventListener('popstate', handlePop);
+      return () => window.removeEventListener('popstate', handlePop);
+    }
+  }, [location.pathname, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    // Universal History Stabilizer:
+    // If user lands directly on a sub-page, ensure Dashboard is the base
+    if (location.pathname === '/' || location.pathname === '') {
+      navigate('/dashboard', { replace: true });
+    } else if (window.history.length <= 2 && location.pathname !== '/dashboard') {
+      // If we land on /tables etc with a fresh session, inject dashboard behind it
+      navigate('/dashboard', { replace: true });
+      navigate(location.pathname + location.search);
+    }
   }, []);
 
   const handleTabChange = useCallback((tabId, subSection = 'home') => {
-    setActiveTab(tabId);
     setSettingsSubSection(subSection);
     window.dispatchEvent(new Event('close-notifications'));
-    if (tabId !== 'dashboard') pushNav(tabId);
-  }, []);
+    
+    const isCurrentlyDashboard = location.pathname === '/dashboard' || location.pathname === '/';
+    const isNewDashboard = tabId === 'dashboard';
+    
+    if (isNewDashboard && !isCurrentlyDashboard) {
+      // Pop the stack to return to the original dashboard without duplicate history entries
+      navigate(-1);
+    } else {
+      // If we are currently NOT on dashboard, replace the history so "Back" always leads to Dashboard
+      const shouldReplace = !isCurrentlyDashboard;
+      navigate(`/${tabId}`, { replace: shouldReplace });
+    }
+  }, [navigate, location.pathname]);
 
   if (!token) return <Login onLoginSuccess={handleLoginSuccess} />;
 
@@ -251,31 +328,6 @@ function App() {
       setPasswordState(prev => ({ ...prev, loading: false, error: err.response?.data?.error || 'Failed to change password' }));
     }
   };
-
-  if (openTableId || openOrderId || isCreatingParcel) {
-    return (
-      <TableView
-        tableId={openTableId}
-        orderId={openOrderId}
-        initialScreen={tableNavAction}
-        isHistoryView={activeTab === 'history'}
-        menuItems={menuItems}
-        user={user}
-        onClose={() => {
-          fetchActiveOrders();
-          setOpenTableId(null);
-          setOpenOrderId(null);
-          setIsCreatingParcel(false);
-        }}
-        onCheckoutComplete={() => {
-          fetchActiveOrders();
-          setOpenTableId(null);
-          setOpenOrderId(null);
-          setIsCreatingParcel(false);
-        }}
-      />
-    );
-  }
 
   const tableCount = user?.tableCount || 10;
 
@@ -370,83 +422,116 @@ function App() {
             <SubscriptionBanner subscription={subscription} onDismiss={() => setBannerDismissed(true)} />
           )}
 
-          {activeTab === 'dashboard' && (
-            <div className="animate-in fade-in duration-500">
-              <DashboardView
-                activeOrders={activeOrders}
-                tableCount={tableCount}
-                onTabChange={handleTabChange}
-                user={user}
-              />
-            </div>
-          )}
+          <Routes>
+            <Route path="/dashboard" element={
+              <div className="animate-in fade-in duration-500">
+                <DashboardView
+                  activeOrders={activeOrders}
+                  tableCount={tableCount}
+                  onTabChange={handleTabChange}
+                  user={user}
+                />
+              </div>
+            } />
 
-          {activeTab === 'tables' && (
-            <div className="animate-in fade-in duration-500">
-              <TableGrid
-                activeOrders={activeOrders}
-                onTableClick={handleTableClick}
-                tableCount={tableCount}
-              />
-            </div>
-          )}
+            <Route path="/tables" element={
+              <div className="animate-in fade-in duration-500">
+                <TableGrid
+                  activeOrders={activeOrders}
+                  onTableClick={handleTableClick}
+                  tableCount={tableCount}
+                  isOverlayOpen={!!(openTableId || openOrderId || isCreatingParcel)}
+                />
+              </div>
+            } />
 
-          {activeTab === 'pos' && (
-            <div className="animate-in fade-in duration-500">
-              <POSInterface
-                activeOrders={activeOrders}
+            <Route path="/pos" element={
+              <div className="animate-in fade-in duration-500">
+                <POSInterface
+                  activeOrders={activeOrders}
+                  user={user}
+                  onOrderUpdate={fetchActiveOrders}
+                  onCheckoutComplete={() => {
+                    fetchActiveOrders();
+                    navigate('/tables', { replace: true });
+                  }}
+                  onBillClick={(order) => {
+                    const params = { screen: 'cart' };
+                    if (order.tableId) params.tableId = order.tableId;
+                    else params.orderId = order._id;
+                    setSearchParams(params);
+                  }}
+                />
+              </div>
+            } />
+
+            <Route path="/parcel" element={
+              <div className="animate-in fade-in duration-500">
+                <ParcelView
+                  activeOrders={activeOrders}
+                  onNewParcel={() => setSearchParams({ newParcel: 'true', screen: 'menu' })}
+                  onOrderClick={(orderId) => setSearchParams({ orderId, screen: 'menu' })}
+                />
+              </div>
+            } />
+
+            <Route path="/history" element={
+              <div className="animate-in fade-in duration-500">
+                <OrderHistory
+                  activeOrders={activeOrders}
+                  onOrderUpdate={fetchActiveOrders}
+                  onOrderClick={(orderId) => setSearchParams({ orderId, screen: 'menu' })}
+                />
+              </div>
+            } />
+
+            <Route path="/sales" element={
+              <div className="animate-in fade-in duration-500">
+                <SalesReport />
+              </div>
+            } />
+
+            <Route path="/settings" element={
+              <div className="fixed inset-0 z-[120] lg:static lg:z-auto lg:h-full bg-white lg:bg-transparent animate-in slide-in-from-bottom lg:fade-in duration-300">
+                <SettingsPanel
+                  user={user}
+                  subscription={subscription}
+                  initialSection={settingsSubSection}
+                  onSettingsUpdate={handleSettingsUpdate}
+                  onShowPassword={() => setShowPasswordModal(true)}
+                  onLogout={handleLogout}
+                  onClose={() => handleTabChange('dashboard')}
+                />
+              </div>
+            } />
+
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+
+          {/* Table / Order View overlay */}
+          {(openTableId || openOrderId || isCreatingParcel) && (
+            <div className="fixed inset-0 z-[120] md:z-[100]">
+              <TableView
+                tableId={openTableId}
+                orderId={openOrderId}
+                isHistoryView={!!openOrderId && !activeOrders.some(o => o._id === openOrderId)}
+                menuItems={menuItems}
                 user={user}
-                onOrderUpdate={fetchActiveOrders}
-                onManageClick={(order) => {
-                  setTableNavAction('menu');
-                  if (order.tableId) setOpenTableId(order.tableId);
-                  else setOpenOrderId(order._id);
+                onClose={() => {
+                  fetchActiveOrders();
+                  setSearchParams({}, { replace: true });
                 }}
-                onBillClick={(order) => {
-                  setTableNavAction('cart');
-                  if (order.tableId) setOpenTableId(order.tableId);
-                  else setOpenOrderId(order._id);
+                onCheckoutComplete={() => {
+                  fetchActiveOrders();
+                  navigate('/tables', { replace: true });
                 }}
-              />
-            </div>
-          )}
-
-          {activeTab === 'parcel' && (
-            <div className="animate-in fade-in duration-500">
-              <ParcelView
-                activeOrders={activeOrders}
-                onNewParcel={() => { setTableNavAction('menu'); setIsCreatingParcel(true); }}
-                onOrderClick={(orderId) => { setTableNavAction('menu'); setOpenOrderId(orderId); }}
-              />
-            </div>
-          )}
-
-          {activeTab === 'history' && (
-            <div className="animate-in fade-in duration-500">
-              <OrderHistory
-                activeOrders={activeOrders}
-                onOrderUpdate={fetchActiveOrders}
-                onOrderClick={(orderId) => { setTableNavAction('menu'); setOpenOrderId(orderId); }}
-              />
-            </div>
-          )}
-
-          {activeTab === 'sales' && (
-            <div className="animate-in fade-in duration-500">
-              <SalesReport />
-            </div>
-          )}
-
-          {activeTab === 'settings' && (
-            <div className="fixed inset-0 z-[120] lg:static lg:z-auto lg:h-full bg-white lg:bg-transparent animate-in slide-in-from-bottom lg:fade-in duration-300">
-              <SettingsPanel
-                user={user}
-                subscription={subscription}
-                initialSection={settingsSubSection}
-                onSettingsUpdate={handleSettingsUpdate}
-                onShowPassword={() => setShowPasswordModal(true)}
-                onLogout={handleLogout}
-                onClose={() => setActiveTab('tables')}
+                initialScreen={tableScreen}
+                showToast={showToast}
+                onScreenChange={(screen) => {
+                  const newParams = new URLSearchParams(searchParams);
+                  newParams.set('screen', screen);
+                  setSearchParams(newParams);
+                }}
               />
             </div>
           )}
@@ -629,6 +714,18 @@ function App() {
 
         </nav>
       </div>
+
+      {/* ── GLOBAL TOAST NOTIFICATION ── */}
+      {toast && (
+        <div className="fixed bottom-32 right-4 z-[200] animate-in slide-in-from-right-5 fade-in duration-300 pointer-events-none">
+          <div className="bg-white border border-slate-200 shadow-xl px-5 py-3 rounded-xl">
+            <p className="text-[13px] font-black text-slate-900 tracking-tight uppercase">
+              {toast.message} {toast.sub ? `#${toast.sub}` : ''}
+            </p>
+          </div>
+        </div>
+      )}
+
 
     </div>
   );

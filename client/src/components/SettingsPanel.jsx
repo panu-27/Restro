@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import {
   Plus, Trash2, Edit3, Save, X, Check, ToggleLeft, ToggleRight,
@@ -108,12 +109,65 @@ const NativeScreen = ({ title, onBack, backLabel, children, rightAction }) => (
    MAIN COMPONENT
 ══════════════════════════════════════════════════════════════════ */
 const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, onLogout, onClose, initialSection = 'home' }) => {
-  const [activeSection, setActiveSection] = useState(initialSection);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeSection = searchParams.get('section') || 'home';
+  const activeForm = searchParams.get('form');
+  const activeModal = searchParams.get('modal');
+  const editingIdParam = searchParams.get('id');
+
+  const setActiveSection = (section, keepParams = false) => {
+    const newParams = new URLSearchParams(searchParams);
+    if (section === 'home') {
+      newParams.delete('section');
+    } else {
+      newParams.set('section', section);
+    }
+    if (!keepParams) {
+      newParams.delete('form');
+      newParams.delete('modal');
+      newParams.delete('id');
+    }
+    setSearchParams(newParams, { replace: true });
+  };
+
+  const openForm = (form, id = null) => {
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('form', form);
+    if (id) newParams.set('id', id);
+    else newParams.delete('id');
+    setSearchParams(newParams, { replace: true });
+  };
+
+  const closeForm = () => {
+    const newParams = new URLSearchParams(searchParams);
+    newParams.delete('form');
+    newParams.delete('id');
+    setSearchParams(newParams);
+  };
+
+  const openModal = (name) => {
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('modal', name);
+    setSearchParams(newParams);
+  };
+
+  const closeModal = () => {
+    const newParams = new URLSearchParams(searchParams);
+    newParams.delete('modal');
+    setSearchParams(newParams);
+  };
+
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [showAddStaff, setShowAddStaff] = useState(false);
+  const [editingId, setEditingId] = useState(null);
 
   useEffect(() => {
-    if (initialSection) setActiveSection(initialSection);
-  }, [initialSection]);
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+    setShowLogoutConfirm(activeModal === 'logout');
+    setShowAddForm(activeForm === 'addMenuItem' || activeForm === 'editMenuItem');
+    setShowAddStaff(activeForm === 'addStaff' || activeForm === 'editStaff');
+    setEditingId(editingIdParam);
+  }, [activeModal, activeForm, editingIdParam]);
 
   /* ── Restaurant fields ─────────────────────────────────────────── */
   const [restaurantName, setRestaurantName] = useState('');
@@ -148,8 +202,6 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
   const [menuLoading, setMenuLoading] = useState(true);
   const [menuSearch, setMenuSearch] = useState('');
   const [menuFilter, setMenuFilter] = useState('All');
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [editingId, setEditingId] = useState(null);
   const [menuCategories, setMenuCategories] = useState(DEFAULT_MENU_CATEGORIES);
   const [newCategoryName, setNewCategoryName] = useState('');
   const EMPTY_ITEM = { name: '', category: DEFAULT_MENU_CATEGORIES[0], price: '', image: '', variations: [] };
@@ -161,7 +213,6 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
   /* ── Staff ─────────────────────────────────────────────────────── */
   const [staffList, setStaffList] = useState([]);
   const [staffLoading, setStaffLoading] = useState(false);
-  const [showAddStaff, setShowAddStaff] = useState(false);
   const [newStaff, setNewStaff] = useState({ name: '', mobileNumber: '', password: '', role: 'Waiter' });
   const [editingStaffId, setEditingStaffId] = useState(null);
   const [editStaff, setEditStaff] = useState({ name: '', mobileNumber: '', password: '' });
@@ -394,7 +445,7 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
     };
     try {
       await axios.patch(`/api/menu/${id}`, payload);
-      setEditingId(null);
+      closeForm();
       setActiveSection('menu');
       fetchMenu();
     }
@@ -771,7 +822,13 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
             <div className="bg-white border-y border-gray-50">
               {items.map((item, idx) => (
                 <div key={item._id}
-                  onClick={() => { setEditingId(item._id); setEditItem({ ...item, stock: item.stock || '' }); setActiveSection('addMenuItem'); }}
+                  onClick={() => { 
+                    setEditItem({ ...item, stock: item.stock || '' }); 
+                    const params = new URLSearchParams(searchParams);
+                    params.set('section', 'addMenuItem');
+                    params.set('id', item._id);
+                    setSearchParams(params);
+                  }}
                   className={cn('flex items-center justify-between px-5 py-4 active:bg-white transition-colors', idx !== items.length - 1 && 'border-b border-gray-50')}
                 >
                   <div className="flex-1 min-w-0 pr-4">
@@ -808,7 +865,6 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
       <div className="fixed bottom-6 left-4 right-4 z-20">
         <button
           onClick={() => {
-            setEditingId(null);
             setNewItem({ name: '', category: categoryOptions[0], price: '', image: '', variations: [], taxPercentage: 'None', stock: '' });
             setActiveSection('addMenuItem');
           }}
@@ -1310,14 +1366,14 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
                     try {
                       await axios.post('/api/staff', newStaff);
                       setNewStaff({ name: '', mobileNumber: '', password: '', role: 'Waiter' });
-                      setShowAddStaff(false); fetchStaff();
+                      closeForm(); fetchStaff();
                     } catch (err) { setStaffError(err.response?.data?.error || 'Failed to create staff.'); }
                   }}
                   className="flex-1 py-3 bg-emerald-500 text-white rounded-xl text-[14px] font-bold flex items-center justify-center gap-2"
                 >
                   <Check size={16} /> Create
                 </button>
-                <button onClick={() => { setShowAddStaff(false); setStaffError(''); }} className="px-5 py-3 bg-gray-100 text-gray-500 rounded-xl text-[14px] font-semibold">Cancel</button>
+                <button onClick={() => { closeForm(); setStaffError(''); }} className="px-5 py-3 bg-gray-100 text-gray-500 rounded-xl text-[14px] font-semibold">Cancel</button>
               </div>
             </div>
           </Card>
@@ -1356,14 +1412,14 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
                           const payload = { name: editStaff.name, mobileNumber: editStaff.mobileNumber };
                           if (editStaff.password) payload.password = editStaff.password;
                           await axios.patch(`/api/staff/${s._id}`, payload);
-                          setEditingStaffId(null); fetchStaff();
+                          closeForm(); fetchStaff();
                         } catch (err) { alert(err.response?.data?.error || 'Failed to update.'); }
                       }}
                       className="flex-1 py-3 bg-emerald-500 text-white rounded-xl text-[14px] font-bold flex items-center justify-center gap-2"
                     >
                       <Check size={15} /> Save
                     </button>
-                    <button onClick={() => setEditingStaffId(null)} className="px-5 py-3 bg-gray-100 text-gray-500 rounded-xl text-[14px] font-semibold">Cancel</button>
+                    <button onClick={() => closeForm()} className="px-5 py-3 bg-gray-100 text-gray-500 rounded-xl text-[14px] font-semibold">Cancel</button>
                   </div>
                 </div>
               ) : (
@@ -1383,7 +1439,7 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
                     <p className="text-[12px] text-gray-400 mt-0.5 flex items-center gap-1"><Phone size={10} />{s.mobileNumber}</p>
                   </div>
                   <div className="flex gap-1">
-                    <button onClick={() => { setEditingStaffId(s._id); setEditStaff({ name: s.name, mobileNumber: s.mobileNumber, password: '' }); }}
+                    <button onClick={() => { setEditStaff({ name: s.name, mobileNumber: s.mobileNumber, password: '' }); openForm('editStaff', s._id); }}
                       className="w-9 h-9 flex items-center justify-center rounded-xl bg-blue-50 text-blue-500">
                       <Edit3 size={14} />
                     </button>
@@ -1413,7 +1469,7 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
       {!showAddStaff && (
         <div className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 z-20">
           <button
-            onClick={() => { setShowAddStaff(true); setStaffError(''); }}
+            onClick={() => { openForm('addStaff'); setStaffError(''); }}
             className="w-full py-4 bg-blue-600 text-white rounded-2xl text-[15px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-lg shadow-blue-100"
           >
             <UserPlus size={20} strokeWidth={2.5} /> Add New Staff Member

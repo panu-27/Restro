@@ -163,6 +163,19 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
     } catch { return false; }
   };
 
+  const getDraftTotal = (tId) => {
+    try {
+      const v = localStorage.getItem(`restro_draft_${tId}`);
+      if (!v) return 0;
+      const arr = JSON.parse(v);
+      if (!Array.isArray(arr)) return 0;
+      return arr.reduce((acc, p) => {
+        const items = p.items || [];
+        return acc + items.reduce((s, i) => s + i.price * i.qty, 0);
+      }, 0);
+    } catch { return 0; }
+  };
+
   // Stats (disjoint mutually exclusive logic to match visual priority)
   const draftTables = tables.filter(t => hasDraft(t.tableId));
   const occupiedTables = tables.filter(t => !hasDraft(t.tableId) && getTableInfo(t.tableId).status === 'Occupied');
@@ -193,6 +206,7 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
     const { status, billTotal } = getTableInfo(table.tableId);
     const isOccupied = status === 'Occupied';
     const tablHasDraft = hasDraft(table.tableId);
+    const draftTotal = getDraftTotal(table.tableId);
     const isMenuOpen = openMenuId === table.tableId;
 
     return (
@@ -219,9 +233,11 @@ const TableGrid = ({ activeOrders, onTableClick, readOnly = false }) => {
 
         {/* Bottom — bill */}
         <div className="flex items-end justify-end mt-2 h-6">
-          {isOccupied && billTotal > 0 && (
+          {isOccupied && billTotal > 0 ? (
             <span className="text-[17px] font-black text-orange-600">₹{Math.round(billTotal)}</span>
-          )}
+          ) : tablHasDraft && draftTotal > 0 ? (
+            <span className="text-[17px] font-black text-emerald-600">₹{Math.round(draftTotal)}</span>
+          ) : null}
         </div>
       </div>
     );

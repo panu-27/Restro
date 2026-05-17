@@ -486,7 +486,7 @@ app.post('/api/upload', auth, async (req, res) => {
 
 app.get('/api/menu', auth, async (req, res) => {
   try {
-    const items = await Menu.find({ userId: req.user.ownerId }).sort('category name');
+    const items = await Menu.find({ userId: req.user.ownerId }).sort('_id');
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -904,6 +904,22 @@ app.patch('/api/orders/:id/transfer', auth, async (req, res) => {
       { upsert: true }
     );
 
+    res.json(order);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/orders/:id/label — Update part label (e.g. T1-Part2)
+app.patch('/api/orders/:id/label', auth, async (req, res) => {
+  try {
+    const { partLabel } = req.body;
+    const order = await Order.findOneAndUpdate(
+      { _id: req.params.id, userId: req.user.ownerId },
+      { partLabel },
+      { new: true }
+    );
+    if (!order) return res.status(404).json({ error: 'Order not found' });
     res.json(order);
   } catch (err) {
     res.status(500).json({ error: err.message });

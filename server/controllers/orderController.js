@@ -157,3 +157,14 @@ exports.deleteOrder = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+exports.updateOrderLabel = async (req, res) => {
+  try {
+    const { partLabel } = req.body;
+    const order = await Order.findByIdAndUpdate(req.params.id, { partLabel }, { new: true });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    res.json(order);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
