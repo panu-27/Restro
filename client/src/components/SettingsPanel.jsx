@@ -169,6 +169,46 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
     setEditingId(editingIdParam);
   }, [activeModal, activeForm, editingIdParam]);
 
+  const activeSectionRef = React.useRef(activeSection);
+  activeSectionRef.current = activeSection;
+
+  const activeFormRef = React.useRef(activeForm);
+  activeFormRef.current = activeForm;
+
+  const activeModalRef = React.useRef(activeModal);
+  activeModalRef.current = activeModal;
+
+  useEffect(() => {
+    if (!window.history.state?.settingsTrap) {
+      window.history.pushState({ settingsTrap: true }, '', window.location.href);
+    }
+
+    const handlePopState = (e) => {
+      const actSec = activeSectionRef.current;
+      const actForm = activeFormRef.current;
+      const actMod = activeModalRef.current;
+
+      // If they popped our trap
+      if (!e.state?.settingsTrap) {
+        if (actForm) {
+          window.history.pushState({ settingsTrap: true }, '', window.location.href);
+          closeForm();
+        } else if (actMod) {
+          window.history.pushState({ settingsTrap: true }, '', window.location.href);
+          closeModal();
+        } else if (actSec && actSec !== 'home') {
+          window.history.pushState({ settingsTrap: true }, '', window.location.href);
+          setActiveSection('home');
+        } else {
+          onClose();
+        }
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [setSearchParams, onClose]);
+
   /* ── Restaurant fields ─────────────────────────────────────────── */
   const [restaurantName, setRestaurantName] = useState('');
   const [restaurantAddress, setRestaurantAddress] = useState('');

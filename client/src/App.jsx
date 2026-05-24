@@ -185,7 +185,7 @@ function App() {
   useEffect(() => {
     const isInsideTableView = searchParams.get('tableId') || searchParams.get('orderId') || searchParams.get('newParcel') === 'true';
 
-    if (location.pathname !== '/dashboard' && location.pathname !== '/' && !isInsideTableView) {
+    if (location.pathname !== '/dashboard' && location.pathname !== '/' && location.pathname !== '/settings' && !isInsideTableView) {
       // Push an app trap state
       window.history.pushState({ appTrap: true }, '', window.location.href);
 
