@@ -203,6 +203,16 @@ function getOrCreateCustomerId() {
   return id;
 }
 
+const getFormattedInstagramUrl = (raw) => {
+  if (!raw || typeof raw !== 'string') return 'https://www.instagram.com/';
+  const trimmed = raw.trim();
+  if (!trimmed) return 'https://www.instagram.com/';
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^(www\.)?instagram\.com/i.test(trimmed)) return `https://${trimmed}`;
+  const cleanHandle = trimmed.replace(/^@+/, '').replace(/^\/+/, '');
+  return `https://www.instagram.com/${cleanHandle}`;
+};
+
 export default function PublicRestaurantPage() {
   const { restro_name } = useParams();
   const [loading, setLoading] = useState(true);
@@ -970,7 +980,7 @@ export default function PublicRestaurantPage() {
             </p>
 
             <a
-              href="https://www.instagram.com/"
+              href={getFormattedInstagramUrl(restaurant?.instagramUrl)}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-3 text-[15px] sm:text-base font-bold uppercase tracking-wide text-[#003B21] hover:opacity-70 transition-opacity group"

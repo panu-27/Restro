@@ -18,6 +18,25 @@ import { QRCodeSVG } from 'qrcode.react';
 
 const DEFAULT_MENU_CATEGORIES = ['Veg', 'Non-Veg', 'Beverage', 'Dessert'];
 
+const InstagramIcon = ({ size = 16, className = "" }) => (
+  <svg 
+    xmlns="http://www.w3.org/2000/svg" 
+    width={size} 
+    height={size} 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    stroke="currentColor" 
+    strokeWidth="2" 
+    strokeLinecap="round" 
+    strokeLinejoin="round" 
+    className={className}
+  >
+    <rect width="20" height="20" x="2" y="2" rx="5" ry="5"/>
+    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
+    <line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/>
+  </svg>
+);
+
 /* ─── tiny helpers ───────────────────────────────────────────────── */
 const cn = (...c) => c.filter(Boolean).join(' ');
 
@@ -279,6 +298,7 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
   const [restaurantPhone, setRestaurantPhone] = useState('');
   const [gstNumber, setGstNumber] = useState('');
   const [fssaiNumber, setFssaiNumber] = useState('');
+  const [instagramUrl, setInstagramUrl] = useState('');
   const [tableCount, setTableCount] = useState(10);
   const [restaurantLogo, setRestaurantLogo] = useState('');
   const [logoUploading, setLogoUploading] = useState(false);
@@ -520,6 +540,7 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
       setRestaurantPhone(user.restaurantPhone || '');
       setGstNumber(user.gstNumber || '');
       setFssaiNumber(user.fssaiNumber || '');
+      setInstagramUrl(user.instagramUrl || '');
       setTableCount(user.tableCount || 10);
       setRestaurantLogo(user.restaurantLogo || '');
       setMenuCategoryImages(user.menuCategoryImages || {});
@@ -557,7 +578,7 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
     try {
       await axios.patch('/api/settings', {
         tableCount, restaurantName, restaurantAddress, restaurantPhone,
-        gstNumber, fssaiNumber, taxEnabled, taxes, packagingCharge,
+        gstNumber, fssaiNumber, instagramUrl, taxEnabled, taxes, packagingCharge,
         menuCategories: categoryOptions, restaurantLogo, menuCategoryImages,
       });
       if (onSettingsUpdate) onSettingsUpdate();
@@ -919,6 +940,7 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
           <NativeInput label="Business Name" value={restaurantName} onChange={setRestaurantName} placeholder="My Restaurant" icon={Store} />
           <NativeInput label="Phone Number" value={restaurantPhone} onChange={setRestaurantPhone} placeholder="+91 9876543210" icon={Phone} type="tel" />
           <NativeInput label="Outlet Address" value={restaurantAddress} onChange={setRestaurantAddress} placeholder="123, Main Road, City" icon={MapPin} multiline />
+          <NativeInput label="Instagram Link" value={instagramUrl} onChange={setInstagramUrl} placeholder="https://instagram.com/myrestaurant or @myrestaurant" icon={InstagramIcon} />
         </Card>
       </div>
 

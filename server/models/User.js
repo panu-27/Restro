@@ -34,6 +34,7 @@ const userSchema = new mongoose.Schema({
     default: ['Main Floor']
   },
   restaurantLogo: { type: String, default: '' },
+  instagramUrl: { type: String, default: '', trim: true },
   slug: { type: String, default: '', trim: true, index: true },
   menuCategoryImages: {
     type: Map,

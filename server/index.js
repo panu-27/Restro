@@ -215,7 +215,7 @@ app.get('/api/auth/me', auth, async (req, res) => {
     }
     // For staff users, also include the owner's restaurant config
     if (user.parentUserId) {
-      const owner = await ArcheUser.findById(user.parentUserId).select('slug restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber taxEnabled taxes packagingCharge menuCategories tableCount tableAreas restaurantLogo menuCategoryImages');
+      const owner = await ArcheUser.findById(user.parentUserId).select('slug restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber taxEnabled taxes packagingCharge menuCategories tableCount tableAreas restaurantLogo menuCategoryImages instagramUrl');
       if (owner) {
         userData.slug = owner.slug || slugify(owner.restaurantName || owner.name || 'cafe');
         userData.restaurantName = owner.restaurantName;
@@ -230,6 +230,7 @@ app.get('/api/auth/me', auth, async (req, res) => {
         userData.tableCount = owner.tableCount;
         userData.tableAreas = owner.tableAreas;
         userData.restaurantLogo = owner.restaurantLogo;
+        userData.instagramUrl = owner.instagramUrl || '';
         userData.menuCategoryImages = owner.menuCategoryImages ? Object.fromEntries(owner.menuCategoryImages) : {};
       }
     }
@@ -415,7 +416,7 @@ app.patch('/api/subscription/cancel-autopay', auth, async (req, res) => {
 // GET /api/settings
 app.get('/api/settings', auth, async (req, res) => {
   try {
-    const user = await ArcheUser.findById(req.user.id).select('tableCount restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber printMobileRequired taxEnabled taxes menuCategories name email role restaurantLogo menuCategoryImages slug');
+    const user = await ArcheUser.findById(req.user.id).select('tableCount restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber printMobileRequired taxEnabled taxes menuCategories name email role restaurantLogo menuCategoryImages slug instagramUrl');
     if (!user) return res.status(404).json({ error: 'User not found' });
     const userData = user.toObject();
     if (userData.menuCategoryImages instanceof Map) {
@@ -430,7 +431,7 @@ app.get('/api/settings', auth, async (req, res) => {
 // PATCH /api/settings
 app.patch('/api/settings', auth, async (req, res) => {
   try {
-    const { tableCount, restaurantName, restaurantAddress, restaurantPhone, gstNumber, fssaiNumber, printMobileRequired, taxEnabled, taxes, menuCategories, restaurantLogo, menuCategoryImages, packagingCharge } = req.body;
+    const { tableCount, restaurantName, restaurantAddress, restaurantPhone, gstNumber, fssaiNumber, printMobileRequired, taxEnabled, taxes, menuCategories, restaurantLogo, menuCategoryImages, packagingCharge, instagramUrl } = req.body;
     const update = {};
     if (tableCount !== undefined) {
       update.tableCount = Math.max(10, Math.min(50, parseInt(tableCount)));
@@ -448,6 +449,7 @@ app.patch('/api/settings', auth, async (req, res) => {
     if (taxes !== undefined) update.taxes = taxes;
     if (packagingCharge !== undefined) update.packagingCharge = Number(packagingCharge);
     if (restaurantLogo !== undefined) update.restaurantLogo = restaurantLogo;
+    if (instagramUrl !== undefined) update.instagramUrl = String(instagramUrl).trim();
     if (menuCategoryImages !== undefined && typeof menuCategoryImages === 'object') {
       // Store each key of the map
       Object.entries(menuCategoryImages).forEach(([k, v]) => {
@@ -462,7 +464,7 @@ app.patch('/api/settings', auth, async (req, res) => {
     }
 
     const user = await ArcheUser.findByIdAndUpdate(req.user.id, update, { new: true })
-      .select('tableCount restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber printMobileRequired taxEnabled taxes packagingCharge menuCategories name email role restaurantLogo menuCategoryImages slug');
+      .select('tableCount restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber printMobileRequired taxEnabled taxes packagingCharge menuCategories name email role restaurantLogo menuCategoryImages slug instagramUrl');
     const userData = user.toObject();
     if (userData.menuCategoryImages instanceof Map) {
       userData.menuCategoryImages = Object.fromEntries(userData.menuCategoryImages);
@@ -1685,6 +1687,7 @@ app.get('/api/public/restro/:identifier', async (req, res) => {
       restaurantPhone: restaurant.restaurantPhone || '',
       mobileNumber: restaurant.mobileNumber || '',
       whatsappNumber: restaurant.restaurantPhone || restaurant.mobileNumber || '',
+      instagramUrl: restaurant.instagramUrl || '',
       menuCategories: restaurant.menuCategories || [],
       menuCategoryImages: restaurant.menuCategoryImages ? (
         restaurant.menuCategoryImages instanceof Map 
