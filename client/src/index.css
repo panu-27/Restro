@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,100..1000&family=Pacifico&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300..900&family=Newsreader:opsz,wght@6..72,400..700&family=Playfair+Display:wght@400..800&family=Pacifico&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -9,7 +9,7 @@
 }
 
 :root {
-  --font-family: 'DM Sans', sans-serif;
+  --font-family: 'Inter', sans-serif;
 }
 
 html {
@@ -22,10 +22,14 @@ html {
   }
 }
 
-/* Global: enforce DM Sans and remove all italic styles */
+/* Global: enforce Inter as default while allowing explicit font-serif */
 *, *::before, *::after {
-  font-family: 'DM Sans', sans-serif !important;
+  font-family: 'Inter', sans-serif;
   font-style: normal !important;
+}
+
+.font-serif, [class*="font-serif"], .sg-serif {
+  font-family: 'Newsreader', 'Playfair Display', Georgia, serif !important;
 }
 
 body {

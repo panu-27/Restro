@@ -24,6 +24,7 @@ const userSchema = new mongoose.Schema({
     percentage: { type: Number, default: 5 },
     enabled: { type: Boolean, default: true }
   }],
+  packagingCharge: { type: Number, default: 20 },
   menuCategories: {
     type: [String],
     default: ['Veg', 'Non-Veg', 'Beverage', 'Dessert']
@@ -33,6 +34,7 @@ const userSchema = new mongoose.Schema({
     default: ['Main Floor']
   },
   restaurantLogo: { type: String, default: '' },
+  slug: { type: String, default: '', trim: true, index: true },
   menuCategoryImages: {
     type: Map,
     of: String,

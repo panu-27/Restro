@@ -20,6 +20,10 @@ const orderSchema = new mongoose.Schema({
   orderType: { type: String, enum: ['Dine-in', 'Parcel'], required: true },
   items: [orderItemSchema],
   subtotal: { type: Number, default: 0 }, // Before tax
+  extraCharges: [{ name: String, amount: Number }], // Added extra charges
+  discountType: { type: String, enum: ['Fixed', 'Percentage', 'None'], default: 'None' },
+  discountValue: { type: Number, default: 0 },
+  discountAmount: { type: Number, default: 0 },
   taxAmount: { type: Number, default: 0 }, // Total tax applied
   taxBreakdown: [{ name: String, percentage: Number, amount: Number }], // Individual tax lines
   totalAmount: { type: Number, required: true, default: 0 }, // Final amount after tax

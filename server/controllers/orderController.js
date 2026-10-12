@@ -34,14 +34,24 @@ exports.createOrder = async (req, res) => {
 
 exports.updateOrderStatus = async (req, res) => {
   try {
-    const { status, customerPhone, paymentMode } = req.body;
+    const { status, customerPhone, paymentMode, paymentType, cashAmount, onlineAmount, guestNote, extraCharges, discountType, discountValue, discountAmount, subtotal, taxAmount, totalAmount } = req.body;
     const updateFields = { status };
     if (customerPhone !== undefined && customerPhone !== '') {
       updateFields.customerPhone = customerPhone;
     }
-    if (paymentMode !== undefined) {
-      updateFields.paymentMode = paymentMode;
-    }
+    if (paymentMode !== undefined) updateFields.paymentMode = paymentMode;
+    if (paymentType !== undefined) updateFields.paymentType = paymentType;
+    if (cashAmount !== undefined) updateFields.cashAmount = cashAmount;
+    if (onlineAmount !== undefined) updateFields.onlineAmount = onlineAmount;
+    if (guestNote !== undefined) updateFields.guestNote = guestNote;
+    if (extraCharges !== undefined) updateFields.extraCharges = extraCharges;
+    if (discountType !== undefined) updateFields.discountType = discountType;
+    if (discountValue !== undefined) updateFields.discountValue = discountValue;
+    if (discountAmount !== undefined) updateFields.discountAmount = discountAmount;
+    if (subtotal !== undefined) updateFields.subtotal = subtotal;
+    if (taxAmount !== undefined) updateFields.taxAmount = taxAmount;
+    if (totalAmount !== undefined) updateFields.totalAmount = totalAmount;
+
     const order = await Order.findByIdAndUpdate(req.params.id, updateFields, { new: true });
     if (!order) return res.status(404).json({ error: 'Order not found' });
 

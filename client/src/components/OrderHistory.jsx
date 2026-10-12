@@ -3,21 +3,80 @@ import axios from 'axios';
 import { Search, History, Calendar, ArrowUpRight, Package, Utensils, Clock, Users, ChevronRight, Filter } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { useNavigation } from '../navigation/NavigationManager';
 import { Sk, SkeletonStyles } from './Skeleton';
+import Skeleton from 'react-loading-skeleton';
+import 'react-loading-skeleton/dist/skeleton.css';
 
 
 const cn = (...inputs) => twMerge(clsx(inputs));
 
+const HistoryCardSkeleton = () => (
+  <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col justify-between min-h-[120px]">
+    <div className="flex justify-between items-start mb-3">
+      <div className="flex flex-col gap-2 w-1/2">
+        <div className="flex items-center gap-2">
+          <div className="w-16">
+            <Skeleton height={16} />
+          </div>
+          <div className="w-12">
+            <Skeleton height={14} />
+          </div>
+        </div>
+        <div className="w-24">
+          <Skeleton height={14} />
+        </div>
+      </div>
+      <div className="flex flex-col items-end gap-1 w-1/4">
+        <div className="w-16">
+          <Skeleton height={20} />
+        </div>
+        <div className="w-10">
+          <Skeleton height={10} />
+        </div>
+      </div>
+    </div>
+    <div className="flex items-center justify-between pt-3 border-t border-slate-50 mt-auto">
+      <div className="w-28">
+        <Skeleton height={12} />
+      </div>
+      <div className="w-12">
+        <Skeleton height={12} />
+      </div>
+    </div>
+  </div>
+);
+
 const OrderHistory = ({ onOrderClick }) => {
   const formatOrderNumber = (num) => String(num || '').padStart(4, '0');
   const [searchTerm, setSearchTerm] = useState('');
-  const [historyOrders, setHistoryOrders] = useState([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
   const [filterType, setFilterType] = useState('Dine-in');
+  const [historyOrders, setHistoryOrders] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalOrders, setTotalOrders] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
+
+  const { registerBackInterceptor } = useNavigation();
+
+  useEffect(() => {
+    return registerBackInterceptor(() => {
+      if (searchTerm) {
+        setSearchTerm('');
+        return true;
+      }
+      if (page > 1) {
+        setPage(1);
+        return true;
+      }
+      if (filterType !== 'Dine-in') {
+        setFilterType('Dine-in');
+        return true;
+      }
+      return false;
+    });
+  }, [searchTerm, page, filterType, registerBackInterceptor]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -47,8 +106,24 @@ const OrderHistory = ({ onOrderClick }) => {
     }
   };
 
-  const fmtDate = (d) => d ? new Date(d).toLocaleDateString([], { day: '2-digit', month: '2-digit', year: '2-digit' }) : '--/--/--';
-  const fmtTime = (d) => d ? new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase() : '--:--';
+  const fmtDate = (d) => {
+    if (!d) return '--/--/--';
+    try {
+      const dt = new Date(d);
+      return isNaN(dt.getTime()) ? '--/--/--' : dt.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: '2-digit' });
+    } catch {
+      return '--/--/--';
+    }
+  };
+  const fmtTime = (d) => {
+    if (!d) return '--:--';
+    try {
+      const dt = new Date(d);
+      return isNaN(dt.getTime()) ? '--:--' : dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase();
+    } catch {
+      return '--:--';
+    }
+  };
 
   return (
     <div className="min-h-screen bg-white pb-32 animate-in fade-in duration-700 font-sans">
@@ -109,15 +184,10 @@ const OrderHistory = ({ onOrderClick }) => {
           </div>
         </div>
 
-        {/* Loading / Empty / Content */}
         {loadingHistory ? (
-          <div className="space-y-3">
-            <SkeletonStyles />
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="bg-white rounded-2xl border border-slate-100 p-4 flex flex-col gap-3">
-                <div className="flex justify-between items-center"><Sk className="h-4 w-20 rounded" /><Sk className="h-4 w-14 rounded" /></div>
-                <div className="flex justify-between items-center"><Sk className="h-3 w-32 rounded" /><Sk className="h-3 w-20 rounded" /></div>
-              </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {[...Array(6)].map((_, i) => (
+              <HistoryCardSkeleton key={i} />
             ))}
           </div>
         ) : historyOrders.length === 0 ? (

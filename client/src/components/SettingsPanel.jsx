@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { useNavigation } from '../navigation/NavigationManager';
 import {
   Plus, Trash2, Edit3, Save, X, Check, ToggleLeft, ToggleRight,
   Store, Hash, Utensils, CreditCard, Shield, Leaf, Flame, Coffee,
@@ -8,48 +9,55 @@ import {
   Users, Eye, EyeOff, ChefHat, UserPlus, Key, LogOut, LayoutGrid,
   ImageIcon, ChevronRight, ChevronLeft, ChevronDown, ArrowLeft,
   Bell, Star, Wifi, Printer, HelpCircle, MessageCircle, Share2,
-  Bluetooth, Globe, MessageSquare, Users2, RadioTower
+  Bluetooth, Globe, MessageSquare, Users2, RadioTower, Settings, Copy, CheckCircle2,
+  Crown, Zap, BarChart2, Calendar, Gift, Sparkles, ExternalLink, Camera, Loader2, AlertCircle
 } from 'lucide-react';
 import { TableSettingsSkeleton } from './Skeleton';
 import ImageUploader from './ImageUploader';
+import { QRCodeSVG } from 'qrcode.react';
 
 const DEFAULT_MENU_CATEGORIES = ['Veg', 'Non-Veg', 'Beverage', 'Dessert'];
 
 /* ─── tiny helpers ───────────────────────────────────────────────── */
 const cn = (...c) => c.filter(Boolean).join(' ');
 
-const SectionRow = ({ icon: Icon, label, sublabel, onPress, rightEl, danger }) => (
+const SectionRow = ({ icon: Icon, label, sublabel, onPress, rightEl, danger, isActive }) => (
   <button
     onClick={onPress}
     className={cn(
-      'w-full flex items-center gap-4 px-5 py-4 bg-white active:bg-white transition-colors text-left',
-      danger && 'text-red-500'
+      'w-full flex items-center gap-3 lg:gap-3.5 px-5 py-4 lg:px-4 lg:py-3 transition-colors text-left',
+      isActive ? 'bg-[#FF5A36]/5 lg:bg-orange-50/50' : 'bg-white active:bg-gray-50'
     )}
   >
     {Icon && (
-      <span className={cn('w-9 h-9 rounded-xl flex items-center justify-center shrink-0',
-        danger ? 'bg-red-50' : 'bg-blue-50')}>
-        <Icon size={18} className={danger ? 'text-red-500' : 'text-blue-600'} />
+      <span className={cn('w-9 h-9 lg:w-8 lg:h-8 rounded-xl lg:rounded-lg flex items-center justify-center shrink-0 transition-colors',
+        danger ? 'bg-red-50 text-red-500' 
+        : isActive ? 'bg-[#FF5A36] text-white shadow-md shadow-orange-200' 
+        : 'bg-blue-50 text-blue-600 lg:bg-slate-50 lg:text-slate-500')}>
+        <Icon size={18} className="lg:w-[16px] lg:h-[16px]" />
       </span>
     )}
     <div className="flex-1 min-w-0">
-      <p className={cn('text-[15px] font-semibold leading-tight', danger ? 'text-red-500' : 'text-gray-900')}>{label}</p>
-      {sublabel && <p className="text-[12px] text-gray-400 mt-0.5 leading-tight">{sublabel}</p>}
+      <p className={cn('text-[15px] lg:text-[14px] font-semibold leading-tight transition-colors', 
+        danger ? 'text-red-500' 
+        : isActive ? 'text-[#FF5A36]' 
+        : 'text-gray-900 lg:text-slate-800')}>{label}</p>
+      {sublabel && <p className={cn("text-[12px] lg:text-[11px] mt-0.5 leading-tight transition-colors", isActive ? 'text-orange-900/60' : 'text-gray-400')}>{sublabel}</p>}
     </div>
-    {rightEl !== undefined ? rightEl : <ChevronRight size={16} className="text-gray-300 shrink-0" />}
+    {rightEl !== undefined ? rightEl : <ChevronRight size={16} className={cn("shrink-0 transition-colors lg:w-[14px] lg:h-[14px]", isActive ? 'text-[#FF5A36]' : 'text-gray-300')} />}
   </button>
 );
 
 const Divider = ({ className }) => <div className={cn('h-px bg-gray-100', className)} />;
 
 const Card = ({ children, className }) => (
-  <div className={cn('bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm', className)}>
+  <div className={cn('bg-white rounded-2xl lg:rounded-xl overflow-hidden border border-gray-100 lg:border-slate-200 shadow-sm', className)}>
     {children}
   </div>
 );
 
 const SectionLabel = ({ children }) => (
-  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.12em] px-5 pt-5 pb-2">{children}</p>
+  <p className="text-[11px] lg:text-[10px] font-bold text-gray-400 lg:text-slate-500 uppercase tracking-[0.12em] px-5 lg:px-4 pt-5 lg:pt-4 pb-2 lg:pb-1.5">{children}</p>
 );
 
 const NativeInput = ({ label, value, onChange, placeholder, icon: Icon, type = 'text', multiline }) => (
@@ -87,19 +95,25 @@ const PillToggle = ({ value, onChange }) => (
 );
 
 /* ─── Screen wrapper: simulates a pushed native screen ──────────── */
-const NativeScreen = ({ title, onBack, backLabel, children, rightAction }) => (
-  <div className="flex flex-col h-full bg-white overflow-hidden">
-    {/* Nav bar */}
-    <div className="flex items-center justify-between px-4 h-14 bg-white border-b border-gray-100 shrink-0">
-      {onBack && (
-        <button onClick={onBack} className="flex items-center gap-0.5 text-gray-900 active:opacity-60">
-          <ChevronLeft size={22} strokeWidth={2.5} />
-          <span className="text-[17px] font-bold">{backLabel || title}</span>
-        </button>
-      )}
-      {rightAction && <div className="text-blue-600 text-[15px] font-semibold">{rightAction}</div>}
-    </div>
-    <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
+const NativeScreen = ({ title, onBack, backLabel, children, rightAction, isSidebar, showDesktopBack, hideNav = false }) => (
+  <div className={cn("flex flex-col h-full overflow-hidden", isSidebar ? "bg-white" : "bg-white lg:bg-slate-50")}>
+    {!hideNav && (
+      <div className={cn("flex items-center justify-between shrink-0", 
+          isSidebar ? "px-4 pt-6 pb-4 bg-white border-b border-gray-100 lg:px-6 lg:pt-0 lg:pb-4 lg:h-auto lg:border-b-0 lg:sticky lg:top-0 lg:z-40" 
+          : "px-4 pt-6 pb-4 bg-white border-b border-gray-100 lg:px-8 lg:pt-0 lg:pb-4 lg:h-auto lg:border-b-0 lg:sticky lg:top-0 lg:z-40 lg:bg-transparent")}>
+        {onBack && (
+          <button onClick={onBack} className={cn("flex items-center gap-0.5 lg:gap-1 text-slate-900 active:opacity-60 hover:text-blue-600 transition-colors", !showDesktopBack && "lg:hidden")}>
+            <ChevronLeft size={22} strokeWidth={2.5} className={cn(showDesktopBack && "lg:w-7 lg:h-7 -ml-2")} />
+            <span className={cn("text-[17px] font-bold", showDesktopBack && "lg:text-[22px] lg:font-semibold")}>{backLabel || title}</span>
+          </button>
+        )}
+        <div className={cn("hidden lg:block text-[17px] font-semibold text-slate-900 lg:text-[22px]", showDesktopBack && "lg:hidden")}>
+           {title || backLabel}
+        </div>
+        {rightAction && <div className="text-blue-600 text-[15px] font-semibold">{rightAction}</div>}
+      </div>
+    )}
+    <div className={cn("flex-1 overflow-y-auto")} style={{ scrollbarWidth: 'none' }}>
       {children}
     </div>
   </div>
@@ -109,61 +123,23 @@ const NativeScreen = ({ title, onBack, backLabel, children, rightAction }) => (
    MAIN COMPONENT
 ══════════════════════════════════════════════════════════════════ */
 const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, onLogout, onClose, initialSection = 'home' }) => {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { handleBack: triggerGlobalBack, registerBackInterceptor } = useNavigation();
   const activeSection = searchParams.get('section') || 'home';
   const activeForm = searchParams.get('form');
   const activeModal = searchParams.get('modal');
   const editingIdParam = searchParams.get('id');
 
-  const setActiveSection = (section, keepParams = false) => {
-    const newParams = new URLSearchParams(searchParams);
-    if (section === 'home') {
-      newParams.delete('section');
-    } else {
-      newParams.set('section', section);
-    }
-    if (!keepParams) {
-      newParams.delete('form');
-      newParams.delete('modal');
-      newParams.delete('id');
-    }
-    setSearchParams(newParams, { replace: true });
-  };
-
-  const openForm = (form, id = null) => {
-    const newParams = new URLSearchParams(searchParams);
-    newParams.set('form', form);
-    if (id) newParams.set('id', id);
-    else newParams.delete('id');
-    setSearchParams(newParams, { replace: true });
-  };
-
-  const closeForm = () => {
-    const newParams = new URLSearchParams(searchParams);
-    newParams.delete('form');
-    newParams.delete('id');
-    setSearchParams(newParams);
-  };
-
-  const openModal = (name) => {
-    const newParams = new URLSearchParams(searchParams);
-    newParams.set('modal', name);
-    setSearchParams(newParams);
-  };
-
-  const closeModal = () => {
-    const newParams = new URLSearchParams(searchParams);
-    newParams.delete('modal');
-    setSearchParams(newParams);
-  };
-
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showAddStaff, setShowAddStaff] = useState(false);
   const [editingId, setEditingId] = useState(null);
 
   useEffect(() => {
     setShowLogoutConfirm(activeModal === 'logout');
+    setShowResetConfirm(activeModal === 'reset_loyalty');
     setShowAddForm(activeForm === 'addMenuItem' || activeForm === 'editMenuItem');
     setShowAddStaff(activeForm === 'addStaff' || activeForm === 'editStaff');
     setEditingId(editingIdParam);
@@ -178,36 +154,124 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
   const activeModalRef = React.useRef(activeModal);
   activeModalRef.current = activeModal;
 
-  useEffect(() => {
-    if (!window.history.state?.settingsTrap) {
-      window.history.pushState({ settingsTrap: true }, '', window.location.href);
+  const setActiveSection = (section, keepParams = false, shouldReplace = false) => {
+    const newParams = new URLSearchParams(searchParams);
+    if (section === 'home') {
+      newParams.delete('section');
+    } else {
+      newParams.set('section', section);
+    }
+    if (!keepParams) {
+      newParams.delete('form');
+      newParams.delete('modal');
+      newParams.delete('id');
+    }
+    // Push forward when entering a sub-section so browser history tracks the step!
+    setSearchParams(newParams, { replace: shouldReplace });
+  };
+
+  const openForm = (form, id = null) => {
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('form', form);
+    if (id) newParams.set('id', id);
+    else newParams.delete('id');
+    setSearchParams(newParams);
+  };
+
+  const closeForm = () => {
+    if (window.history.length > 1 && searchParams.get('form')) {
+      navigate(-1);
+    } else {
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('form');
+      newParams.delete('id');
+      setSearchParams(newParams, { replace: true });
+    }
+  };
+
+  const openModal = (name) => {
+    if (name === 'logout') setShowLogoutConfirm(true);
+    if (name === 'reset_loyalty') setShowResetConfirm(true);
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('modal', name);
+    setSearchParams(newParams);
+  };
+
+  const closeModal = () => {
+    setShowLogoutConfirm(false);
+    setShowResetConfirm(false);
+    if (window.history.length > 1 && searchParams.get('modal')) {
+      navigate(-1);
+    } else {
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('modal');
+      setSearchParams(newParams, { replace: true });
+    }
+  };
+
+  const handleBackToHome = () => {
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      setActiveSection('home', false, true);
+    }
+  };
+
+  const handleBackToMenu = () => {
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      setActiveSection('menu', false, true);
+    }
+  };
+
+  const handleBackToDashboard = () => {
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate('/dashboard', { replace: true });
+    }
+  };
+
+  const handleSettingsBack = React.useCallback(() => {
+    const actMod = searchParams.get('modal') || activeModalRef.current;
+    const actForm = searchParams.get('form') || activeFormRef.current;
+    const actSec = searchParams.get('section') || activeSectionRef.current;
+
+    // 1. Modals (logout, reset_loyalty, etc.)
+    if (actMod || showLogoutConfirm || showResetConfirm) {
+      closeModal();
+      return true;
     }
 
-    const handlePopState = (e) => {
-      const actSec = activeSectionRef.current;
-      const actForm = activeFormRef.current;
-      const actMod = activeModalRef.current;
+    // 2. Forms (addMenuItem, editMenuItem, addStaff, editStaff)
+    if (actForm) {
+      closeForm();
+      return true;
+    }
 
-      // If they popped our trap
-      if (!e.state?.settingsTrap) {
-        if (actForm) {
-          window.history.pushState({ settingsTrap: true }, '', window.location.href);
-          closeForm();
-        } else if (actMod) {
-          window.history.pushState({ settingsTrap: true }, '', window.location.href);
-          closeModal();
-        } else if (actSec && actSec !== 'home') {
-          window.history.pushState({ settingsTrap: true }, '', window.location.href);
-          setActiveSection('home');
-        } else {
-          onClose();
-        }
-      }
-    };
+    // 3. Sub-sub-section: addMenuItem / editMenuItem -> go back to menu builder
+    if (actSec === 'addMenuItem' || actSec === 'editMenuItem') {
+      handleBackToMenu();
+      return true;
+    }
 
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [setSearchParams, onClose]);
+    // 4. Any sub-section (menu, loyalty, restaurant, taxes, tables, staff, printer, billing, password) -> go back to Settings Home
+    if (actSec && actSec !== 'home') {
+      handleBackToHome();
+      return true;
+    }
+
+    // 5. Settings Home -> go directly to /dashboard
+    handleBackToDashboard();
+    return true;
+  }, [searchParams, showLogoutConfirm, showResetConfirm, navigate]);
+
+  useEffect(() => {
+    return registerBackInterceptor(() => {
+      return handleSettingsBack();
+    });
+  }, [registerBackInterceptor, handleSettingsBack]);
 
   /* ── Restaurant fields ─────────────────────────────────────────── */
   const [restaurantName, setRestaurantName] = useState('');
@@ -217,15 +281,93 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
   const [fssaiNumber, setFssaiNumber] = useState('');
   const [tableCount, setTableCount] = useState(10);
   const [restaurantLogo, setRestaurantLogo] = useState('');
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoPreview, setLogoPreview] = useState('');
+  const [logoStatus, setLogoStatus] = useState(null);
+  const logoInputRef = React.useRef(null);
   const [menuCategoryImages, setMenuCategoryImages] = useState({});
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [localAutopay, setLocalAutopay] = useState(subscription?.autopayEnabled);
+
+  const handleLogoSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setLogoStatus({ type: 'error', message: 'Please select a valid image file (PNG, JPG, WEBP, SVG).' });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setLogoStatus({ type: 'error', message: 'Image size exceeds 5 MB. Please choose a smaller file.' });
+      return;
+    }
+
+    setLogoStatus(null);
+    setLogoUploading(true);
+
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const dataUri = ev.target.result;
+      setLogoPreview(dataUri);
+
+      try {
+        const uploadRes = await axios.post('/api/upload', { data: dataUri, folder: 'restro/logos' });
+        const uploadedUrl = uploadRes.data.url;
+        setRestaurantLogo(uploadedUrl);
+        setLogoPreview('');
+
+        // Persist immediately to settings so it stays saved across refresh/logout
+        await axios.patch('/api/settings', { restaurantLogo: uploadedUrl });
+        if (onSettingsUpdate) onSettingsUpdate();
+
+        setLogoStatus({ type: 'success', message: 'Logo uploaded and saved successfully!' });
+        setTimeout(() => setLogoStatus(null), 4000);
+      } catch (err) {
+        console.error('Logo upload error:', err);
+        setLogoPreview('');
+        setLogoStatus({
+          type: 'error',
+          message: err.response?.data?.error || 'Failed to upload logo. Please try again.'
+        });
+      } finally {
+        setLogoUploading(false);
+        if (logoInputRef.current) logoInputRef.current.value = '';
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveLogo = async () => {
+    if (!window.confirm('Are you sure you want to remove your restaurant logo?')) return;
+    setLogoUploading(true);
+    try {
+      setRestaurantLogo('');
+      setLogoPreview('');
+      await axios.patch('/api/settings', { restaurantLogo: '' });
+      if (onSettingsUpdate) onSettingsUpdate();
+      setLogoStatus({ type: 'success', message: 'Logo removed successfully.' });
+      setTimeout(() => setLogoStatus(null), 3000);
+    } catch (err) {
+      console.error('Logo removal error:', err);
+      setLogoStatus({ type: 'error', message: 'Failed to remove logo.' });
+    } finally {
+      setLogoUploading(false);
+    }
+  };
 
   useEffect(() => { setLocalAutopay(subscription?.autopayEnabled); }, [subscription?.autopayEnabled]);
 
   /* ── Tax ───────────────────────────────────────────────────────── */
   const [taxEnabled, setTaxEnabled] = useState(false);
   const [taxes, setTaxes] = useState([]);
+  const [packagingCharge, setPackagingCharge] = useState(20);
+
+  /* ── Password ──────────────────────────────────────────────────── */
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
 
   /* ── Printer ───────────────────────────────────────────────────── */
   const [printerTab, setPrinterTab] = useState('bluetooth');
@@ -249,6 +391,28 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
   const [editItem, setEditItem] = useState({ name: '', category: '', price: '', image: '', variations: [], taxPercentage: 'None', stock: '' });
 
   useEffect(() => { fetchMenu(); }, []);
+
+  // Sync editItem when navigating directly via URL (e.g. /settings?section=addMenuItem&id=...)
+  useEffect(() => {
+    if (editingId && menuItems.length > 0) {
+      const found = menuItems.find(i => i._id === editingId);
+      if (found) {
+        setEditItem(prev => {
+          if (prev._id === found._id && prev.name === found.name) return prev;
+          return {
+            _id: found._id,
+            name: found.name || '',
+            category: found.category || '',
+            price: found.price ?? '',
+            image: found.image || '',
+            variations: found.variations || [],
+            taxPercentage: found.taxPercentage ?? 'None',
+            stock: found.stock ?? ''
+          };
+        });
+      }
+    }
+  }, [editingId, menuItems]);
 
   /* ── Staff ─────────────────────────────────────────────────────── */
   const [staffList, setStaffList] = useState([]);
@@ -284,29 +448,19 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
   useEffect(() => { fetchStaff(); }, []);
 
   /* ── Tables cache/fetch ────────────────────────────────────────── */
-  const SETTINGS_TABLES_CACHE = 'restro_settings_tables_cache';
-  const SETTINGS_AREAS_CACHE = 'restro_settings_areas_cache';
-  const readSettingsCache = (key, fallback) => {
-    try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
-  };
-  const fetchTablesData = async (silent = false) => {
-    if (!silent) setTablesLoading(true);
+  const fetchTablesData = async () => {
+    setTablesLoading(true);
     try {
       const [tablesRes, areasRes] = await Promise.all([axios.get('/api/tables'), axios.get('/api/table-areas')]);
       const t = tablesRes.data || [];
       const a = Array.isArray(areasRes.data) && areasRes.data.length ? areasRes.data : ['Main Floor'];
       setAllTables(t); setTableAreas(a);
-      localStorage.setItem(SETTINGS_TABLES_CACHE, JSON.stringify(t));
-      localStorage.setItem(SETTINGS_AREAS_CACHE, JSON.stringify(a));
     } catch (err) { console.error('Error fetching tables:', err); }
-    finally { if (!silent) setTablesLoading(false); }
+    finally { setTablesLoading(false); }
   };
   useEffect(() => {
     if (activeSection === 'tables') {
-      const cachedTables = readSettingsCache(SETTINGS_TABLES_CACHE, null);
-      const cachedAreas = readSettingsCache(SETTINGS_AREAS_CACHE, null);
-      if (cachedTables) { setAllTables(cachedTables); setTableAreas(cachedAreas || ['Main Floor']); setTablesLoading(false); fetchTablesData(true); }
-      else fetchTablesData(false);
+      fetchTablesData();
     }
   }, [activeSection]);
 
@@ -370,6 +524,7 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
       setRestaurantLogo(user.restaurantLogo || '');
       setMenuCategoryImages(user.menuCategoryImages || {});
       setTaxEnabled(user.taxEnabled || false);
+      setPackagingCharge(user.packagingCharge ?? 20);
       setTaxes(user.taxes?.length ? user.taxes : [
         { name: 'CGST', percentage: 2.5, enabled: true },
         { name: 'SGST', percentage: 2.5, enabled: true }
@@ -402,7 +557,7 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
     try {
       await axios.patch('/api/settings', {
         tableCount, restaurantName, restaurantAddress, restaurantPhone,
-        gstNumber, fssaiNumber, taxEnabled, taxes,
+        gstNumber, fssaiNumber, taxEnabled, taxes, packagingCharge,
         menuCategories: categoryOptions, restaurantLogo, menuCategoryImages,
       });
       if (onSettingsUpdate) onSettingsUpdate();
@@ -440,6 +595,26 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
     setLocalAutopay(false);
     try { await axios.patch('/api/subscription/cancel-autopay'); if (onSettingsUpdate) onSettingsUpdate(); }
     catch { setLocalAutopay(true); }
+  };
+
+  const handleChangePassword = async () => {
+    if (!currentPassword || !newPassword) {
+      setPasswordError('Please fill both fields.');
+      return;
+    }
+    setPasswordSaving(true);
+    setPasswordError('');
+    setPasswordSuccess('');
+    try {
+      await axios.post('/api/auth/change-password', { currentPassword, newPassword });
+      setPasswordSuccess('Password updated successfully!');
+      setCurrentPassword('');
+      setNewPassword('');
+    } catch (err) {
+      setPasswordError(err.response?.data?.error || 'Failed to change password.');
+    } finally {
+      setPasswordSaving(false);
+    }
   };
   const handleEnableAutopay = async () => {
     if (!window.confirm('Enable autopay?')) return;
@@ -532,41 +707,42 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
 
   /* ── HOME (menu list) ─────────────────────────────────────────── */
   const renderHomeScreen = () => (
-    <NativeScreen title="" onBack={onClose} backLabel="Menu" rightAction={null}>
-      {/* Profile card */}
-      <div className="mx-4 mt-5 mb-3">
-        <Card>
+    <NativeScreen hideNav={true} isSidebar={true}>
+      <header className="px-5 pt-6 pb-4 bg-white border-b border-slate-100 sticky top-0 z-40 lg:-mx-6 lg:px-10 lg:pb-2 lg:border-b-0 shrink-0">
+        <div className="flex items-center justify-between mb-4 lg:mb-2">
+          <div className="flex items-center gap-4">
+            <button
+              className="flex items-center gap-1.5 text-slate-900 active:opacity-60 transition-opacity"
+              onClick={handleBackToDashboard}
+              title="Back to Dashboard"
+            >
+              <ChevronLeft size={22} strokeWidth={2.5} className="lg:hidden text-slate-800 -ml-1" />
+              <h1 className="text-[17px] font-semibold text-slate-900 lg:text-[22px]">Settings</h1>
+            </button>
+          </div>
+          {/* Avatar */}
           <button
             onClick={() => setActiveSection('restaurant')}
-            className="w-full flex items-center gap-4 px-5 py-4 active:bg-white"
+            className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center overflow-hidden shrink-0 shadow-sm"
           >
-            <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center shrink-0 overflow-hidden">
-              {restaurantLogo
-                ? <img src={restaurantLogo} alt="" className="w-full h-full object-cover" />
-                : <span className="text-blue-600 font-bold text-xl">{(restaurantName || 'R')[0].toUpperCase()}</span>}
-            </div>
-            <div className="flex-1 min-w-0 text-left">
-              <p className="text-[16px] font-bold text-gray-900">
-                {restaurantName 
-                  ? (restaurantName.length > 15 ? restaurantName.substring(0, 15) + '..' : restaurantName)
-                  : 'My Restaurant'}
-              </p>
-              <p className="text-[13px] text-gray-400">{restaurantPhone || '+91 —'}</p>
-            </div>
-            <ChevronRight size={16} className="text-gray-300" />
+            {restaurantLogo ? (
+              <img src={restaurantLogo} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-slate-600 font-semibold text-[15px]">{(restaurantName || 'R')[0].toUpperCase()}</span>
+            )}
           </button>
-        </Card>
-      </div>
+        </div>
+      </header>
 
       {/* Section 1 */}
       <SectionLabel>Menu & Orders</SectionLabel>
       <div className="mx-4 mb-3">
         <Card>
-          <SectionRow icon={Utensils} label="Menu Builder" sublabel="Add, edit, toggle items" onPress={() => setActiveSection('menu')} />
+          <SectionRow icon={Utensils} label="Menu Builder" sublabel="Add, edit, toggle items" onPress={() => setActiveSection('menu')} isActive={activeSection === 'menu'} />
           <Divider className="ml-[72px]" />
-          <SectionRow icon={Percent} label="Tax Configuration" sublabel={taxEnabled ? 'Taxes enabled' : 'Taxes off'} onPress={() => setActiveSection('taxes')} />
+          <SectionRow icon={Percent} label="Tax Configuration" sublabel={taxEnabled ? 'Taxes enabled' : 'Taxes off'} onPress={() => setActiveSection('taxes')} isActive={activeSection === 'taxes'} />
           <Divider className="ml-[72px]" />
-          <SectionRow icon={LayoutGrid} label="Table Management" sublabel={`${allTables.length} tables · ${tableAreas.length} sections`} onPress={() => setActiveSection('tables')} />
+          <SectionRow icon={LayoutGrid} label="Table Management" sublabel={`${allTables.length} tables · ${tableAreas.length} sections`} onPress={() => setActiveSection('tables')} isActive={activeSection === 'tables'} />
         </Card>
       </div>
 
@@ -574,7 +750,7 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
       <SectionLabel>Reach & Marketing</SectionLabel>
       <div className="mx-4 mb-3">
         <Card>
-          <SectionRow icon={Users} label="Regular Customers" sublabel="View loyalty and repeat visits" onPress={() => { }} />
+          <SectionRow icon={Users} label="Daily Loyalty QR" sublabel="Generate attendance QR for customers" onPress={() => setActiveSection('loyalty')} isActive={activeSection === 'loyalty'} />
           <Divider className="ml-[72px]" />
           <SectionRow icon={MessageSquare} label="Manage WhatsApp" sublabel="Connect your WhatsApp Business" onPress={() => { }} />
           <Divider className="ml-[72px]" />
@@ -588,7 +764,7 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
       <SectionLabel>Team</SectionLabel>
       <div className="mx-4 mb-3">
         <Card>
-          <SectionRow icon={Users2} label="Staff Management" sublabel={`${staffList.length} members`} onPress={() => setActiveSection('staff')} />
+          <SectionRow icon={Users2} label="Staff Management" sublabel={`${staffList.length} members`} onPress={() => setActiveSection('staff')} isActive={activeSection === 'staff'} />
         </Card>
       </div>
 
@@ -596,7 +772,7 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
       <SectionLabel>Hardware</SectionLabel>
       <div className="mx-4 mb-3">
         <Card>
-          <SectionRow icon={Printer} label="Printer" sublabel="Connect Bluetooth or USB printer" onPress={() => setActiveSection('printer')} />
+          <SectionRow icon={Printer} label="Printer" sublabel="Connect Bluetooth or USB printer" onPress={() => setActiveSection('printer')} isActive={activeSection === 'printer'} />
         </Card>
       </div>
 
@@ -609,66 +785,128 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
             label="Subscription"
             sublabel={subscription?.isValid ? `${subscription?.plan || 'Active'} plan` : 'No active plan'}
             onPress={() => setActiveSection('billing')}
+            isActive={activeSection === 'billing'}
             rightEl={
               <div className="flex items-center gap-2">
                 <span className={cn('text-[11px] font-bold px-2.5 py-1 rounded-full',
                   subscription?.isValid ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500')}>
                   {subscription?.isValid ? 'Active' : 'Inactive'}
                 </span>
-                <ChevronRight size={16} className="text-gray-300" />
+                <ChevronRight size={16} className={cn("shrink-0 transition-colors", activeSection === 'billing' ? 'text-[#FF5A36]' : 'text-gray-300')} />
               </div>
             }
           />
           <Divider className="ml-[72px]" />
-          {onShowPassword && <SectionRow icon={Key} label="Change Password" onPress={onShowPassword} />}
-          {onShowPassword && <Divider className="ml-[72px]" />}
-          {onLogout && <SectionRow icon={LogOut} label="Log Out" onPress={() => setShowLogoutConfirm(true)} danger />}
+          <SectionRow icon={Key} label="Change Password" onPress={() => setActiveSection('password')} />
+          <Divider className="ml-[72px]" />
+          {onLogout && <SectionRow icon={LogOut} label="Log Out" onPress={() => openModal('logout')} danger />}
         </Card>
       </div>
 
-      <div className="h-10" />
+      <div className="h-10 lg:h-32" />
     </NativeScreen>
   );
 
   /* ── RESTAURANT PROFILE ─────────────────────────────────────────── */
   const renderRestaurantScreen = () => (
-    <NativeScreen title="Business Details" onBack={() => setActiveSection('home')}>
+    <NativeScreen title="Business Details" onBack={handleBackToHome}>
       {/* ── Logo Drop Area ── */}
-      <div className="mx-4 mt-5 mb-4">
-        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.12em] mb-2 px-1">Restaurant Logo</p>
-        <div className="relative rounded-2xl overflow-hidden border border-gray-200 bg-gray-50"
-          style={{ aspectRatio: '16/9' }}>
-          {restaurantLogo ? (
-            <img src={restaurantLogo} alt="Logo" className="w-full h-full object-cover" />
+      <div className="mx-4 mt-2 lg:mt-0 mb-4">
+        <div className="flex items-center justify-between mb-2 px-1">
+          <p className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.12em]">Restaurant Logo</p>
+          {(restaurantLogo || logoPreview) && !logoUploading && (
+            <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+              <Check size={12} strokeWidth={2.5} /> Active Logo
+            </span>
+          )}
+        </div>
+
+        {/* Status Alerts */}
+        {logoStatus && (
+          <div className={cn(
+            "mb-3 p-3 rounded-2xl flex items-center justify-between text-xs font-semibold animate-in fade-in duration-200",
+            logoStatus.type === 'success' ? "bg-emerald-50 text-emerald-700 border border-emerald-200/60" : "bg-rose-50 text-rose-700 border border-rose-200/60"
+          )}>
+            <div className="flex items-center gap-2">
+              {logoStatus.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+              <span>{logoStatus.message}</span>
+            </div>
+            <button onClick={() => setLogoStatus(null)} className="p-1 hover:opacity-70">
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        {/* Hidden File Input */}
+        <input
+          ref={logoInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/svg+xml"
+          className="hidden"
+          onChange={handleLogoSelect}
+        />
+
+        {/* Logo Card Preview */}
+        <div
+          onClick={() => !logoUploading && logoInputRef.current?.click()}
+          className="relative rounded-2xl overflow-hidden border border-gray-200 bg-gray-50 cursor-pointer group transition-all hover:border-blue-400"
+          style={{ aspectRatio: '16/9' }}
+        >
+          {logoPreview || restaurantLogo ? (
+            <div className="w-full h-full relative">
+              <img
+                src={logoPreview || restaurantLogo}
+                alt="Restaurant Logo"
+                className="w-full h-full object-cover"
+              />
+              {!logoUploading && (
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-white">
+                  <Camera size={26} />
+                  <span className="text-xs font-bold">Tap to Change Logo</span>
+                </div>
+              )}
+            </div>
           ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none">
-              <div className="w-16 h-16 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center">
-                <Store size={28} className="text-gray-300" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+              <div className="w-16 h-16 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center group-hover:scale-105 transition-transform">
+                <Store size={28} className="text-gray-400 group-hover:text-blue-500 transition-colors" />
               </div>
-              <p className="text-[13px] font-semibold text-gray-400">Tap to upload logo</p>
-              <p className="text-[11px] text-gray-300">PNG, JPG up to 5 MB</p>
+              <div className="text-center">
+                <p className="text-[13px] font-semibold text-gray-700">Tap to upload restaurant logo</p>
+                <p className="text-[11px] text-gray-400 mt-0.5">PNG, JPG, WEBP, SVG up to 5 MB</p>
+              </div>
             </div>
           )}
 
-          {/* ✅ FIX: ImageUploader always covers full area — tapping anywhere triggers file picker */}
-          <div className="absolute inset-0">
-            <ImageUploader
-              value={restaurantLogo}
-              onChange={setRestaurantLogo}
-              label=""
-              shape="full"
-              folder="restro/logos"
-              className="w-full h-full"
-            />
-          </div>
+          {/* Uploading Spinner Overlay */}
+          {logoUploading && (
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px] flex flex-col items-center justify-center gap-2 text-white z-20">
+              <Loader2 size={30} className="animate-spin text-white" />
+              <p className="text-xs font-bold tracking-wide">Uploading & Saving Logo...</p>
+            </div>
+          )}
+        </div>
 
-          {/* Remove button — stopPropagation so it doesn't re-open the picker */}
+        {/* Action Controls */}
+        <div className="flex items-center gap-2 mt-3">
+          <button
+            type="button"
+            onClick={() => !logoUploading && logoInputRef.current?.click()}
+            disabled={logoUploading}
+            className="flex-1 py-2.5 px-4 bg-white border border-gray-200 hover:border-gray-300 active:bg-gray-50 rounded-xl text-xs font-bold text-gray-700 flex items-center justify-center gap-1.5 transition-all shadow-sm disabled:opacity-50"
+          >
+            <Camera size={14} className="text-blue-500" />
+            {restaurantLogo ? 'Change Logo' : 'Choose Logo Image'}
+          </button>
           {restaurantLogo && (
             <button
-              onClick={(e) => { e.stopPropagation(); setRestaurantLogo(''); }}
-              className="absolute top-3 right-3 w-8 h-8 bg-black/50 rounded-full flex items-center justify-center text-white active:scale-95 transition-all z-10"
+              type="button"
+              onClick={handleRemoveLogo}
+              disabled={logoUploading}
+              className="py-2.5 px-4 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 border border-rose-200/60 rounded-xl text-xs font-bold text-rose-600 flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
             >
-              <X size={14} strokeWidth={2.5} />
+              <Trash2 size={14} />
+              Remove
             </button>
           )}
         </div>
@@ -693,10 +931,56 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
         </Card>
       </div>
 
+      {/* ── Public Restaurant Page Link ── */}
+      <SectionLabel>Public Restaurant Page</SectionLabel>
+      <div className="mx-4 mb-3">
+        <Card>
+          <div className="p-4 flex flex-col gap-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
+                <Globe size={14} className="text-blue-500" />
+                Live Customer Link
+              </span>
+              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/60">
+                Publicly Accessible
+              </span>
+            </div>
+            <p className="text-[12px] text-gray-500 leading-relaxed">
+              Customers can visit this link anytime without logging in to view your branding, attendance punch card, and menu.
+            </p>
+            <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
+              <span className="text-xs font-mono text-gray-600 truncate flex-1">
+                {`${getLoyaltyBaseUrl()}/restro/${user?.slug || (restaurantName ? restaurantName.toLowerCase().replace(/\s+/g, '-') : 'canvas-grove')}`}
+              </span>
+              <button
+                type="button"
+                onClick={() => handleCopyLoyaltyLink(`${getLoyaltyBaseUrl()}/restro/${user?.slug || (restaurantName ? restaurantName.toLowerCase().replace(/\s+/g, '-') : 'canvas-grove')}`)}
+                className="p-1.5 hover:bg-white rounded-lg text-gray-500 hover:text-gray-900 transition-colors"
+                title="Copy Public Link"
+              >
+                {copiedLoyaltyLink ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+              </button>
+              <a
+                href={`${getLoyaltyBaseUrl()}/restro/${user?.slug || (restaurantName ? restaurantName.toLowerCase().replace(/\s+/g, '-') : 'canvas-grove')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-1.5 hover:bg-white rounded-lg text-gray-500 hover:text-blue-600 transition-colors"
+                title="Preview Public Page"
+              >
+                <ExternalLink size={14} />
+              </a>
+            </div>
+          </div>
+        </Card>
+      </div>
+
       <div className="h-24" />
 
       {/* ── Sticky Save Footer ── */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 z-20">
+      <div
+        className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 z-20"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}
+      >
         <button
           onClick={handleSaveSettings}
           disabled={settingsSaving}
@@ -710,7 +994,7 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
 
   /* ── TAX ──────────────────────────────────────────────────────── */
   const renderTaxScreen = () => (
-    <NativeScreen title="Tax Configuration" onBack={() => setActiveSection('home')}>
+    <NativeScreen title="Tax Configuration" onBack={handleBackToHome}>
       <SectionLabel>Tax Settings</SectionLabel>
       <div className="mx-4 mb-4">
         <Card>
@@ -782,10 +1066,35 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
         </>
       )}
 
+      {/* Packaging Charge Configuration */}
+      <SectionLabel>Packaging Charges</SectionLabel>
+      <div className="mx-4 mb-6">
+        <Card>
+          <div className="flex items-center justify-between px-5 py-4">
+            <div>
+              <p className="text-[15px] font-semibold text-gray-900">Per-Unit Package Charge</p>
+              <p className="text-[12px] text-gray-400 mt-0.5">Applied as a flat rate per parcel pack</p>
+            </div>
+            <div className="relative w-24">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold">₹</span>
+              <input
+                type="number"
+                value={packagingCharge}
+                onChange={e => setPackagingCharge(Number(e.target.value) || 0)}
+                className="w-full bg-slate-50 border border-gray-200 rounded-xl py-2 pl-7 pr-3 text-[14px] font-bold outline-none focus:border-blue-400"
+              />
+            </div>
+          </div>
+        </Card>
+      </div>
+
       <div className="h-24" />
 
       {/* Sticky Save Footer */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 z-20">
+      <div
+        className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 z-20"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}
+      >
         <button
           onClick={handleSaveSettings}
           disabled={settingsSaving}
@@ -797,29 +1106,218 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
     </NativeScreen>
   );
 
+  /* ── LOYALTY PROGRAM ────────────────────────────────────────────── */
+  const [loyaltyCode, setLoyaltyCode] = useState('');
+  const [loyaltyLoading, setLoyaltyLoading] = useState(false);
+  const [loyaltyTab, setLoyaltyTab] = useState('attendance');
+
+  const fetchLoyaltyCode = async (isBackground = false) => {
+    if (!isBackground) setLoyaltyLoading(true);
+    try {
+      const res = await axios.get('/api/loyalty/code');
+      setLoyaltyCode(res.data.code);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      if (!isBackground) setLoyaltyLoading(false);
+    }
+  };
+
+  const handleResetLoyalty = async () => {
+    if (!window.confirm('Are you sure you want to reset the streak for ALL customers of your restaurant? This action cannot be undone.')) return;
+    try {
+      await axios.post('/api/loyalty/reset');
+      alert('All customer streaks have been successfully reset.');
+    } catch (err) {
+      alert('Failed to reset streaks.');
+    }
+  };
+
+  useEffect(() => {
+    let intervalId;
+    if (activeSection === 'loyalty') {
+      fetchLoyaltyCode();
+      // Poll every 3 seconds in the background
+      intervalId = setInterval(() => fetchLoyaltyCode(true), 3000);
+    }
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [activeSection]);
+
+  const [copiedLoyaltyLink, setCopiedLoyaltyLink] = useState(false);
+
+  const getLoyaltyBaseUrl = () => {
+    const raw = (import.meta.env.VITE_APP_URL || import.meta.env.VITE_CLIENT_URL || window.location.origin || '').trim();
+    if (!raw) return window.location.origin;
+    let base = raw.replace(/\/+$/, '');
+    if (!base.startsWith('http://') && !base.startsWith('https://')) {
+      base = (base.includes('localhost') || base.includes('127.0.0.1')) ? `http://${base}` : `https://${base}`;
+    }
+    return base;
+  };
+
+  const handleCopyLoyaltyLink = (url) => {
+    if (!url) return;
+    navigator.clipboard.writeText(url);
+    setCopiedLoyaltyLink(true);
+    setTimeout(() => setCopiedLoyaltyLink(false), 2000);
+  };
+
+  const renderLoyaltyScreen = () => {
+    const baseUrl = getLoyaltyBaseUrl();
+    const restroIdentifier = user?.slug || (restaurantName ? restaurantName.toLowerCase().replace(/\s+/g, '-') : user?.id || user?._id);
+    const qrUrl = loyaltyCode ? `${baseUrl}/restro/${restroIdentifier}?c=${loyaltyCode}` : '';
+    const statusUrl = `${baseUrl}/restro/${restroIdentifier}`;
+    const activeUrl = loyaltyTab === 'attendance' ? qrUrl : statusUrl;
+
+    return (
+      <NativeScreen title="Loyalty Program" onBack={handleBackToHome}>
+        {/* Tab Selector - matching Printer UI */}
+        <div className="flex border-b border-gray-100 bg-white sticky top-0 z-10 shrink-0">
+          {[
+            ['attendance', 'Check-In', CheckCircle2], 
+            ['dashboard', 'Dashboard', LayoutGrid]
+          ].map(([id, label, Icon]) => (
+            <button
+              key={id}
+              onClick={() => setLoyaltyTab(id)}
+              className={cn(
+                'flex-1 flex items-center justify-center gap-2 py-4 text-[15px] font-bold border-b-2 transition-colors',
+                loyaltyTab === id ? 'border-orange-500 text-orange-500' : 'border-transparent text-gray-400'
+              )}
+            >
+              <Icon size={16} />
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex flex-col items-center py-10 px-5 text-center bg-white min-h-[calc(100vh-150px)]">
+          {loyaltyLoading ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col w-full max-w-sm mx-auto">
+              {/* Dynamic QR Area */}
+              <div>
+                {loyaltyTab === 'attendance' ? (
+                  <div className="animate-in fade-in duration-300">
+                    <div className="mb-4 mt-2 inline-block">
+                      {qrUrl && <QRCodeSVG value={qrUrl} size={220} />}
+                    </div>
+                    <h3 className="text-[17px] font-bold text-gray-900 mb-1">Attendance Scanner</h3>
+                    <p className="text-[13px] text-gray-500 max-w-[250px] mx-auto mb-3">
+                      Customers scan this to get +1 visit today. Code resets automatically every day.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="animate-in fade-in duration-300">
+                    <div className="mb-4 mt-2 inline-block">
+                      {statusUrl && <QRCodeSVG value={statusUrl} size={220} />}
+                    </div>
+                    <h3 className="text-[17px] font-bold text-gray-900 mb-1">Customer Dashboard</h3>
+                    <p className="text-[13px] text-gray-500 max-w-[250px] mx-auto mb-3">
+                      Customers scan this to view their loyalty card without marking attendance.
+                    </p>
+                  </div>
+                )}
+
+                {/* Direct Link & Copy/Preview Action */}
+                {activeUrl && (
+                  <div className="mt-2 mb-8 flex flex-col items-center w-full">
+                    <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3.5 py-2.5 max-w-full shadow-sm">
+                      <p className="text-[12px] font-mono text-slate-600 truncate max-w-[210px] select-all">
+                        {activeUrl}
+                      </p>
+                      <div className="flex items-center gap-1 shrink-0 border-l border-slate-200 pl-2">
+                        <button
+                          type="button"
+                          onClick={() => handleCopyLoyaltyLink(activeUrl)}
+                          className="p-1.5 hover:bg-white active:scale-95 rounded-lg text-slate-500 hover:text-slate-900 transition-all"
+                          title="Copy Link"
+                        >
+                          {copiedLoyaltyLink ? <Check size={15} className="text-emerald-500" /> : <Copy size={15} />}
+                        </button>
+                        <a
+                          href={activeUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-1.5 hover:bg-white active:scale-95 rounded-lg text-slate-500 hover:text-blue-600 transition-all"
+                          title="Open Link Preview"
+                        >
+                          <ExternalLink size={15} />
+                        </a>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-slate-400 font-medium mt-1.5">
+                      Base URL configured via <span className="font-mono text-slate-500">.env</span> (VITE_APP_URL)
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="h-24" />
+
+        {/* Sticky Reset Footer (matching Printer/Staff style) */}
+        <div
+          className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 z-20"
+          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}
+        >
+          <button
+            onClick={() => openModal('reset_loyalty')}
+            className="w-full py-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl text-[15px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-lg shadow-red-200"
+          >
+            <Trash2 size={20} strokeWidth={2.5} /> Reset All Streaks
+          </button>
+        </div>
+      </NativeScreen>
+    );
+  };
+
   /* ── MENU ─────────────────────────────────────────────────────── */
   const renderMenuScreen = () => (
-    <NativeScreen title="Menu Item" onBack={() => setActiveSection('home')}>
+    <NativeScreen 
+      title="Menu Builder" 
+      onBack={handleBackToHome}
+      rightAction={
+        <div className="hidden lg:block">
+          <button
+            onClick={() => {
+              setNewItem({ name: '', category: categoryOptions[0], price: '', image: '', variations: [], taxPercentage: 'None', stock: '' });
+              setActiveSection('addMenuItem');
+            }}
+            className="px-5 py-2.5 bg-blue-600 text-white rounded-xl text-[14px] font-bold shadow-md shadow-blue-200 active:scale-[0.98] transition-all flex items-center gap-2 hover:bg-blue-700"
+          >
+            <Plus size={18} strokeWidth={2.5} /> Add Menu Item
+          </button>
+        </div>
+      }
+    >
       {/* Search + filter */}
-      <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-4 py-3 space-y-3">
-        <div className="relative">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
+      <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-4 py-3 lg:px-8 lg:py-5 space-y-3 lg:space-y-0 lg:flex lg:items-center lg:justify-between lg:bg-transparent lg:border-none">
+        <div className="relative lg:max-w-xs w-full shrink-0">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input
             type="text"
-            placeholder="Search"
+            placeholder="Search Menu"
             value={menuSearch}
             onChange={e => setMenuSearch(e.target.value)}
-            className="w-full bg-white border border-gray-200 rounded-xl py-3 pl-11 pr-4 text-[15px] text-gray-900 outline-none focus:border-blue-400 font-medium"
+            className="w-full bg-white lg:bg-white border border-gray-200 rounded-xl py-3 lg:py-2.5 pl-11 pr-4 text-[15px] lg:text-[14px] text-gray-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 font-medium transition-all"
           />
         </div>
-        <div className="flex gap-2 overflow-x-auto no-scrollbar">
+        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 lg:pb-0">
           {['All', ...categoryOptions].map(cat => (
             <button
               key={cat}
               onClick={() => setMenuFilter(cat)}
               className={cn(
-                'px-6 py-2 rounded-lg text-[13px] font-bold whitespace-nowrap border transition-all uppercase tracking-wider',
-                menuFilter === cat ? 'bg-white border-blue-500 text-blue-600' : 'bg-white border-gray-200 text-gray-500'
+                'px-6 py-2 lg:px-5 lg:py-2 rounded-xl text-[13px] font-bold whitespace-nowrap border transition-all uppercase tracking-wider',
+                menuFilter === cat ? 'bg-blue-50 border-blue-200 text-blue-700 shadow-sm' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
               )}
             >
               {cat}
@@ -835,31 +1333,42 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
                 }
               }
             }}
-            className="px-4 py-2 rounded-lg border border-blue-500 text-blue-600 flex items-center justify-center shrink-0"
+            className="px-4 py-2 rounded-xl border border-dashed border-blue-300 text-blue-600 bg-blue-50/50 hover:bg-blue-50 flex items-center justify-center shrink-0 transition-colors"
           >
-            <Plus size={18} strokeWidth={3} />
+            <Plus size={18} strokeWidth={2.5} />
           </button>
         </div>
       </div>
 
-      <div className="flex-1 pb-32">
-        {Object.entries(menuItemsByCategory).map(([category, items]) => (
-          <div key={category} className="mt-4">
-            <div className="px-5 py-3 flex items-center justify-between group">
+      <div className="flex-1 pb-32 lg:pb-12 lg:px-8">
+        {Object.entries(menuItemsByCategory).map(([category, items]) => {
+          const bgColors = [
+            'lg:bg-slate-200', 'lg:bg-blue-100', 'lg:bg-rose-100',
+            'lg:bg-emerald-100', 'lg:bg-amber-100', 'lg:bg-violet-100',
+            'lg:bg-cyan-100', 'lg:bg-fuchsia-100'
+          ];
+          const colorIndex = category.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % bgColors.length;
+          const categoryBgColor = bgColors[colorIndex];
+
+          return (
+          <div key={category} className={cn("mt-4 lg:mt-6 lg:p-6 lg:rounded-3xl lg:border lg:border-slate-100", categoryBgColor)}>
+            <div className="px-5 py-3 lg:px-2 lg:mb-4 flex items-center justify-between group">
               <div className="flex items-center gap-2">
-                <h3 className="text-[15px] font-black text-gray-900 uppercase tracking-widest">{category}</h3>
-                <span className="text-[11px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-md">{items.length}</span>
+                <h3 className="text-[15px] lg:text-[18px] font-black text-gray-900 uppercase tracking-widest">{category}</h3>
+                <span className="text-[11px] lg:text-[12px] font-bold text-slate-500 bg-white/60 px-2 py-0.5 rounded-md">{items.length}</span>
               </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => handleRenameCategory(category)} className="p-2 text-gray-400 hover:text-blue-500 transition-colors">
+              <div className="flex items-center gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
+                <button onClick={() => handleRenameCategory(category)} className="p-2 lg:p-1.5 text-gray-400 hover:text-blue-600 bg-white lg:rounded-md transition-colors">
                   <Edit3 size={16} />
                 </button>
-                <button onClick={() => handleDeleteCategory(category)} className="p-2 text-gray-400 hover:text-red-500 transition-colors">
+                <button onClick={() => handleDeleteCategory(category)} className="p-2 lg:p-1.5 text-gray-400 hover:text-red-600 bg-white lg:rounded-md transition-colors">
                   <Trash2 size={16} />
                 </button>
               </div>
             </div>
-            <div className="bg-white border-y border-gray-50">
+            
+            {/* Quick-Order Style Grid Layout for Desktop */}
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 lg:gap-4 lg:bg-transparent lg:border-none">
               {items.map((item, idx) => (
                 <div key={item._id}
                   onClick={() => { 
@@ -869,40 +1378,47 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
                     params.set('id', item._id);
                     setSearchParams(params);
                   }}
-                  className={cn('flex items-center justify-between px-5 py-4 active:bg-white transition-colors', idx !== items.length - 1 && 'border-b border-gray-50')}
+                  className="bg-white rounded-2xl border border-slate-100 p-3 shadow-sm flex flex-col cursor-pointer hover:shadow-md hover:border-blue-200 transition-all active:scale-[0.98]"
                 >
-                  <div className="flex-1 min-w-0 pr-4">
-                    <p className="text-[15px] font-bold text-gray-900 leading-tight mb-1">{item.name}</p>
-                    <div className="flex items-center gap-2">
-                      {item.variations?.length > 0 ? (
-                        <div className="flex flex-wrap gap-1.5">
-                          {item.variations.map((v, i) => (
-                            <span key={i} className="text-[11px] font-bold text-gray-500 bg-white px-2 py-0.5 rounded border border-gray-100">
-                              {v.name}: ₹{v.price}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-[14px] font-medium text-gray-500">₹{item.price}</p>
-                      )}
+                  <div className="w-full aspect-[4/3] rounded-xl overflow-hidden mb-3 bg-slate-50 flex flex-col items-center justify-center shrink-0 border border-slate-100 relative group-hover:border-blue-100">
+                    {item.image ? (
+                      <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <>
+                        <ImageIcon size={28} className="text-slate-300 mb-1.5" />
+                        <span className="text-[11px] font-bold text-slate-400">No Image</span>
+                      </>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{item.category}</span>
                     </div>
                   </div>
-                  {item.image ? (
-                    <img src={item.image} alt="" className="w-16 h-16 rounded-xl object-cover shrink-0 bg-white" />
-                  ) : (
-                    <div className="w-16 h-16 rounded-xl bg-white flex items-center justify-center shrink-0">
-                      <ImageIcon size={20} className="text-gray-200" />
-                    </div>
-                  )}
+
+                  <h3 className="text-[15px] lg:text-[17px] font-bold text-slate-900 leading-tight mb-1.5">{item.name}</h3>
+                  
+                  <div className="mt-auto pt-2 flex items-center justify-between">
+                    <p className="text-[15px] lg:text-[16px] font-black text-slate-900">₹{item.price}</p>
+                    {item.variations?.length > 0 && (
+                      <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase tracking-wide">
+                        {item.variations.length} Vars
+                      </span>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
           </div>
-        ))}
+        )})}
       </div>
 
-      {/* Fixed Add Button */}
-      <div className="fixed bottom-6 left-4 right-4 z-20">
+      {/* Fixed Add Button (Hidden on Desktop) */}
+      <div
+        className="fixed bottom-6 left-4 right-4 z-20 lg:hidden"
+        style={{ bottom: 'calc(env(safe-area-inset-bottom) + 24px)' }}
+      >
         <button
           onClick={() => {
             setNewItem({ name: '', category: categoryOptions[0], price: '', image: '', variations: [], taxPercentage: 'None', stock: '' });
@@ -924,159 +1440,216 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
     const setData = isEdit ? setEditItem : setNewItem;
 
     return (
-      <NativeScreen title={isEdit ? "Edit Menu Item" : "Add Menu Item"} onBack={() => setActiveSection('menu')}>
-        <div className="space-y-6 pb-24">
-          <div className="bg-white px-5 py-6 space-y-6">
-            {/* Item Name */}
-            <div>
-              <label className="block text-[13px] font-medium text-gray-500 mb-2">Item Name <span className="text-red-400">*</span></label>
-              <input
-                type="text"
-                value={data.name}
-                onChange={e => setData({ ...data, name: e.target.value })}
-                placeholder="Tap to Enter"
-                className="w-full bg-white border border-gray-200 rounded-xl py-3.5 px-4 text-[15px] outline-none focus:border-blue-400 font-medium placeholder:text-gray-300"
-              />
-            </div>
-
-            {/* Item Image */}
-            <div>
-              <label className="block text-[13px] font-medium text-gray-500 mb-2">Item Image</label>
-              <div className="relative">
-                <div className="w-full aspect-[16/9] rounded-2xl bg-white border border-gray-200 overflow-hidden flex flex-col items-center justify-center gap-3">
-                  {data.image ? (
-                    <img src={data.image} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="pointer-events-none flex flex-col items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center">
-                        <ImageIcon size={24} className="text-gray-300" />
-                      </div>
-                      <p className="text-[14px] font-medium text-gray-400">Upload Item Image</p>
+      <NativeScreen title={isEdit ? "Edit Menu Item" : "Add Menu Item"} onBack={handleBackToMenu} showDesktopBack={true}>
+        <div className="pb-32 lg:pb-12">
+          <div className="bg-white lg:bg-transparent px-5 py-6 lg:px-8 lg:py-8 lg:grid lg:grid-cols-[1fr_1.5fr] lg:gap-12 space-y-6 lg:space-y-0">
+            
+            {/* LEFT COLUMN: Image Uploader */}
+            <div className="order-first lg:order-none lg:sticky lg:top-[120px] self-start space-y-4">
+              <div className="hidden lg:block">
+                <h3 className="text-[18px] font-black text-gray-900 tracking-tight">Item Photo</h3>
+                <p className="text-[13px] font-medium text-slate-500 mt-1">Upload a high-quality image of the dish to increase sales.</p>
+              </div>
+              <label className="block text-[13px] font-medium text-gray-500 mb-2 lg:hidden">Item Image</label>
+              <div className="relative w-full aspect-[4/3] rounded-2xl bg-slate-50 border-2 border-dashed border-slate-200 lg:border-slate-300 overflow-hidden flex flex-col items-center justify-center gap-3 transition-colors hover:bg-slate-100 group">
+                {data.image ? (
+                  <img src={data.image} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="pointer-events-none flex flex-col items-center gap-3">
+                    <div className="w-14 h-14 rounded-full bg-white flex items-center justify-center shadow-sm border border-slate-100">
+                      <ImageIcon size={28} className="text-slate-300 group-hover:text-blue-500 transition-colors" />
                     </div>
-                  )}
-                  {/* ✅ FIX: Always-on overlay — tapping anywhere on the image area opens file picker */}
-                  <div className="absolute inset-0">
-                    <ImageUploader
-                      value={data.image}
-                      onChange={url => setData({ ...data, image: url })}
-                      label=""
-                      shape="full"
-                    />
+                    <p className="text-[14px] font-bold text-slate-400 group-hover:text-blue-500 transition-colors">Tap to upload image</p>
                   </div>
+                )}
+                
+                {/* Always-on overlay */}
+                <div className="absolute inset-0 z-0">
+                  <ImageUploader
+                    value={data.image}
+                    onChange={url => setData({ ...data, image: url })}
+                    label=""
+                    shape="full"
+                    folder="restro/menu"
+                    className="w-full h-full"
+                  />
                 </div>
-                {/* Remove button — stopPropagation so it doesn't re-open the picker */}
+
+                {/* Remove button */}
                 {data.image && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setData({ ...data, image: '' }); }}
-                    className="absolute top-3 right-3 w-8 h-8 bg-black/50 rounded-full flex items-center justify-center text-white active:scale-95 transition-all z-10"
+                    className="absolute top-4 right-4 w-9 h-9 bg-black/60 rounded-full flex items-center justify-center text-white active:scale-95 transition-all z-10 hover:bg-red-500"
                   >
-                    <X size={14} strokeWidth={2.5} />
+                    <X size={16} strokeWidth={2.5} />
                   </button>
                 )}
               </div>
             </div>
 
-            {/* Category */}
-            <div>
-              <label className="block text-[13px] font-medium text-gray-500 mb-2">Item Category</label>
-              <div className="relative">
-                <select
-                  value={data.category}
-                  onChange={e => setData({ ...data, category: e.target.value })}
-                  className="w-full bg-white border border-gray-200 rounded-xl py-3.5 px-4 text-[15px] outline-none appearance-none font-medium text-gray-900"
-                >
-                  <option value="" disabled>Tap To Select</option>
-                  {categoryOptions.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                </select>
-                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={20} />
+            {/* RIGHT COLUMN: Form Details */}
+            <div className="space-y-6 lg:bg-white lg:p-8 lg:rounded-3xl lg:border lg:border-slate-200 lg:shadow-sm">
+              <div className="hidden lg:block border-b border-slate-100 pb-5 mb-6">
+                <h3 className="text-[18px] font-black text-gray-900 tracking-tight">Item Details</h3>
+                <p className="text-[13px] font-medium text-slate-500 mt-1">Configure pricing, categories, and variations.</p>
               </div>
-            </div>
 
-            {/* Sale Price */}
-            <div>
-              <label className="block text-[13px] font-medium text-gray-500 mb-2">Sale Price</label>
-              <div className="relative">
+              {/* Item Name */}
+              <div>
+                <label className="block text-[13px] font-medium text-gray-500 mb-2">Item Name <span className="text-red-400">*</span></label>
                 <input
-                  type="number"
-                  value={data.price}
-                  onChange={e => setData({ ...data, price: e.target.value })}
-                  placeholder="Tap to Enter"
-                  className="w-full bg-white border border-gray-200 rounded-xl py-3.5 px-4 text-[15px] outline-none focus:border-blue-400 font-bold placeholder:text-gray-300"
+                  type="text"
+                  value={data.name}
+                  onChange={e => setData({ ...data, name: e.target.value })}
+                  placeholder="e.g. Garlic Naan"
+                  className="w-full bg-white lg:bg-slate-50 border border-gray-200 rounded-xl py-3.5 px-4 text-[15px] outline-none focus:border-blue-400 focus:bg-white font-medium placeholder:text-gray-300 transition-colors"
                 />
               </div>
-            </div>
 
-            {/* Variations */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="text-[13px] font-medium text-gray-500">Variations (max 5)</label>
-                {data.variations.length < 5 && (
-                  <button type="button" onClick={() => addVariation(isEdit)}
-                    className="text-[12px] font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full active:scale-95 transition-all">
-                    + Add
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Category */}
+                <div>
+                  <label className="block text-[13px] font-medium text-gray-500 mb-2">Category</label>
+                  <div className="relative">
+                    <select
+                      value={data.category}
+                      onChange={e => setData({ ...data, category: e.target.value })}
+                      className="w-full bg-white lg:bg-slate-50 border border-gray-200 rounded-xl py-3.5 px-4 text-[15px] outline-none appearance-none font-medium text-gray-900 focus:border-blue-400 focus:bg-white transition-colors"
+                    >
+                      <option value="" disabled>Select</option>
+                      {categoryOptions.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                    </select>
+                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={20} />
+                  </div>
+                </div>
+
+                {/* Sale Price */}
+                <div>
+                  <label className="block text-[13px] font-medium text-gray-500 mb-2">Base Price (₹)</label>
+                  <input
+                    type="number"
+                    value={data.price}
+                    onChange={e => setData({ ...data, price: e.target.value })}
+                    placeholder="0.00"
+                    className="w-full bg-white lg:bg-slate-50 border border-gray-200 rounded-xl py-3.5 px-4 text-[15px] outline-none focus:border-blue-400 focus:bg-white font-bold placeholder:text-gray-300 transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Current Stock */}
+                <div>
+                  <label className="block text-[13px] font-medium text-gray-500 mb-2">Available Stock</label>
+                  <input
+                    type="number"
+                    value={data.stock}
+                    onChange={e => setData({ ...data, stock: e.target.value })}
+                    placeholder="Leave empty for infinite"
+                    className="w-full bg-white lg:bg-slate-50 border border-gray-200 rounded-xl py-3.5 px-4 text-[15px] outline-none focus:border-blue-400 focus:bg-white font-medium placeholder:text-gray-300 transition-colors"
+                  />
+                </div>
+              </div>
+
+              {/* Variations */}
+              <div className="space-y-4 pt-4 lg:border-t lg:border-slate-100">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-[14px] font-bold text-gray-900 block">Variations</label>
+                    <p className="text-[12px] font-medium text-gray-400">Add different sizes or options (max 5)</p>
+                  </div>
+                  {data.variations.length < 5 && (
+                    <button type="button" onClick={() => addVariation(isEdit)}
+                      className="text-[13px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-4 py-2 rounded-xl active:scale-95 transition-all">
+                      + Add Option
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-3">
+                  {data.variations.map((v, idx) => (
+                    <div key={idx} className="flex gap-3 items-center bg-white lg:bg-slate-50 p-3 lg:p-4 rounded-2xl border border-gray-100 lg:border-slate-200">
+                      <input
+                        type="text"
+                        value={v.name}
+                        onChange={e => updateVariation(idx, 'name', e.target.value, isEdit)}
+                        placeholder="e.g. Full Size"
+                        className="flex-1 bg-transparent text-[14px] lg:text-[15px] font-semibold outline-none"
+                      />
+                      <div className="w-[1px] h-6 bg-gray-200" />
+                      <input
+                        type="number"
+                        value={v.price}
+                        onChange={e => updateVariation(idx, 'price', e.target.value, isEdit)}
+                        placeholder="₹0"
+                        className="w-24 bg-transparent text-[14px] lg:text-[15px] font-bold outline-none text-right"
+                      />
+                      <button type="button" onClick={() => removeVariation(idx, isEdit)} className="text-gray-300 hover:text-red-500 ml-2 p-1 bg-white lg:bg-transparent rounded-lg">
+                        <X size={20} strokeWidth={2.5} />
+                      </button>
+                    </div>
+                  ))}
+                  {data.variations.length === 0 && (
+                    <div className="py-6 border-2 border-dashed border-slate-200 rounded-2xl flex items-center justify-center">
+                      <p className="text-[13px] font-semibold text-slate-400">No variations added</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              {/* Desktop specific buttons (hidden on mobile) */}
+              <div className="hidden lg:flex gap-3 pt-6 lg:border-t lg:border-slate-100 mt-8">
+                {isEdit ? (
+                  <button
+                    onClick={() => { handleDeleteItem(editingId); handleBackToMenu(); }}
+                    className="px-6 py-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-2xl font-bold flex items-center justify-center shrink-0 transition-colors"
+                  >
+                    <Trash2 size={20} />
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleBackToMenu}
+                    className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl text-[15px] font-bold transition-colors"
+                  >
+                    Cancel
                   </button>
                 )}
+                <button
+                  onClick={() => isEdit ? handleEditItem(editingId) : handleAddItem({ preventDefault: () => { } })}
+                  className="flex-[2] py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-[15px] font-bold shadow-lg shadow-blue-200 active:scale-[0.98] transition-all"
+                >
+                  {isEdit ? "Update Item" : "Save Item"}
+                </button>
               </div>
-              <div className="space-y-3">
-                {data.variations.map((v, idx) => (
-                  <div key={idx} className="flex gap-2 items-center bg-white p-3 rounded-xl border border-gray-100">
-                    <input
-                      type="text"
-                      value={v.name}
-                      onChange={e => updateVariation(idx, 'name', e.target.value, isEdit)}
-                      placeholder="e.g. Full"
-                      className="flex-1 bg-transparent text-[14px] font-semibold outline-none"
-                    />
-                    <div className="w-[1px] h-4 bg-gray-200" />
-                    <input
-                      type="number"
-                      value={v.price}
-                      onChange={e => updateVariation(idx, 'price', e.target.value, isEdit)}
-                      placeholder="₹0"
-                      className="w-20 bg-transparent text-[14px] font-bold outline-none text-right"
-                    />
-                    <button type="button" onClick={() => removeVariation(idx, isEdit)} className="text-gray-300 hover:text-red-500 ml-1">
-                      <X size={18} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
 
-            {/* Current Stock */}
-            <div>
-              <label className="block text-[13px] font-medium text-gray-500 mb-2">Current Stock</label>
-              <input
-                type="number"
-                value={data.stock}
-                onChange={e => setData({ ...data, stock: e.target.value })}
-                placeholder="Tap to Enter"
-                className="w-full bg-white border border-gray-200 rounded-xl py-3.5 px-4 text-[15px] outline-none focus:border-blue-400 font-medium placeholder:text-gray-300"
-              />
             </div>
           </div>
         </div>
 
-        {/* Footer Buttons */}
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 flex gap-3 z-20">
+        {/* Mobile Footer Buttons (Hidden on Desktop) */}
+        <div
+          className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 flex gap-3 z-30 lg:hidden shadow-[0_-4px_16px_rgba(0,0,0,0.06)]"
+          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}
+        >
           {isEdit ? (
             <button
-              onClick={() => { handleDeleteItem(editingId); setActiveSection('menu'); }}
-              className="w-14 h-14 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center shrink-0 active:scale-95 transition-all"
+              type="button"
+              onClick={() => { handleDeleteItem(editingId); handleBackToMenu(); }}
+              className="w-14 h-14 bg-red-50 hover:bg-red-100 text-red-500 rounded-2xl flex items-center justify-center shrink-0 active:scale-95 transition-all"
             >
               <Trash2 size={24} />
             </button>
           ) : (
             <button
-              onClick={() => setActiveSection('menu')}
-              className="flex-1 py-4 bg-white text-gray-400 rounded-2xl text-[16px] font-bold"
+              type="button"
+              onClick={handleBackToMenu}
+              className="flex-1 py-4 bg-slate-50 hover:bg-slate-100 text-gray-500 rounded-2xl text-[16px] font-bold"
             >
-              Save & New
+              Cancel
             </button>
           )}
           <button
+            type="button"
             onClick={() => isEdit ? handleEditItem(editingId) : handleAddItem({ preventDefault: () => { } })}
-            className="flex-1 py-4 bg-red-500 text-white rounded-2xl text-[16px] font-bold shadow-lg shadow-red-100 active:scale-[0.98] transition-all"
+            className="flex-1 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-[16px] font-bold shadow-lg shadow-blue-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
           >
             {isEdit ? "Update Item" : "Save Item"}
           </button>
@@ -1087,13 +1660,15 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
 
   /* ── TABLES ───────────────────────────────────────────────────── */
   const renderTablesScreen = () => (
-    <NativeScreen title="Table Management" onBack={() => setActiveSection('home')}>
+    <NativeScreen title="Table Management" onBack={handleBackToHome}>
       {tableError && (
         <div className="mx-4 mt-4 p-3 bg-red-50 border border-red-100 rounded-xl text-[13px] text-red-600 font-semibold">{tableError}</div>
       )}
 
       {tablesLoading ? (
-        <div className="mx-4 mt-5"><TableSettingsSkeleton /></div>
+        <div className="flex items-center justify-center py-16">
+          <span className="inline-block w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        </div>
       ) : (
         <div className="space-y-0">
           {tableAreas.map((area) => {
@@ -1263,114 +1838,118 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
 
   /* ── BILLING ──────────────────────────────────────────────────── */
   const renderBillingScreen = () => (
-    <NativeScreen title="Subscription" onBack={() => setActiveSection('home')}>
-      {/* Plan card */}
-      <div className="mx-4 mt-5 mb-4">
-        <div className="bg-blue-600 rounded-3xl p-6 text-white">
-          <p className="text-[12px] font-semibold text-blue-200 uppercase tracking-wider mb-1">Current Plan</p>
-          <p className="text-[28px] font-black capitalize">{subscription?.plan || 'None'}</p>
-          <div className="flex items-center gap-2 mt-1">
-            <span className={cn('text-[11px] font-bold px-2.5 py-1 rounded-full',
-              subscription?.isValid ? 'bg-emerald-400/30 text-emerald-200' : 'bg-red-400/30 text-red-200')}>
-              {subscription?.isValid ? '● Active' : '● Inactive'}
-            </span>
-            {localAutopay && (
-              <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-white/10 text-white/70 flex items-center gap-1">
-                <Shield size={10} /> Autopay On
+    <NativeScreen title="Subscription" onBack={handleBackToHome}>
+      <div className="mx-4 mt-5 mb-4 space-y-4 pb-20">
+        
+        {/* Current Plan card */}
+        <div className="relative overflow-hidden bg-[#2672ff] rounded-3xl p-6 text-white shadow-xl shadow-blue-500/30">
+          <svg className="absolute bottom-0 left-0 w-full translate-y-2 opacity-50" viewBox="0 0 1440 320" preserveAspectRatio="none">
+            <path fill="rgba(255,255,255,0.2)" d="M0,224L80,213.3C160,203,320,181,480,186.7C640,192,800,224,960,224C1120,224,1280,192,1360,176L1440,160L1440,320L1360,320C1280,320,1120,320,960,320C800,320,640,320,480,320C320,320,160,320,80,320L0,320Z"></path>
+          </svg>
+          <svg className="absolute bottom-0 left-0 w-full" viewBox="0 0 1440 320" preserveAspectRatio="none">
+            <path fill="rgba(255,255,255,0.15)" d="M0,160L80,176C160,192,320,224,480,229.3C640,235,800,213,960,202.7C1120,192,1280,192,1360,192L1440,192L1440,320L1360,320C1280,320,1120,320,960,320C800,320,640,320,480,320C320,320,160,320,80,320L0,320Z"></path>
+          </svg>
+          <div className="relative z-10 flex justify-between items-center">
+            <div>
+              <p className="text-[11px] font-bold text-blue-200 uppercase tracking-widest mb-1">Current Plan</p>
+              <p className="text-[32px] font-black capitalize leading-none mb-3">{subscription?.plan || 'Super'}</p>
+              <span className={cn('text-[11px] font-bold px-3 py-1.5 rounded-full', subscription?.isValid ? 'bg-emerald-400/80 text-white' : 'bg-red-400/80 text-white')}>
+                {subscription?.isValid ? '● Active' : '● Inactive'}
               </span>
-            )}
+            </div>
+            <div className="relative pt-2">
+              <div className="absolute inset-0 bg-yellow-400 blur-[30px] opacity-40"></div>
+              <Sparkles size={16} className="absolute -top-2 left-0 text-yellow-300" fill="currentColor" />
+              <Sparkles size={12} className="absolute bottom-2 -right-3 text-yellow-300" fill="currentColor" />
+              <Crown size={56} className="text-yellow-400 drop-shadow-2xl relative z-10" strokeWidth={1} fill="#ffc107" />
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Stats */}
-      <div className="mx-4 mb-4">
-        <div className="grid grid-cols-2 gap-3">
-          <Card>
-            <div className="px-4 py-5 text-center">
-              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">
-                {subscription?.plan === 'trial' ? 'Trial Days Left' : 'Monthly Cost'}
-              </p>
-              <p className="text-[24px] font-black text-blue-600">
-                {subscription?.plan === 'trial' ? `${subscription?.trialDaysRemaining ?? 0}d` : `₹${subscription?.amount ?? 0}`}
-              </p>
-            </div>
-          </Card>
-          <Card>
-            <div className="px-4 py-5 text-center">
-              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">Autopay</p>
-              <p className="text-[24px] font-black text-gray-900">
-                {localAutopay ? <span className="text-emerald-500">On</span> : <span className="text-gray-300">Off</span>}
-              </p>
-            </div>
-          </Card>
-        </div>
-      </div>
-
-      {/* Autopay toggle */}
-      <div className="mx-4 mb-4">
-        <Card>
-          {localAutopay ? (
-            <SectionRow
-              icon={Shield}
-              label="Cancel Autopay"
-              sublabel="Subscription expires at end of cycle"
-              onPress={handleCancelAutopay}
-              danger
-              rightEl={<span className="text-[13px] font-bold text-red-500">Cancel</span>}
-            />
-          ) : subscription?.status === 'active' ? (
-            <SectionRow
-              icon={Shield}
-              label="Enable Autopay"
-              sublabel="Keep subscription active automatically"
-              onPress={handleEnableAutopay}
-              rightEl={<span className="text-[13px] font-bold text-blue-600">Enable</span>}
-            />
-          ) : null}
-        </Card>
-      </div>
-
-      {subscription?.trialEndDate && (
-        <p className="text-center text-[12px] text-gray-400 font-medium mb-4">
-          Trial: {new Date(subscription.trialStartDate).toLocaleDateString('en-IN')} → {new Date(subscription.trialEndDate).toLocaleDateString('en-IN')}
-        </p>
-      )}
-
-      {/* Payment history */}
-      {subscription?.paymentHistory?.length > 0 && (
-        <>
-          <SectionLabel>Payment History</SectionLabel>
-          <div className="mx-4 mb-8">
-            <Card>
-              {subscription.paymentHistory.map((p, i) => (
-                <div key={i}>
-                  {i > 0 && <Divider className="ml-[60px]" />}
-                  <div className="flex items-center gap-4 px-5 py-4">
-                    <div className={cn('w-8 h-8 rounded-full flex items-center justify-center shrink-0', p.status === 'success' ? 'bg-emerald-50' : 'bg-red-50')}>
-                      <div className={cn('w-2.5 h-2.5 rounded-full', p.status === 'success' ? 'bg-emerald-500' : 'bg-red-500')} />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-[14px] font-semibold text-gray-900 capitalize">{p.method?.replace('_', ' ')}</p>
-                      <p className="text-[12px] text-gray-400">{new Date(p.date).toLocaleDateString('en-IN')}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[15px] font-black text-gray-900">₹{p.amount}</p>
-                      <span className={cn('text-[10px] font-bold', p.status === 'success' ? 'text-emerald-600' : 'text-red-500')}>{p.status}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </Card>
+        {/* Yearly Cost */}
+        <div className="relative overflow-hidden bg-gradient-to-br from-slate-50 via-[#f0f5ff] to-slate-50 rounded-3xl p-6 shadow-sm border border-blue-50 flex flex-col items-center justify-center">
+          <div className="absolute -left-6 top-1/2 -translate-y-1/2 w-28 h-28 bg-white rounded-full blur-none opacity-80 mix-blend-overlay"></div>
+          <div className="absolute -right-6 top-1/2 -translate-y-1/2 w-28 h-28 bg-white rounded-full blur-none opacity-80 mix-blend-overlay"></div>
+          
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1 z-10">Yearly</p>
+          <div className="flex items-center gap-3 z-10">
+            <Sparkles size={14} className="text-blue-400 opacity-60" />
+            <p className="text-[44px] font-black text-[#2672ff] leading-none">₹{subscription?.amount ?? 2}</p>
+            <Sparkles size={14} className="text-blue-400 opacity-60" />
           </div>
-        </>
-      )}
+        </div>
+
+        {/* What's included? */}
+        <div className="bg-[#f8f9fc] rounded-3xl p-6 border border-slate-100/50">
+          <h3 className="text-[17px] font-black text-slate-900 mb-6">What's included?</h3>
+          <div className="space-y-6">
+            <div className="flex gap-4 items-center">
+              <div className="w-11 h-11 rounded-2xl bg-blue-100 text-[#2672ff] flex items-center justify-center shrink-0">
+                <Zap size={22} fill="currentColor" strokeWidth={0} />
+              </div>
+              <div>
+                <p className="text-[15px] font-bold text-slate-800">Unlimited Access</p>
+                <p className="text-[12px] text-slate-500 font-medium">Enjoy all premium features</p>
+              </div>
+            </div>
+            
+            <div className="flex gap-4 items-center">
+              <div className="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-500 flex items-center justify-center shrink-0">
+                <BarChart2 size={22} strokeWidth={3} />
+              </div>
+              <div>
+                <p className="text-[15px] font-bold text-slate-800">Detailed Reports</p>
+                <p className="text-[12px] text-slate-500 font-medium">Get in-depth insights</p>
+              </div>
+            </div>
+            
+            <div className="flex gap-4 items-center">
+              <div className="w-11 h-11 rounded-2xl bg-orange-100 text-orange-500 flex items-center justify-center shrink-0">
+                <Crown size={22} fill="currentColor" strokeWidth={0} />
+              </div>
+              <div>
+                <p className="text-[15px] font-bold text-slate-800">Priority Support</p>
+                <p className="text-[12px] text-slate-500 font-medium">Get faster help when you need it</p>
+              </div>
+            </div>
+            
+            <div className="flex gap-4 items-center">
+              <div className="w-11 h-11 rounded-2xl bg-purple-100 text-purple-500 flex items-center justify-center shrink-0">
+                <Star size={22} fill="currentColor" strokeWidth={0} />
+              </div>
+              <div>
+                <p className="text-[15px] font-bold text-slate-800">New Features First</p>
+                <p className="text-[12px] text-slate-500 font-medium">Be the first to try new updates</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* You're all set! */}
+        <div className="relative overflow-hidden bg-gradient-to-br from-[#f3efff] to-[#ebe4ff] rounded-3xl p-5 border border-purple-100/50 mt-2">
+          <div className="flex gap-4 relative z-10 items-center">
+            <div className="flex-1">
+              <p className="text-[16px] font-bold text-purple-900 mb-1">You're all set!</p>
+              <p className="text-[12px] font-medium text-purple-600/80 leading-relaxed pr-2">
+                Your <span className="capitalize">{subscription?.plan || 'Super'}</span> plan is active. Keep enjoying all the premium benefits!
+              </p>
+            </div>
+            <div className="relative shrink-0 pr-2">
+              <div className="absolute inset-0 bg-yellow-300 blur-2xl opacity-60 rounded-full w-12 h-12"></div>
+              <Sparkles size={12} className="absolute -top-2 -left-2 text-yellow-400" fill="currentColor" strokeWidth={0} />
+              <Sparkles size={16} className="absolute bottom-2 -left-4 text-yellow-400 opacity-70" fill="currentColor" strokeWidth={0} />
+              <Gift size={46} className="text-[#6d28d9] relative z-10 drop-shadow-xl" fill="#a855f7" strokeWidth={1} />
+            </div>
+          </div>
+        </div>
+
+      </div>
     </NativeScreen>
   );
 
   /* ── STAFF ────────────────────────────────────────────────────── */
   const renderStaffScreen = () => (
-    <NativeScreen title="Manage Staff" onBack={() => setActiveSection('home')}>
+    <NativeScreen title="Manage Staff" onBack={handleBackToHome}>
 
       {/* Add staff form */}
       {showAddStaff && (
@@ -1507,7 +2086,10 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
 
       {/* Sticky Footer */}
       {!showAddStaff && (
-        <div className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 z-20">
+        <div
+          className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 z-20"
+          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}
+        >
           <button
             onClick={() => { openForm('addStaff'); setStaffError(''); }}
             className="w-full py-4 bg-blue-600 text-white rounded-2xl text-[15px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-lg shadow-blue-100"
@@ -1521,7 +2103,7 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
 
   /* ── PRINTER ──────────────────────────────────────────────────── */
   const renderPrinterScreen = () => (
-    <NativeScreen title="Printer" onBack={() => setActiveSection('home')}>
+    <NativeScreen title="Printer" onBack={handleBackToHome}>
       {/* Bluetooth / USB tabs */}
       <div className="flex border-b border-gray-100 bg-white sticky top-0 z-10">
         {[['bluetooth', 'Bluetooth', Bluetooth], ['usb', 'USB', Printer]].map(([id, label, Icon]) => (
@@ -1587,7 +2169,10 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
       )}
 
       {/* Sticky Footer */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 z-20">
+      <div
+        className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 z-20"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}
+      >
         <button
           onClick={handleGrantPrinterPermission}
           disabled={printerScanning}
@@ -1605,6 +2190,55 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
     </NativeScreen>
   );
 
+  const renderPasswordScreen = () => (
+    <NativeScreen title="Change Password" onBack={handleBackToHome}>
+      <div className="mx-4 mt-6 pb-24">
+        <Card>
+          <div className="p-5 space-y-4">
+            {passwordError && <div className="text-[13px] font-bold text-red-600 bg-red-50 p-3 rounded-lg border border-red-100">{passwordError}</div>}
+            {passwordSuccess && <div className="text-[13px] font-bold text-emerald-600 bg-emerald-50 p-3 rounded-lg border border-emerald-100">{passwordSuccess}</div>}
+            
+            <div>
+              <p className="text-[12px] font-semibold text-slate-500 uppercase tracking-widest mb-1.5">Current Password</p>
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={e => setCurrentPassword(e.target.value)}
+                placeholder="Enter current password"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-[14px] font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
+            
+            <div>
+              <p className="text-[12px] font-semibold text-slate-500 uppercase tracking-widest mb-1.5">New Password</p>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                placeholder="Enter new password"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-[14px] font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* Sticky Save Footer */}
+      <div
+        className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-100 z-20"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}
+      >
+        <button
+          onClick={handleChangePassword}
+          disabled={passwordSaving}
+          className="w-full py-4 bg-[#FF5A36] text-white rounded-2xl text-[16px] font-bold active:scale-[0.98] transition-all shadow-lg shadow-orange-100 disabled:opacity-50"
+        >
+          {passwordSaving ? 'Updating...' : 'Update Password'}
+        </button>
+      </div>
+    </NativeScreen>
+  );
+
   const renderActiveScreen = () => {
     switch (activeSection) {
       case 'restaurant': return renderRestaurantScreen();
@@ -1615,13 +2249,39 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
       case 'billing': return renderBillingScreen();
       case 'staff': return renderStaffScreen();
       case 'printer': return renderPrinterScreen();
+      case 'loyalty': return renderLoyaltyScreen();
+      case 'password': return renderPasswordScreen();
       default: return renderHomeScreen();
     }
   };
 
   return (
-    <div className="h-full bg-white font-sans overflow-hidden relative">
-      {renderActiveScreen()}
+    <div className="flex flex-col lg:flex-row h-full w-full bg-white lg:bg-slate-50 overflow-hidden -mx-2 lg:-mx-4 lg:-mt-4 font-sans relative">
+      {/* ── LEFT: Sidebar Menu (Hidden on mobile if not home) ── */}
+      <div className={cn(
+        "w-full lg:w-[320px] bg-white flex-col shrink-0 border-r border-slate-200 z-10 h-full overflow-hidden",
+        activeSection !== 'home' ? "hidden lg:flex" : "flex"
+      )}>
+        {renderHomeScreen()}
+      </div>
+
+      {/* ── RIGHT: Content Area (Hidden on mobile if home) ── */}
+      <div className={cn(
+        "flex-1 flex-col min-w-0 bg-white lg:bg-slate-50 h-full overflow-hidden relative",
+        activeSection === 'home' ? "hidden lg:flex items-center justify-center" : "flex"
+      )}>
+        {activeSection === 'home' ? (
+          <div className="flex flex-col items-center justify-center h-full text-center p-8">
+            <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-slate-200 mb-4">
+              <Settings size={32} className="text-slate-300" />
+            </div>
+            <h2 className="text-[18px] font-bold text-slate-800">Select a Setting</h2>
+            <p className="text-[14px] text-slate-500 mt-2 max-w-[250px]">Choose an option from the left menu to view and manage.</p>
+          </div>
+        ) : (
+          renderActiveScreen()
+        )}
+      </div>
 
       {/* Logout Confirmation Bottom Sheet */}
       {showLogoutConfirm && (
@@ -1629,7 +2289,7 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
           {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
-            onClick={() => setShowLogoutConfirm(false)}
+            onClick={() => closeModal()}
           />
 
           {/* Sheet */}
@@ -1641,19 +2301,56 @@ const SettingsPanel = ({ user, subscription, onSettingsUpdate, onShowPassword, o
 
             <div className="flex gap-3">
               <button
-                onClick={() => setShowLogoutConfirm(false)}
+                onClick={() => closeModal()}
                 className="flex-1 py-3.5 bg-white border border-gray-200 text-gray-700 rounded-[14px] text-[15px] font-semibold active:bg-white transition-all"
               >
                 No, Cancel
               </button>
               <button
                 onClick={() => {
-                  setShowLogoutConfirm(false);
+                  closeModal();
                   onLogout();
                 }}
                 className="flex-1 py-3.5 bg-[#de3434] text-white rounded-[14px] text-[15px] font-semibold active:scale-[0.98] transition-all"
               >
                 Yes, Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Loyalty Confirmation Bottom Sheet */}
+      {showResetConfirm && (
+        <div className="absolute inset-0 z-50 flex flex-col justify-end">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
+            onClick={() => closeModal()}
+          />
+
+          {/* Sheet */}
+          <div className="relative bg-white rounded-t-3xl p-6 pb-8 shadow-2xl translate-y-0 transition-transform duration-300">
+            <h3 className="text-[22px] font-bold text-left text-gray-900 mb-2">Reset Streaks?</h3>
+            <p className="text-left text-gray-500 text-[15px] mb-8">
+              Are you sure you want to reset all customer visit streaks back to 0? This cannot be undone.
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => closeModal()}
+                className="flex-1 py-3.5 bg-white border border-gray-200 text-gray-700 rounded-[14px] text-[15px] font-semibold active:bg-white transition-all"
+              >
+                No, Cancel
+              </button>
+              <button
+                onClick={() => {
+                  closeModal();
+                  handleResetLoyalty();
+                }}
+                className="flex-1 py-3.5 bg-[#de3434] text-white rounded-[14px] text-[15px] font-semibold active:scale-[0.98] transition-all"
+              >
+                Yes, Reset
               </button>
             </div>
           </div>

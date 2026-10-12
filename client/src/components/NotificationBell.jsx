@@ -102,11 +102,18 @@ const NotificationBell = ({ desktopOffset }) => {
   };
 
   const getTimeSince = (dateStr) => {
-    const mins = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
-    if (mins < 1) return 'Just now';
-    if (mins < 60) return `${mins}m ago`;
-    if (mins < 1440) return `${Math.floor(mins / 60)}h ago`;
-    return `${Math.floor(mins / 1440)}d ago`;
+    if (!dateStr) return '';
+    try {
+      const t = new Date(dateStr).getTime();
+      if (isNaN(t)) return '';
+      const mins = Math.floor((Date.now() - t) / 60000);
+      if (mins < 1) return 'Just now';
+      if (mins < 60) return `${mins}m ago`;
+      if (mins < 1440) return `${Math.floor(mins / 60)}h ago`;
+      return `${Math.floor(mins / 1440)}d ago`;
+    } catch {
+      return '';
+    }
   };
 
   const getNotifIcon = (type) => {

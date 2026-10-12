@@ -9,29 +9,44 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { useNavigation } from '../navigation/NavigationManager';
 
 const cn = (...inputs) => twMerge(clsx(inputs));
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const fmtTimeElapsed = (dateString) => {
-  const diff = Date.now() - new Date(dateString).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${mins}m`;
-  const hrs = Math.floor(mins / 60);
-  return `${hrs}h ${mins % 60}m`;
+  if (!dateString) return 'Just now';
+  try {
+    const t = new Date(dateString).getTime();
+    if (isNaN(t)) return 'Just now';
+    const diff = Math.max(0, Date.now() - t);
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    return `${hrs}h ${mins % 60}m`;
+  } catch {
+    return 'Just now';
+  }
 };
 
 const fmtOrderNo = (n) => String(n || '').padStart(4, '0');
 
 const getUrgency = (dateString) => {
-  const mins = Math.floor((Date.now() - new Date(dateString).getTime()) / 60000);
-  if (mins >= 20) return 'critical';
-  if (mins >= 10) return 'warn';
-  return 'ok';
+  if (!dateString) return 'ok';
+  try {
+    const t = new Date(dateString).getTime();
+    if (isNaN(t)) return 'ok';
+    const mins = Math.floor((Date.now() - t) / 60000);
+    if (mins >= 20) return 'critical';
+    if (mins >= 10) return 'warn';
+    return 'ok';
+  } catch {
+    return 'ok';
+  }
 };
 
-const OrderCard = ({ order, activeOrders, onToggleServe, onCancelOrder, updatingItems, onManageClick, onBillClick }) => {
+const OrderCard = React.memo(({ order, activeOrders, onToggleServe, onCancelOrder, updatingItems, onManageClick, onBillClick }) => {
   const [expanded, setExpanded] = useState(true);
 
   const label = order.tableId || order.customerName || 'Walk-in';
@@ -43,6 +58,18 @@ const OrderCard = ({ order, activeOrders, onToggleServe, onCancelOrder, updating
   const isParcel = order.orderType === 'Parcel';
   const progressPct = totalCount > 0 ? Math.round((servedCount / totalCount) * 100) : 0;
 
+  const headingColors = [
+    'text-blue-600',
+    'text-rose-600',
+    'text-emerald-600',
+    'text-violet-600',
+    'text-amber-600',
+    'text-cyan-600',
+    'text-fuchsia-600',
+    'text-indigo-600'
+  ];
+  const colorIndex = label.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % headingColors.length;
+  const headingColor = headingColors[colorIndex];
   const R = 8;
   const CIRC = 2 * Math.PI * R;
   const dash = (progressPct / 100) * CIRC;
@@ -63,9 +90,9 @@ const OrderCard = ({ order, activeOrders, onToggleServe, onCancelOrder, updating
       // onClick={() => setExpanded(v => !v)}
       >
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[15px] font-black text-slate-900 uppercase tracking-tight">
-            {isParcel 
-              ? (order.customerName || order.partLabel || 'Walk-in') 
+          <span className={cn("text-[13px] font-semibold uppercase tracking-widest", headingColor)}>
+            {isParcel
+              ? (order.customerName || order.partLabel || 'Walk-in')
               : (order.tableId || 'Walk-in')}
           </span>
           {order.tableId && (
@@ -74,7 +101,7 @@ const OrderCard = ({ order, activeOrders, onToggleServe, onCancelOrder, updating
               const tableOrders = activeOrders
                 .filter(o => o.tableId === order.tableId && o.status !== 'Paid' && o.status !== 'Cancelled')
                 .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-              
+
               // Only show badge if there are actually multiple orders
               if (tableOrders.length > 1) {
                 const partNum = tableOrders.findIndex(o => o._id === order._id) + 1;
@@ -87,7 +114,7 @@ const OrderCard = ({ order, activeOrders, onToggleServe, onCancelOrder, updating
               return null;
             })()
           )}
-          <span className="text-[11px] text-slate-400 font-medium ml-1">
+          <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest ml-1.5">
             {isParcel ? 'Parcel' : 'Dine-in'}
           </span>
         </div>
@@ -147,8 +174,8 @@ const OrderCard = ({ order, activeOrders, onToggleServe, onCancelOrder, updating
                 </button>
 
                 <span className={cn(
-                  'flex-1 text-[13px] font-medium leading-snug',
-                  isServed ? 'line-through text-slate-400' : 'text-slate-800'
+                  'flex-1 text-[13px] font-semibold leading-snug',
+                  isServed ? 'line-through text-slate-400' : 'text-slate-700'
                 )}>
                   {item.name}
                   {item.note && (
@@ -157,7 +184,7 @@ const OrderCard = ({ order, activeOrders, onToggleServe, onCancelOrder, updating
                 </span>
 
                 <span className={cn(
-                  'text-[12px] font-semibold shrink-0',
+                  'text-[13px] font-semibold shrink-0',
                   isServed ? 'text-slate-300' : 'text-slate-500'
                 )}>
                   ×{qty}
@@ -170,7 +197,7 @@ const OrderCard = ({ order, activeOrders, onToggleServe, onCancelOrder, updating
           <div className="flex items-center gap-2 px-4 pb-4 pt-1">
             <button
               onClick={e => { e.stopPropagation(); onCancelOrder?.(order._id); }}
-              className="px-4 py-2 rounded-lg bg-slate-100 text-slate-500 text-[12px] font-semibold active:bg-slate-200 transition-colors"
+              className="px-4 py-2 rounded-lg bg-slate-100 text-slate-500 text-[11px] font-semibold uppercase tracking-widest active:bg-slate-200 transition-colors"
             >
               Cancel
             </button>
@@ -180,7 +207,7 @@ const OrderCard = ({ order, activeOrders, onToggleServe, onCancelOrder, updating
                 isAllServed ? onBillClick?.(order) : onManageClick?.(order);
               }}
               className={cn(
-                'flex-1 py-2 rounded-lg border border-gray-300 text-[12px] font-bold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-all',
+                'flex-1 py-2 rounded-lg border border-gray-300 text-[11px] font-semibold uppercase tracking-widest flex items-center justify-center gap-1.5 active:scale-[0.98] transition-all',
                 isAllServed
                   ? 'bg-white text-blue-500'
                   : 'bg-white text-slate-900'
@@ -199,7 +226,7 @@ const OrderCard = ({ order, activeOrders, onToggleServe, onCancelOrder, updating
       </span> */}
     </div>
   );
-};
+});
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 const POSInterface = ({ activeOrders, user, onOrderUpdate, onManageClick, onBillClick }) => {
@@ -207,6 +234,23 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onManageClick, onBill
   const [updatingItems, setUpdatingItems] = useState(new Set());
   const [statusFilter, setStatusFilter] = useState('All');
   const [typeFilter, setTypeFilter] = useState('All');
+
+  const { registerBackInterceptor } = useNavigation();
+
+  useEffect(() => {
+    return registerBackInterceptor(() => {
+      if (searchTerm) {
+        setSearchTerm('');
+        return true;
+      }
+      if (statusFilter !== 'All' || typeFilter !== 'All') {
+        setStatusFilter('All');
+        setTypeFilter('All');
+        return true;
+      }
+      return false;
+    });
+  }, [searchTerm, statusFilter, typeFilter, registerBackInterceptor]);
 
   // ── Derived orders (logic unchanged) ──────────────────────────────────────
   const runningOrders = useMemo(() => {
@@ -261,7 +305,7 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onManageClick, onBill
   }, [activeOrders]);
 
   // ── Handlers (logic unchanged) ─────────────────────────────────────────────
-  const handleToggleServe = async (orderId, itemId, currentIsServed, e) => {
+  const handleToggleServe = React.useCallback(async (orderId, itemId, currentIsServed, e) => {
     e.stopPropagation();
     setUpdatingItems(prev => new Set(prev).add(itemId));
     try {
@@ -277,9 +321,9 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onManageClick, onBill
         return next;
       });
     }
-  };
+  }, [onOrderUpdate]);
 
-  const handleCancelOrder = async (orderId) => {
+  const handleCancelOrder = React.useCallback(async (orderId) => {
     if (!window.confirm('Are you sure you want to cancel this order?')) return;
     try {
       await axios.patch(`/api/orders/${orderId}/status`, { status: 'Cancelled' });
@@ -288,7 +332,7 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onManageClick, onBill
       console.error('Error cancelling order:', err);
       alert('Failed to cancel order');
     }
-  };
+  }, [onOrderUpdate]);
 
   // ── Filter chip config (matches TableView chip pattern exactly) ────────────
   const statusChips = ['All', 'Pending', 'Done'].concat(stats.critical > 0 ? ['Late'] : []);
@@ -302,15 +346,19 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onManageClick, onBill
   const typeChips = ['All', 'Dine-in', 'Parcel'];
 
   return (
-    <div className="flex flex-col h-screen bg-white overflow-hidden font-sans">
+    <div className="flex flex-col h-full bg-white overflow-hidden font-sans">
 
-      {/* ── Header — same as TableView header ── */}
-      <div className="flex items-center justify-between px-4 h-14 bg-white border-b border-slate-100 shrink-0">
-        <span className="text-[17px] font-bold text-slate-900">Kitchen Display</span>
-      </div>
+      {/* ── Header — matches SalesReport alignment and styling ── */}
+      <header className="px-5 pt-6 pb-4 bg-white border-b border-slate-100 sticky top-0 z-40 lg:-mx-6 lg:px-10 lg:pb-2 lg:border-b-0 shrink-0">
+        <div className="flex items-center justify-between mb-4 lg:mb-2">
+          <div className="flex items-center gap-4">
+            <h1 className="text-[17px] font-semibold text-slate-900 lg:text-[22px]">Kitchen Display</h1>
+          </div>
+        </div>
+      </header>
 
       {/* ── Search bar — identical to TableView / MobileMenuScreen ── */}
-      <div className="flex gap-2.5 px-4 py-2.5 bg-white shrink-0">
+      <div className="flex gap-2.5 px-4  py-3 bg-white shrink-0">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
           <input
@@ -318,20 +366,20 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onManageClick, onBill
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             placeholder="Search tables, items..."
-            className="w-full bg-[#f2f2f7] rounded-xl py-2.5 pl-10 pr-4 outline-none text-[15px] text-slate-700 placeholder:text-slate-400"
+            className="w-full bg-[#f2f2f7] rounded-xl py-2.5 pl-10 pr-4 outline-none text-[13px] font-semibold text-slate-700 placeholder:text-slate-400"
           />
         </div>
       </div>
 
       {/* ── Status filter chips — same pill style as category chips in TableView ── */}
-      <div className="px-4 pb-2 bg-white shrink-0">
+      <div className="px-4 pb-4 bg-white shrink-0">
         <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
           {statusChips.map(status => (
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
               className={cn(
-                'px-4 py-1.5 rounded-full text-[12px] font-bold whitespace-nowrap border shrink-0 transition-all',
+                'px-4 py-1.5 rounded-full text-[10px] font-semibold uppercase tracking-widest whitespace-nowrap border shrink-0 transition-all',
                 statusFilter === status
                   ? 'bg-white border-blue-500 text-blue-600'
                   : 'bg-white border-slate-200 text-slate-600'
@@ -365,8 +413,8 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onManageClick, onBill
 
       {/* ── Orders ── */}
       <div
-        className="flex-1 overflow-y-auto px-4 pb-10 space-y-3"
-        style={{ scrollbarWidth: 'none', paddingBottom: 'calc(env(safe-area-inset-bottom) + 80px)' }}
+        className="flex-1 overflow-y-auto px-4 pb-40 space-y-3"
+        style={{ scrollbarWidth: 'none' }}
       >
         {runningOrders.length === 0 ? (
           /* Empty state — matches TableView empty pattern */
@@ -374,7 +422,7 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onManageClick, onBill
             <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mb-4 border border-slate-100">
               <CheckCircle2 size={28} className="text-emerald-400" />
             </div>
-            <p className="text-[12px] font-black text-slate-400 uppercase tracking-widest text-center px-8">
+            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest text-center px-8">
               {searchTerm || statusFilter !== 'All' || typeFilter !== 'All'
                 ? 'No matching orders'
                 : 'Kitchen is clear!'}

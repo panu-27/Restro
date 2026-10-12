@@ -1,6 +1,13 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
+import { useNavigation } from '../navigation/NavigationManager';
+import {
+  getDraft,
+  saveDraft as persistDraft,
+  clearDraft as purgeDraft,
+  hasDraft as checkHasDraft
+} from '../navigation/draftManager';
 import {
   X, Plus, Minus, Search, Printer, MessageCircle,
   ShoppingCart, Phone, Leaf, Flame,
@@ -48,6 +55,59 @@ const VegDot = ({ category }) => {
   );
 };
 
+const CustomNumpad = ({ value, onChange, onClose }) => {
+  const handlePress = (num) => {
+    const currentVal = value ? value.toString() : '';
+    if (currentVal.length >= 3 && num !== '.') return;
+    const next = currentVal + num;
+    if (Number(next) <= 100) onChange(next);
+  };
+  const handleBackspace = () => {
+    const currentVal = value ? value.toString() : '';
+    onChange(currentVal.slice(0, -1));
+  };
+
+  return (
+    <div className="bg-slate-50/50 p-3">
+      <div className="flex justify-between items-center mb-3 px-1">
+        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Discount Numpad</span>
+        <button onClick={onClose} className="p-1 rounded-lg hover:bg-slate-200 text-slate-400 transition-colors">
+          <X size={14} strokeWidth={3} />
+        </button>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {['7', '8', '9', '4', '5', '6', '1', '2', '3'].map((n) => (
+          <button
+            key={n}
+            onClick={() => handlePress(n)}
+            className="h-10 bg-white hover:bg-slate-100 rounded-lg text-[16px] font-bold text-slate-700 transition-colors shadow-sm border border-slate-200/60 active:bg-slate-200"
+          >
+            {n}
+          </button>
+        ))}
+        <button
+          onClick={() => onChange('')}
+          className="h-10 bg-slate-200 hover:bg-slate-300 rounded-lg text-[16px] font-bold text-slate-600 transition-colors shadow-sm border border-slate-300/60 active:bg-slate-400 flex items-center justify-center"
+        >
+          C
+        </button>
+        <button
+          onClick={() => handlePress('0')}
+          className="h-10 bg-white hover:bg-slate-100 rounded-lg text-[16px] font-bold text-slate-700 transition-colors shadow-sm border border-slate-200/60 active:bg-slate-200"
+        >
+          0
+        </button>
+        <button
+          onClick={handleBackspace}
+          className="h-10 bg-rose-50 hover:bg-rose-100 rounded-lg text-[16px] font-bold text-rose-500 transition-colors flex items-center justify-center shadow-sm border border-rose-200/60 active:bg-rose-200"
+        >
+          ⌫
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // ── Main Component ────────────────────────────────────────────────────────────────────────────
 const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onClose, onCheckoutComplete, initialScreen, showToast, onScreenChange }) => {
 
@@ -55,6 +115,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { handleBack: triggerGlobalBack, registerBackInterceptor } = useNavigation();
 
   const [parts, setParts] = useState([]);
   const [activePart, setActivePart] = useState(0);
@@ -63,6 +124,8 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   const [tempRoundItems, setTempRoundItems] = useState({});
   const [tempParts, setTempParts] = useState([]);
   const [partPhones, setPartPhones] = useState({});
+  const [partExtraCharges, setPartExtraCharges] = useState({});
+  const [partDiscount, setPartDiscount] = useState({});
   const [partOrderIds, setPartOrderIds] = useState({});
   const [partOrderNumbers, setPartOrderNumbers] = useState({});
   const [roundMsg, setRoundMsg] = useState(false);
@@ -99,6 +162,12 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   const [showDiscardModal, setShowDiscardModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [showDiscountModal, setShowDiscountModal] = useState(false);
+  const [showExtraChargeModal, setShowExtraChargeModal] = useState(false);
+  const [tempDiscountType, setTempDiscountType] = useState('Percentage');
+  const [tempDiscountValue, setTempDiscountValue] = useState('');
+  const [tempExtraCharges, setTempExtraCharges] = useState([]);
+  const [showNumpad, setShowNumpad] = useState(false);
 
   // Sync state with URL params
   useEffect(() => {
@@ -129,8 +198,21 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   const activeModalRef = useRef(modalParam);
   activeModalRef.current = modalParam;
   const activeScreenRef = useRef(initialScreen || 'menu');
-  // Keep in sync with URL-driven initialScreen
-  useEffect(() => { activeScreenRef.current = initialScreen || 'menu'; }, [initialScreen]);
+  const initialScreenRef = useRef(initialScreen || searchParams.get('screen') || 'menu');
+  const screenStackRef = useRef([initialScreen || searchParams.get('screen') || 'menu']);
+
+  // Keep in sync with URL-driven initialScreen & screen transitions
+  useEffect(() => {
+    activeScreenRef.current = initialScreen || 'menu';
+  }, [initialScreen]);
+
+  useEffect(() => {
+    const cur = searchParams.get('screen') || 'menu';
+    const stack = screenStackRef.current;
+    if (stack[stack.length - 1] !== cur) {
+      stack.push(cur);
+    }
+  }, [searchParams]);
 
   // Keep a ref in sync with roundItems so the popstate handler can always read fresh values
   const roundItemsRef = useRef(roundItems);
@@ -170,7 +252,8 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   const closeModals = () => {
     activeModalRef.current = null;
     const newParams = new URLSearchParams(searchParams);
-    newParams.set('screen', 'menu'); // Always force screen=menu on modal close!
+    const activeSc = searchParams.get('screen') || activeScreenRef.current || 'menu';
+    newParams.set('screen', activeSc); // Preserve active screen on modal close
     newParams.delete('modal');
     newParams.delete('itemId');
     // We replace here because UI-based closing shouldn't leave dead modal history entries,
@@ -223,106 +306,30 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   };
 
   const handleBack = () => {
-    window.history.back();
+    triggerGlobalBack();
   };
 
   const billRef = useRef(null);
   const isSavingRef = useRef(false);
 
-  // ── BACK BUTTON HANDLING ─────────────────────────────────────────────────────
-  //
-  // Mobile Native Protective History Stack:
-  // - We listen to popstate to detect back-presses
-  // - If back is pressed on a modal (settings, variations, transfer, etc.), we return normally to base menu/cart
-  // - If back is pressed on the Unsaved popup (modal=discard), we just close the popup and stay on screen
-  // - If back is pressed on screen=menu or screen=cart and a draft exists, we trap the event and open the Unsaved popup
-  // - Otherwise, we exit TableView normally
-  //
-  const previousUrlRef = useRef(window.location.search);
-
-  useEffect(() => {
-    previousUrlRef.current = window.location.search;
-  }, [searchParams]);
-
-  useEffect(() => {
-    // 1. Push the tvTrap state so we always have a history item to intercept exit
-    if (!window.history.state?.tvTrap) {
-      window.history.pushState({ tvTrap: true }, '', window.location.href);
-    }
-
-    const handlePopState = (e) => {
-      const currentParams = new URLSearchParams(window.location.search);
-      const currentScreen = currentParams.get('screen') || 'menu';
-      const currentModal = currentParams.get('modal');
-
-      const activeModal = activeModalRef.current;
-      const activeScreen = activeScreenRef.current;
-
-      // Case A & B: If any modal was open and user pressed back -> force screen to menu, closing the modal
-      if (activeModal && !currentModal) {
-        const newParams = new URLSearchParams(window.location.search);
-        newParams.set('screen', 'menu');
-        newParams.delete('modal');
-        newParams.delete('itemId');
-        
-        // Sync browser location first
-        window.history.replaceState(window.history.state, '', `${window.location.pathname}?${newParams.toString()}`);
-        setSearchParams(newParams, { replace: true });
-        return;
-      }
-
-      // Case C: If user was on base menu or cart and pressed back (attempting to exit TableView)
-      const wasBaseUrl = (activeScreen === 'menu' || activeScreen === 'cart') && !activeModal;
-
-      if (!e.state?.tvTrap) {
-        // They popped our trap! They are attempting to exit TableView
-        if (activeModal) {
-          // Resist back press when any modal is open!
-          // Re-push the trap state and force screen to menu
-          window.history.pushState({ tvTrap: true }, '', window.location.href);
-          const newParams = new URLSearchParams(window.location.search);
-          newParams.set('screen', 'menu');
-          newParams.delete('modal');
-          newParams.delete('itemId');
-          window.history.replaceState({ tvTrap: true }, '', `${window.location.pathname}?${newParams.toString()}`);
-          setSearchParams(newParams, { replace: true });
-        } else if (wasBaseUrl) {
-          // Exit TableView cleanly directly to /tables (discarding changes by default since drafts aren't saved!)
-          if (tableIdRef.current) {
-            try {
-              localStorage.removeItem(`restro_draft_${tableIdRef.current}`);
-            } catch (_) { }
-          }
-          setRoundItems({});
-          onClose();
-          navigate('/tables', { replace: true });
-        }
-      }
-    };
-
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Draft cache ──────────────────────────────────────────────────────────────────────────
-  const draftKey = tableId ? `restro_draft_${tableId}` : null;
+  // ── TABLE-ISOLATED DRAFT MANAGEMENT ──────────────────────────────────────────
+  const draftKey = tableId || (isCreatingParcel ? 'parcel' : null);
 
   const saveDraft = (currentParts, roundItemsMap) => {
-    // Completely disable localStorage draft saving
-    return;
+    if (!draftKey) return;
+    const validParts = (currentParts || []).map(p => ({
+      label: p.label || 'Part 1',
+      items: roundItemsMap[p.id] || []
+    })).filter(p => p.items.length > 0);
+    persistDraft(tableId, validParts, isCreatingParcel);
   };
 
   const loadDraft = () => {
-    // Completely disable loading drafts from localStorage
-    return null;
+    return getDraft(tableId, isCreatingParcel);
   };
 
   const clearDraft = () => {
-    if (draftKey) {
-      try {
-        localStorage.removeItem(draftKey);
-      } catch { }
-    }
+    purgeDraft(tableId, isCreatingParcel);
   };
 
   const applyDraft = (loadedParts, draft) => {
@@ -334,6 +341,85 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
     });
     if (Object.keys(restored).length > 0) setRoundItems(restored);
   };
+
+  // ── BACK ACTION INTERCEPTOR ─────────────────────────────────────────────────
+  useEffect(() => {
+    return registerBackInterceptor(() => {
+      // 1. Variations popup
+      if (selectedItemForVars) {
+        setSelectedItemForVars(null);
+        setTempVariations({});
+        closeModals();
+        return true;
+      }
+
+      // 2. Modals (variations, settings, transfer, delete, numpad, discard)
+      const curModal = searchParams.get('modal');
+      if (curModal || showDiscardModal || showDeleteModal || showTransferModal || showSettings || showNumpad) {
+        if (curModal === 'discard' || showDiscardModal) {
+          // If discard confirmation dialog is already open, pressing Back closes it and keeps user on screen
+          setShowDiscardModal(false);
+          closeModals();
+          return true;
+        }
+        setShowSettings(false);
+        setShowNumpad(false);
+        closeModals();
+        return true;
+      }
+
+      // 3. Nested Screen navigation within TableView (e.g. menu -> cart)
+      const curScreen = searchParams.get('screen') || 'menu';
+      if (curScreen === 'cart') {
+        const cameFromPos = location.pathname === '/pos' && initialScreenRef.current === 'cart';
+        if (cameFromPos) {
+          // Direct entry to Cart from POS (Billing click) -> Return directly to /pos
+          if (window.history.length > 1) {
+            navigate(-1);
+          } else {
+            onClose();
+          }
+          return true;
+        }
+
+        // Opened from menu -> Return to menu
+        const stack = screenStackRef.current;
+        if (stack.length > 1) {
+          stack.pop();
+        }
+        if (window.history.length > 1) {
+          navigate(-1);
+        } else {
+          const nextParams = new URLSearchParams(searchParams);
+          nextParams.set('screen', 'menu');
+          setSearchParams(nextParams, { replace: true });
+        }
+        return true;
+      }
+
+      // 4. Category filter active -> pop back to 'All'
+      if (catFilter !== 'All') {
+        setCatFilter('All');
+        return true;
+      }
+
+      // 5. Unsaved items check -> prompt established discard confirmation
+      const hasUnsavedItems = Object.values(roundItemsRef.current || {}).some(items => Array.isArray(items) && items.length > 0)
+        || checkHasDraft(tableIdRef.current, isCreatingParcel);
+      if (hasUnsavedItems) {
+        openModal('discard');
+        return true;
+      }
+
+      // 6. No unsaved items: close TableView cleanly and restore parent
+      if (window.history.length > 1) {
+        navigate(-1);
+      } else {
+        onClose();
+      }
+      return true;
+    });
+  }, [selectedItemForVars, showDiscardModal, showDeleteModal, showTransferModal, showSettings, showNumpad, searchParams, catFilter, isCreatingParcel, registerBackInterceptor, onClose, setSearchParams, location.pathname, navigate]);
 
   // ── Sync with Backend On Mount ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -367,18 +453,22 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
               label: o.orderType === 'Parcel'
                 ? (o.customerName || o.partLabel || `Parcel #${idx + 1}`)
                 : expectedLabel,
-              rounds: [{ roundNumber: 1, items: o.items.map(i => ({ ...i, qty: i.quantity })) }],
+              rounds: [{ roundNumber: 1, items: (o.items || []).map(i => ({ ...i, qty: i.quantity })) }],
               status: o.status
             };
           });
           const orderIds = {};
           const orderNumbers = {};
           const initPhones = {};
+          const initExtraCharges = {};
+          const initDiscounts = {};
           active.forEach((o, idx) => {
             const pid = `part-${o._id}`;
             orderIds[pid] = o._id;
             orderNumbers[pid] = o.orderNumber;
             if (o.customerPhone) initPhones[pid] = o.customerPhone;
+            if (o.extraCharges && o.extraCharges.length > 0) initExtraCharges[pid] = o.extraCharges;
+            if (o.discountType && o.discountType !== 'None') initDiscounts[pid] = { type: o.discountType, value: o.discountValue };
             if (idx === 0) {
               if (o.paymentType) setPaymentType(o.paymentType);
               if (o.guestNote) setGuestNote(o.guestNote);
@@ -388,6 +478,8 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
           setPartOrderIds(orderIds);
           setPartOrderNumbers(orderNumbers);
           setPartPhones(initPhones);
+          setPartExtraCharges(initExtraCharges);
+          setPartDiscount(initDiscounts);
           applyDraft(loadedParts, loadDraft());
         } else {
           const p1 = newPart(1, tableId);
@@ -697,11 +789,11 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   };
 
   const saveRound = async (partId, options = {}) => {
-    if (isSavingRef.current) return;
-    const { closeAfterSave = false } = options;
+    const { closeAfterSave = false, ignoreLock = false } = options;
+    if (!ignoreLock && isSavingRef.current) return;
     const items = currentRoundOf(partId);
     if (!items.length) return;
-    isSavingRef.current = true;
+    if (!ignoreLock) isSavingRef.current = true;
     try {
       let oid = partOrderIds[partId];
       if (oid) {
@@ -739,9 +831,9 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
       return oid;
     } catch (err) {
       console.error('Failed to save round:', err);
-      alert('Error saving round to database.');
+      alert('Error saving round: ' + (err.response?.data?.error || err.message));
     } finally {
-      isSavingRef.current = false;
+      if (!ignoreLock) isSavingRef.current = false;
     }
   };
 
@@ -918,10 +1010,28 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
     const part = parts.find(p => p.id === partId);
     const items = allItemsForPart(partId).filter(i => i.qty > 0);
     const sub = subtotalOf(items);
-    const txList = taxListOf(sub);
-    const total = totalOf(sub, txList);
+
+    const extraCharges = partExtraCharges[partId] || [];
+    const extraChargesTotal = extraCharges.reduce((s, c) => s + Number(c.amount || 0), 0);
+    const subWithExtra = sub + extraChargesTotal;
+
+    const discountObj = partDiscount[partId] || { type: 'None', value: 0 };
+    let discountAmount = 0;
+    if (discountObj.type === 'Fixed') {
+      discountAmount = Math.min(subWithExtra, Number(discountObj.value || 0));
+    } else if (discountObj.type === 'Percentage') {
+      discountAmount = Math.min(subWithExtra, subWithExtra * (Number(discountObj.value || 0) / 100));
+    }
+    const afterDiscount = Math.max(0, subWithExtra - discountAmount);
+
+    const txList = taxListOf(afterDiscount);
+    const total = totalOf(afterDiscount, txList);
+    
     return {
       tableId, partLabel: part?.label || 'Bill', items, sub, txList, total,
+      extraCharges, extraChargesTotal,
+      discountType: discountObj.type, discountValue: discountObj.value, discountAmount,
+      afterDiscount,
       restaurantName: user?.restaurantName || 'My Restaurant',
       restaurantAddress: user?.restaurantAddress || '',
       restaurantPhone: user?.restaurantPhone || '',
@@ -950,8 +1060,10 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
       `Mode: ${bill.paymentMode}`, '',
       ...bill.items.map(i => `  ${i.name} × ${i.qty}  →  ₹${(i.price * i.qty).toFixed(2)}`),
       '',
+      ...(bill.extraCharges && bill.extraCharges.length > 0 ? bill.extraCharges.map(c => `  ${c.name}  →  ₹${Number(c.amount).toFixed(2)}`) : []),
+      ...(bill.discountAmount > 0 ? [`  Discount (${bill.discountType})  →  -₹${bill.discountAmount.toFixed(2)}`] : []),
       ...(bill.txList.length > 0 ? [
-        `Subtotal: ₹${bill.sub.toFixed(2)}`,
+        `Subtotal: ₹${bill.afterDiscount.toFixed(2)}`,
         ...bill.txList.map(t => `${t.name} (${t.pct}%): ₹${t.amt.toFixed(2)}`)
       ] : []),
       `*TOTAL: ₹${bill.total.toFixed(2)}*`, '',
@@ -985,7 +1097,14 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
         paymentMode: paymentType === 'Guest' ? 'Guest' : (paymentMode === 'Split' ? 'Split' : (paymentMode === 'Cash' ? 'Cash' : 'Online')),
         cashAmount: paymentMode === 'Split' ? Number(cashAmount) : (paymentMode === 'Cash' ? bill.total : 0),
         onlineAmount: paymentMode === 'Split' ? Number(onlineAmount) : (paymentMode === 'Cash' ? 0 : bill.total),
-        customerPhone: phone.length >= 10 ? phone : ''
+        customerPhone: phone.length >= 10 ? phone : '',
+        extraCharges: bill.extraCharges,
+        discountType: bill.discountType,
+        discountValue: bill.discountValue,
+        discountAmount: bill.discountAmount,
+        subtotal: bill.sub,
+        taxAmount: bill.txList.reduce((s, t) => s + t.amt, 0),
+        totalAmount: bill.total
       });
       if (hasWA) window.open(`https://wa.me/91${phone}?text=${encodeURIComponent(waMessage(bill))}`, '_blank');
       if (doPrint) window.print();
@@ -1069,7 +1188,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
           // If no order ID exists yet, saveRound will create a new order on the backend!
           setRoundItems(cleanedRoundItemsMap);
           setParts(cleanedParts);
-          const savedId = await saveRound(currentPartId, { closeAfterSave: false });
+          const savedId = await saveRound(currentPartId, { closeAfterSave: false, ignoreLock: true });
           if (!savedId) throw new Error("Failed to create order");
           setIsEditingCart(false);
           if (shouldNavigateToMenu) {
@@ -1097,7 +1216,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
 
     } catch (err) {
       console.error('Failed to save cart changes:', err);
-      alert('Failed to save changes. Please try again.');
+      alert('Failed to save changes: ' + (err.response?.data?.error || err.message));
       throw err;
     } finally {
       isSavingRef.current = false;
@@ -1196,9 +1315,15 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   const isWaiter = user?.role === 'Waiter';
   const activeAllItems = activePartData ? allItemsForPart(activePartData.id) : [];
   const activeCurrent = currentRoundOf(currentPartId);
-  const activeSub = subtotalOf(activeAllItems);
-  const activeTaxes = taxListOf(activeSub);
-  const activeTotal = totalOf(activeSub, activeTaxes);
+  const billInfo = activePartData ? buildBill(activePartData.id) : null;
+  const activeSub = billInfo ? billInfo.sub : 0;
+  const activeTaxes = billInfo ? billInfo.txList : [];
+  const activeTotal = billInfo ? billInfo.total : 0;
+  const activeExtraChargesTotal = billInfo ? billInfo.extraChargesTotal : 0;
+  const activeExtraCharges = billInfo ? billInfo.extraCharges : [];
+  const activeDiscountAmount = billInfo ? billInfo.discountAmount : 0;
+  const activeDiscountType = billInfo ? billInfo.discountType : 'None';
+  const activeDiscountValue = billInfo ? billInfo.discountValue : 0;
   const cartItemCount = activeAllItems.reduce((s, i) => s + i.qty, 0);
 
   // Auto-adjust split or cash/online amounts when total cart value changes
@@ -1407,6 +1532,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
               onClick={() => {
                 setRoundItems({}); // Explicitly clear local unsaved state
                 clearDraft(); // Clear localStorage draft
+                closeModals();
                 onClose(); // Exit TableView completely
               }}
               className="flex-1 py-4 rounded-xl font-bold text-[14px] border border-red-200 bg-white text-red-500 active:scale-[0.98] transition-all"
@@ -1492,7 +1618,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
           </h3>
           <div className="flex-1" />
           <div className="pr-3">
-            <span className="text-[19px] font-black text-blue-600 uppercase tracking-tight leading-none">{tableId || parts[activePart]?.label || 'Current'}</span>
+            <span className="text-[19px] font-black text-blue-600 lg:text-[#FF5A36] uppercase tracking-tight leading-none">{tableId || parts[activePart]?.label || 'Current'}</span>
           </div>
         </div>
 
@@ -1527,17 +1653,17 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                             isSelf
                               ? "bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed opacity-50"
                               : isSelected
-                                ? "bg-blue-600 border-blue-600 text-white shadow-xl shadow-blue-500/30 active:scale-95"
+                                ? "bg-blue-600 lg:bg-[#FF5A36] border-blue-600 lg:border-[#FF5A36] text-white shadow-xl shadow-blue-500/30 lg:shadow-orange-500/30 active:scale-95"
                                 : isOccupied
-                                  ? "bg-blue-50/50 border-blue-100 text-slate-900 hover:border-blue-400 hover:shadow-lg active:scale-95"
-                                  : "bg-white border-slate-100 text-slate-900 hover:border-blue-400 hover:shadow-lg active:scale-95"
+                                  ? "bg-blue-50/50 lg:bg-orange-50/50 border-blue-100 lg:border-orange-100 text-slate-900 hover:border-blue-400 lg:hover:border-[#FF5A36] hover:shadow-lg active:scale-95"
+                                  : "bg-white border-slate-100 text-slate-900 hover:border-blue-400 lg:hover:border-[#FF5A36] hover:shadow-lg active:scale-95"
                           )}
                         >
                           <span className="text-2xl font-black tracking-tight">{t.tableId}</span>
-                          <span className={cn("text-[10px] font-black uppercase tracking-widest mt-1", isSelected ? "text-blue-100" : (isOccupied ? "text-blue-600" : "text-slate-400"))}>
+                          <span className={cn("text-[10px] font-black uppercase tracking-widest mt-1", isSelected ? "text-blue-100 lg:text-orange-100" : (isOccupied ? "text-blue-600 lg:text-[#FF5A36]" : "text-slate-400"))}>
                             {isSelf ? "Current" : (isOccupied ? "Occupied" : "Empty")}
                           </span>
-                          {isSelected && <div className="absolute -top-2 -right-2 w-7 h-7 bg-white text-blue-600 rounded-full flex items-center justify-center border-2 border-blue-600 shadow-lg animate-in zoom-in-50 duration-200"><Check size={14} strokeWidth={4} /></div>}
+                          {isSelected && <div className="absolute -top-2 -right-2 w-7 h-7 bg-white text-blue-600 lg:text-[#FF5A36] rounded-full flex items-center justify-center border-2 border-blue-600 lg:border-[#FF5A36] shadow-lg animate-in zoom-in-50 duration-200"><Check size={14} strokeWidth={4} /></div>}
                         </button>
                       );
                     })}
@@ -1561,12 +1687,96 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
               onClick={() => handleTransfer(selectedTransferTable)}
               disabled={!selectedTransferTable}
               className={cn(
-                "flex-1 py-3 rounded-xl font-bold text-[13px] text-white bg-blue-600 active:scale-[0.97] transition-all shadow-md tracking-wide",
-                !selectedTransferTable ? "opacity-40 cursor-not-allowed" : "shadow-blue-200"
+                "flex-1 py-3 rounded-xl font-bold text-[13px] text-white bg-blue-600 lg:bg-[#FF5A36] active:scale-[0.97] transition-all shadow-md tracking-wide",
+                !selectedTransferTable ? "opacity-40 cursor-not-allowed" : "shadow-blue-200 lg:shadow-orange-100"
               )}
             >
               Confirm Move
             </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderDiscountModal = () => {
+    if (!showDiscountModal) return null;
+    return (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowDiscountModal(false)}>
+        <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl animate-in fade-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-[17px] font-bold text-slate-900">Add Discount</h2>
+            <button onClick={() => setShowDiscountModal(false)} className="p-1 rounded-full hover:bg-slate-100 text-slate-400 transition-colors"><X size={18}/></button>
+          </div>
+          
+          <div className="flex gap-2 mb-4 bg-slate-100 p-1 rounded-xl">
+            <button onClick={() => setTempDiscountType('Percentage')} className={cn('flex-1 py-2 text-[12px] font-bold rounded-lg transition-all', tempDiscountType === 'Percentage' ? 'bg-white shadow text-blue-600' : 'text-slate-500')}>Percentage (%)</button>
+            <button onClick={() => setTempDiscountType('Fixed')} className={cn('flex-1 py-2 text-[12px] font-bold rounded-lg transition-all', tempDiscountType === 'Fixed' ? 'bg-white shadow text-blue-600' : 'text-slate-500')}>Fixed (₹)</button>
+          </div>
+
+          <div className="mb-3 relative">
+            <input type="number" value={tempDiscountValue} onChange={e => setTempDiscountValue(e.target.value)} placeholder="0" className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pl-4 pr-10 text-[16px] font-bold outline-none focus:border-blue-500 text-slate-800" />
+            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">{tempDiscountType === 'Percentage' ? '%' : '₹'}</span>
+          </div>
+
+          {tempDiscountType === 'Percentage' && (
+            <div className="flex gap-2 mb-5">
+              {[5, 10, 15, 20].map(pct => (
+                <button key={pct} onClick={() => setTempDiscountValue(pct)} className="flex-1 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors">{pct}%</button>
+              ))}
+            </div>
+          )}
+          {tempDiscountType === 'Fixed' && (
+            <div className="flex gap-2 mb-5">
+              <button onClick={() => setTempDiscountValue(50)} className="flex-1 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors">₹50</button>
+              <button onClick={() => setTempDiscountValue(100)} className="flex-1 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors">₹100</button>
+              <button onClick={() => setTempDiscountValue(activeSub)} className="flex-[2] py-1.5 rounded-lg border border-blue-200 bg-blue-50 text-xs font-semibold text-blue-600 hover:bg-blue-100 transition-colors">Full (₹{Math.floor(activeSub)})</button>
+            </div>
+          )}
+          
+          <div className="flex gap-2">
+            <button onClick={() => { setPartDiscount(prev => ({...prev, [currentPartId]: { type: 'None', value: 0 }})); setShowDiscountModal(false); }} className="flex-1 py-3 rounded-xl font-bold text-[13px] border border-slate-200 text-slate-600 hover:bg-slate-50 active:scale-[0.98] transition-all">Clear</button>
+            <button onClick={() => { setPartDiscount(prev => ({...prev, [currentPartId]: { type: tempDiscountType, value: Number(tempDiscountValue) }})); setShowDiscountModal(false); }} className="flex-[2] py-3 rounded-xl font-bold text-[13px] text-white bg-blue-600 shadow-md shadow-blue-200 hover:bg-blue-700 active:scale-[0.98] transition-all">Apply Discount</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderExtraChargeModal = () => {
+    if (!showExtraChargeModal) return null;
+    return (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowExtraChargeModal(false)}>
+        <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl animate-in fade-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-[17px] font-bold text-slate-900">Extra Charges</h2>
+            <button onClick={() => setShowExtraChargeModal(false)} className="p-1 rounded-full hover:bg-slate-100 text-slate-400 transition-colors"><X size={18}/></button>
+          </div>
+          
+          <div className="flex gap-2 mb-4 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+            <span className="text-[10px] text-slate-400 font-bold uppercase py-1.5 px-1 shrink-0">Quick Add:</span>
+            {['Packaging', 'Delivery', 'Service'].map(n => (
+              <button key={n} onClick={() => setTempExtraCharges([...tempExtraCharges, { name: n, amount: '' }])} className="px-3 py-1.5 shrink-0 rounded-full border border-blue-200 bg-blue-50 text-[11px] font-bold text-blue-600 hover:bg-blue-100 transition-colors">
+                + {n}
+              </button>
+            ))}
+          </div>
+          
+          <div className="space-y-3 mb-4 max-h-48 overflow-y-auto pr-1">
+            {tempExtraCharges.length === 0 ? <p className="text-[12px] text-slate-400 text-center py-4 bg-slate-50 rounded-xl border border-dashed border-slate-200">No extra charges added.</p> : tempExtraCharges.map((c, i) => (
+              <div key={i} className="flex gap-2">
+                <input type="text" value={c.name} onChange={e => { const updated = [...tempExtraCharges]; updated[i].name = e.target.value; setTempExtraCharges(updated); }} placeholder="e.g. Packaging" className="flex-1 w-0 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-blue-500 font-semibold" />
+                <input type="number" value={c.amount} onChange={e => { const updated = [...tempExtraCharges]; updated[i].amount = e.target.value; setTempExtraCharges(updated); }} placeholder="₹0" className="w-20 shrink-0 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-blue-500 font-semibold" />
+                <button onClick={() => { const updated = tempExtraCharges.filter((_, idx) => idx !== i); setTempExtraCharges(updated); }} className="p-2 shrink-0 bg-rose-50 text-rose-500 rounded-lg hover:bg-rose-100 transition-colors"><Trash2 size={16}/></button>
+              </div>
+            ))}
+          </div>
+
+          <button onClick={() => setTempExtraCharges([...tempExtraCharges, { name: '', amount: '' }])} className="w-full py-2.5 mb-5 rounded-xl border-2 border-dashed border-slate-200 text-[12px] font-bold text-slate-500 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-all flex items-center justify-center gap-1"><Plus size={14} strokeWidth={3} /> Add Charge</button>
+
+          <div className="flex gap-2">
+            <button onClick={() => setShowExtraChargeModal(false)} className="flex-1 py-3 rounded-xl font-bold text-[13px] border border-slate-200 text-slate-600 hover:bg-slate-50 active:scale-[0.98] transition-all">Cancel</button>
+            <button onClick={() => { setPartExtraCharges(prev => ({...prev, [currentPartId]: tempExtraCharges.filter(c => c.name && Number(c.amount) > 0) })); setShowExtraChargeModal(false); }} className="flex-[2] py-3 rounded-xl font-bold text-[13px] text-white bg-blue-600 shadow-md shadow-blue-200 hover:bg-blue-700 active:scale-[0.98] transition-all">Save Charges</button>
           </div>
         </div>
       </div>
@@ -1640,11 +1850,11 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
           >
             {(totalQty > 0 || (isEditingCart && overrideQty !== undefined)) ? (
               /* Blue pill: [−] [count] [+] */
-              <div className="flex items-center bg-blue-600 rounded-lg overflow-hidden shadow-sm">
+              <div className="flex items-center bg-blue-600 lg:bg-[#FF5A36] rounded-lg overflow-hidden shadow-sm">
                 <button
                   onClick={handleRemove}
                   disabled={isReadOnly}
-                  className="w-8 h-8 flex items-center justify-center text-white active:bg-blue-700 transition-colors"
+                  className="w-8 h-8 flex items-center justify-center text-white active:bg-blue-700 lg:active:bg-orange-600 transition-colors"
                 >
                   <Minus size={14} strokeWidth={3} />
                 </button>
@@ -1654,7 +1864,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                 <button
                   onClick={handleAdd}
                   disabled={isReadOnly}
-                  className="w-8 h-8 flex items-center justify-center text-white active:bg-blue-700 transition-colors"
+                  className="w-8 h-8 flex items-center justify-center text-white active:bg-blue-700 lg:active:bg-orange-600 transition-colors"
                 >
                   <Plus size={14} strokeWidth={3} />
                 </button>
@@ -1664,7 +1874,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
               <button
                 onClick={handleAdd}
                 disabled={isReadOnly}
-                className="w-9 h-9 flex items-center justify-center rounded-lg bg-white border border-blue-500 text-blue-600 active:scale-90 transition-all disabled:opacity-50 shadow-sm"
+                className="w-9 h-9 flex items-center justify-center rounded-lg bg-white border border-blue-500 lg:border-[#FF5A36] text-blue-600 lg:text-[#FF5A36] active:scale-90 transition-all disabled:opacity-50 shadow-sm"
               >
                 <Plus size={18} strokeWidth={2.5} />
               </button>
@@ -1683,226 +1893,348 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
 
   // ── DESKTOP UI ────────────────────────────────────────────────────────────────────────────
   const renderDesktopUI = () => {
-    const toggleLeft = () => { setLeftOpen(v => { const n = !v; if (n) setRightOpen(false); return n; }); };
-    const toggleRight = () => { setRightOpen(v => { const n = !v; if (n) setLeftOpen(false); return n; }); };
-
     return (
-      <div className="hidden md:flex flex-col flex-1 overflow-hidden">
-        {/* HEADER */}
-        <div className="flex items-center gap-2 px-4 h-14 bg-white border-b border-slate-100 no-print shrink-0">
-          <button onClick={handleBack} className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 transition-colors shrink-0">
-            <ArrowLeft size={16} className="text-slate-600" />
-          </button>
-          <div className="flex flex-col leading-tight">
-            <span className="text-sm font-bold text-slate-900">{tableId || parts[0]?.label || 'Order'}</span>
-            <span className="text-[10px] text-slate-400">{tableId ? 'Dine-in' : 'Parcel'}</span>
-          </div>
-          <div className="flex-1" />
-          <button onClick={toggleLeft} className={cn("flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all", leftOpen ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200 hover:border-slate-300")}>
-            <Utensils size={13} /><span className="hidden sm:inline">Categories</span>
-          </button>
-          <button onClick={toggleRight} className={cn("flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all", rightOpen ? "bg-[#FF5A36] text-white border-[#FF5A36]" : "bg-white text-slate-600 border-slate-200 hover:border-slate-300")}>
-            <CreditCard size={13} /><span className="hidden sm:inline">Bill</span>
-            {activeAllItems.length > 0 && <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-full", rightOpen ? "bg-white/20 text-white" : "bg-orange-50 text-[#FF5A36]")}>₹{activeTotal.toFixed(0)}</span>}
-          </button>
-          {!isReadOnly && parts.length > 0 && <>
-            <button onClick={() => openModal('transfer')} className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 transition-colors">Transfer</button>
-            <button onClick={addPart} className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 transition-colors">Split</button>
-          </>}
-          {isReadOnly && isHistoryView && (
-            <button onClick={() => openModal('delete')} className="w-9 h-9 flex items-center justify-center rounded-xl bg-red-50 border border-red-100 text-red-500 hover:bg-red-100 transition-colors shrink-0 ml-1">
-              <Trash2 size={16} />
+      <div className="hidden md:flex flex-1 overflow-hidden bg-[#f8f9fa]">
+        
+        {/* ── LEFT: Menu Area ── */}
+        <div className="flex-1 flex flex-col min-w-0 h-full bg-white overflow-hidden relative shadow-sm border-r border-slate-100">
+          
+          {/* HEADER */}
+          <div className="flex items-center gap-2 px-6 h-14 bg-white border-b border-slate-100 no-print shrink-0 mt-2">
+            <button onClick={handleBack} className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 transition-colors shrink-0">
+              <ArrowLeft size={16} className="text-slate-600" />
             </button>
-          )}
-        </div>
-
-        {parts.length > 1 && (
-          <div className="flex gap-2 px-4 py-2 bg-white border-b border-slate-100 overflow-x-auto no-print shrink-0">
-            {parts.map((p, idx) => {
-              const its = allItemsForPart(p.id);
-              const tot = totalOf(subtotalOf(its), taxListOf(subtotalOf(its)));
-              return (
-                <button key={p.id} onClick={() => setActivePart(idx)} className={cn('flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all', activePart === idx ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300')}>
-                  <Users size={11} />{p.label}
-                  {its.length > 0 && <span className={cn('text-[9px] font-bold px-1 py-0.5 rounded-full', activePart === idx ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500')}>₹{tot.toFixed(0)}</span>}
-                  <span key={`remove-${p.id}`} onClick={e => { e.stopPropagation(); removePart(idx); }} className="w-3.5 h-3.5 flex items-center justify-center rounded-full text-xs cursor-pointer text-slate-400 hover:text-red-500">×</span>
-                </button>
-              );
-            })}
+            <div className="flex flex-col leading-tight ml-2">
+              <span className="text-sm font-bold text-slate-900">{tableId || parts[0]?.label || 'Order'}</span>
+              <span className="text-[10px] text-slate-400">{tableId ? 'Dine-in' : 'Parcel'}</span>
+            </div>
+            <div className="flex-1" />
+            {!isReadOnly && parts.length > 0 && <>
+              <button onClick={() => openModal('transfer')} className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 transition-colors">Transfer</button>
+              <button onClick={addPart} className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 transition-colors">Split</button>
+            </>}
+            {isReadOnly && isHistoryView && (
+              <button onClick={() => openModal('delete')} className="w-9 h-9 flex items-center justify-center rounded-xl bg-red-50 border border-red-100 text-red-500 hover:bg-red-100 transition-colors shrink-0 ml-1">
+                <Trash2 size={16} />
+              </button>
+            )}
           </div>
-        )}
 
-        <div className="flex flex-1 overflow-hidden no-print">
-          {/* Left category sidebar */}
-          <div className={cn("flex-col bg-white border-r border-slate-100 overflow-hidden transition-all duration-300 shrink-0", leftOpen ? "flex w-44" : "hidden")}>
-            <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400 px-4 pt-4 pb-2 shrink-0">Categories</p>
-            <div className="flex-1 overflow-y-auto">
-              {categories.map(cat => {
-                const count = cat === 'All' ? (menuItems || []).filter(i => i.isAvailable !== false).length : (menuItems || []).filter(i => i.isAvailable !== false && i.category === cat).length;
+          {/* Parts Tabs */}
+          {parts.length > 1 && (
+            <div className="flex gap-2 px-6 py-2 bg-slate-50 border-b border-slate-100 overflow-x-auto no-print shrink-0">
+              {parts.map((p, idx) => {
+                const its = allItemsForPart(p.id);
+                const tot = totalOf(subtotalOf(its), taxListOf(subtotalOf(its)));
                 return (
-                  <button key={cat} onClick={() => setCatFilter(cat)} className={cn("w-full flex items-center justify-between px-4 py-3 text-xs font-semibold transition-all relative", catFilter === cat ? "text-[#FF5A36] bg-orange-50" : "text-slate-500 hover:bg-slate-50")}>
-                    {catFilter === cat && <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-[#FF5A36] rounded-r-full" />}
-                    <span>{cat}</span>
-                    <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded-full", catFilter === cat ? "bg-orange-100 text-[#FF5A36]" : "bg-slate-100 text-slate-400")}>{count}</span>
+                  <button key={p.id} onClick={() => setActivePart(idx)} className={cn('flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all', activePart === idx ? 'bg-slate-900 text-white border-slate-900 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300')}>
+                    <Users size={11} />{p.label}
+                    {its.length > 0 && <span className={cn('text-[9px] font-bold px-1 py-0.5 rounded-full', activePart === idx ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500')}>₹{tot.toFixed(0)}</span>}
+                    <span key={`remove-${p.id}`} onClick={e => { e.stopPropagation(); removePart(idx); }} className="w-3.5 h-3.5 flex items-center justify-center rounded-full text-xs cursor-pointer text-slate-400 hover:text-red-500">×</span>
                   </button>
                 );
               })}
             </div>
-          </div>
+          )}
 
-          {/* Center menu */}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="px-4 pt-3 pb-2 bg-white border-b border-slate-100 shrink-0">
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                  <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search menu..."
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 pl-9 pr-4 outline-none text-sm text-slate-700 placeholder:text-slate-400 focus:border-orange-400 focus:bg-white transition-colors" />
-                </div>
-                {isMicSupported && !isReadOnly && (
-                  <button onClick={toggleListening} className={cn('w-10 h-10 shrink-0 flex items-center justify-center rounded-xl border transition-all relative', isListening ? 'bg-red-500 border-red-500 text-white' : 'bg-white border-slate-200 text-slate-400 hover:text-[#ff5a36] hover:border-[#ff5a36]')}>
-                    {isListening && <span className="absolute inset-0 rounded-xl bg-red-400 animate-ping opacity-40" />}
-                    {isListening ? <Mic size={15} /> : <MicOff size={15} />}
-                  </button>
-                )}
-              </div>
-              {transcriptResult && (
-                <div className={cn('mt-2 px-3 py-2 rounded-xl text-xs font-semibold', transcriptResult.startsWith('✅') ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : transcriptResult.startsWith('❌') || transcriptResult.startsWith('⚠') ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-slate-800 text-white')}>{transcriptResult}</div>
-              )}
+          {/* Search bar */}
+          <div className="flex gap-2.5 px-6 py-3 bg-white shrink-0">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search menu..."
+                className="w-full bg-[#f2f2f7] rounded-xl py-2.5 pl-10 pr-4 outline-none text-[13px] font-semibold text-slate-700 placeholder:text-slate-400 focus:border-orange-400 focus:bg-white transition-colors" />
             </div>
-            <div className="flex-1 overflow-y-auto bg-[#f8f7f5] px-4 py-3">
-              {filteredMenu.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-slate-400">
-                  <Utensils size={28} strokeWidth={1} className="mb-3 opacity-40" />
-                  <p className="text-sm font-medium">No items found</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                  {filteredMenu.map(item => (
-                    <div key={item._id}>
-                      {renderMenuItemCard({ item })}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            {isMicSupported && !isReadOnly && (
+              <button onClick={toggleListening} className={cn('w-10 h-10 shrink-0 flex items-center justify-center rounded-xl border transition-all relative', isListening ? 'bg-red-500 border-red-500 text-white' : 'bg-white border-slate-200 text-slate-400 hover:text-[#ff5a36] hover:border-[#ff5a36]')}>
+                {isListening && <span className="absolute inset-0 rounded-xl bg-red-400 animate-ping opacity-40" />}
+                {isListening ? <Mic size={15} /> : <MicOff size={15} />}
+              </button>
+            )}
           </div>
+          {transcriptResult && (
+            <div className={cn('mx-6 mb-2 px-3 py-2 rounded-xl text-xs font-semibold', transcriptResult.startsWith('✅') ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : transcriptResult.startsWith('❌') || transcriptResult.startsWith('⚠') ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-slate-800 text-white')}>{transcriptResult}</div>
+          )}
 
-          {/* Right bill panel */}
-          <div className={cn("flex-col bg-white border-l border-slate-100 overflow-hidden transition-all duration-300 shrink-0", rightOpen ? "flex w-72" : "hidden")}>
-            <div className="px-5 pt-5 pb-4 border-b border-slate-100 shrink-0 bg-slate-900">
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">{tableId || parts[activePart]?.label || 'Order'}</p>
-              <div className="flex items-end justify-between">
-                <div>
-                  <p className="text-xs text-slate-400 font-medium">Net Payable</p>
-                  <p className="text-4xl font-black text-white tracking-tight">₹{activeTotal.toFixed(0)}</p>
-                </div>
-                {isReadOnly && <span className="bg-emerald-500/20 text-emerald-400 text-[9px] font-bold px-2 py-1 rounded uppercase">Archived</span>}
-              </div>
-              {activeTaxes.length > 0 && (
-                <div className="mt-3 space-y-1 border-t border-slate-700 pt-3">
-                  <div className="flex justify-between text-[10px] text-slate-400"><span>Subtotal</span><span>₹{activeSub.toFixed(2)}</span></div>
-                  {activeTaxes.map(t => <div key={t.name} className="flex justify-between text-[10px] text-slate-400"><span>{t.name} ({t.pct}%)</span><span>₹{t.amt.toFixed(2)}</span></div>)}
-                </div>
-              )}
-            </div>
-            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-              {activeAllItems.length === 0 && (
-                <div className="py-10 text-center"><ShoppingCart size={24} strokeWidth={1} className="mx-auto mb-2 text-slate-200" /><p className="text-xs text-slate-400">No items yet</p></div>
-              )}
-              {activeAllItems.map(item => (
-                <div key={item.menuId} className="flex justify-between items-center">
-                  <div className="flex-1 min-w-0 pr-2">
-                    <p className="font-bold text-slate-800 text-sm leading-tight truncate">{item.name}</p>
-                    <p className="text-[11px] font-semibold text-slate-500 mt-0.5">₹{item.price} each</p>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-1">
-                      <button onClick={() => updateQty(item.menuId, -1)} disabled={isReadOnly} className="p-1 hover:bg-white rounded-md transition-colors text-slate-600 shadow-sm disabled:opacity-40"><Minus size={14} strokeWidth={3} /></button>
-                      <span className="w-5 text-center font-bold text-slate-800">{item.qty}</span>
-                      <button onClick={() => updateQty(item.menuId, 1)} disabled={isReadOnly} className="p-1 hover:bg-white rounded-md transition-colors text-slate-600 shadow-sm disabled:opacity-40"><Plus size={14} strokeWidth={3} /></button>
-                    </div>
-                    <span className="font-black text-slate-800 w-12 text-right">₹{item.price * item.qty}</span>
-                  </div>
-                </div>
+          {/* Horizontal Categories */}
+          <div className="px-6 pb-4 bg-white shrink-0 no-print">
+            <div className="flex gap-2 overflow-x-auto no-scrollbar">
+              {categories.map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => setCatFilter(cat)}
+                  className={cn(
+                    'px-4 py-1.5 rounded-full text-[10px] font-semibold uppercase tracking-widest whitespace-nowrap border shrink-0 transition-all flex items-center gap-1.5',
+                    catFilter === cat
+                      ? 'bg-white border-blue-500 text-blue-600 shadow-sm'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                  )}
+                >
+                  {cat === 'All' ? <Utensils size={12} /> : <VegDot category={cat} />}
+                  {cat}
+                </button>
               ))}
             </div>
-            <div className="px-4 py-4 space-y-3 border-t border-slate-100 shrink-0">
-              {activeCurrent.length > 0 && !isReadOnly && (
-                <button onClick={() => saveRound(currentPartId)} disabled={isDispatching}
-                  className={cn('w-full py-3 rounded-xl text-xs font-bold tracking-wide flex items-center justify-center gap-2 active:scale-[0.98] transition-all', roundMsg ? 'bg-emerald-500 text-white' : 'bg-emerald-500 text-white hover:bg-emerald-600')}>
-                  {roundMsg ? <><CheckCircle2 size={14} /> Dispatched!</> : <><ArrowRight size={14} /> Dispatch to Kitchen</>}
-                </button>
-              )}
-              {activeAllItems.length > 0 && (
-                <>
-                  <div className="relative">
-                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
-                    <input type="tel" value={phoneOf(currentPartId)} onChange={e => setPartPhones(prev => ({ ...prev, [currentPartId]: e.target.value }))} placeholder="Mobile (optional)"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 pl-9 pr-3 outline-none text-xs text-slate-700 placeholder:text-slate-400 focus:border-[#ff5a36] transition-colors" maxLength={10} />
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <div className="flex bg-slate-100 p-0.5 rounded-full relative overflow-hidden shadow-inner">
-                      <div className={cn("absolute top-0.5 bottom-0.5 w-[calc(33.33%-2px)] rounded-full shadow-sm bg-emerald-500 transition-all duration-300",
-                        paymentMode === 'UPI' || paymentMode === 'Online' ? "translate-x-0" :
-                          paymentMode === 'Cash' ? "translate-x-[calc(100%+2px)]" :
-                            "translate-x-[calc(200%+4px)]")} />
-                      <button onClick={() => { setPaymentMode('UPI'); setOnlineAmount(activeTotal); setCashAmount(0); }} className={cn("flex-1 py-2 text-[10px] font-bold uppercase tracking-wide relative z-10 rounded-full transition-colors", (paymentMode === 'UPI' || paymentMode === 'Online') ? "text-white" : "text-slate-400")}>UPI</button>
-                      <button onClick={() => { setPaymentMode('Cash'); setCashAmount(activeTotal); setOnlineAmount(0); }} className={cn("flex-1 py-2 text-[10px] font-bold uppercase tracking-wide relative z-10 rounded-full transition-colors", paymentMode === 'Cash' ? "text-white" : "text-slate-400")}>Cash</button>
-                      <button onClick={() => { setPaymentMode('Split'); setCashAmount(Math.floor(activeTotal / 2)); setOnlineAmount(activeTotal - Math.floor(activeTotal / 2)); }} className={cn("flex-1 py-2 text-[10px] font-bold uppercase tracking-wide relative z-10 rounded-full transition-colors", paymentMode === 'Split' ? "text-white" : "text-slate-400")}>Split</button>
-                    </div>
+          </div>
 
-                    {paymentMode === 'Split' && (
-                      <div className="flex gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
-                        <div className="flex-1">
-                          <label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">Cash</label>
-                          <input
-                            type="number"
-                            value={cashAmount}
-                            onChange={(e) => {
-                              const val = Number(e.target.value);
-                              setCashAmount(val);
-                              setOnlineAmount(Math.max(0, activeTotal - val));
-                            }}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold outline-none focus:border-emerald-500"
-                          />
-                        </div>
-                        <div className="flex-1">
-                          <label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">Online</label>
-                          <input
-                            type="number"
-                            value={onlineAmount}
-                            onChange={(e) => {
-                              const val = Number(e.target.value);
-                              setOnlineAmount(val);
-                              setCashAmount(Math.max(0, activeTotal - val));
-                            }}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold outline-none focus:border-emerald-500"
-                          />
-                        </div>
-                      </div>
-                    )}
+          {/* Center Menu Grid */}
+          <div className="flex-1 overflow-y-auto bg-[#f8f9fa] px-6 py-4">
+            {filteredMenu.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                <Utensils size={28} strokeWidth={1} className="mb-3 opacity-40" />
+                <p className="text-[13px] font-semibold">No items found</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                {filteredMenu.map(item => (
+                  <div key={item._id}>
+                    {renderMenuItemCard({ item })}
                   </div>
-                  {!isReadOnly && !isWaiter ? (
-                    <button
-                      onClick={() => handleSettle(currentPartId, 'none')}
-                      className="w-full py-4 bg-[#FF5A36] hover:bg-orange-600 text-white rounded-2xl text-[14px] font-black uppercase tracking-wider shadow-lg shadow-orange-100 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-                    >
-                      <CheckCircle2 size={18} /> Confirm & Settle
-                    </button>
-                  ) : isReadOnly ? (
-                    <div className="grid grid-cols-2 gap-2">
-                      <button onClick={() => window.print()} className="py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-semibold text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:border-slate-300"><Printer size={14} /> Reprint</button>
-                      {phoneOf(currentPartId).replace(/\D/g, '').length >= 10 && (
-                        <button onClick={() => { const bill = buildBill(currentPartId); window.open(`https://wa.me/91${phoneOf(currentPartId).replace(/\D/g, '')}?text=${encodeURIComponent(waMessage(bill))}`, '_blank'); }} className="py-3 bg-white border border-[#00a884] text-[#00a884] rounded-xl font-semibold text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-50"><MessageCircle size={14} /> WhatsApp</button>
+                ))}
+              </div>
+            )}
+          </div>
+
+        </div>
+
+        {/* ── RIGHT: Cart Area (QuickOrder Style) ── */}
+        <div className="hidden lg:flex w-[400px] flex-col h-full bg-white border-l border-slate-200 shrink-0 z-50">
+          
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
+            <h2 className="text-[15px] font-bold text-slate-800 tracking-tight flex items-center gap-2">
+              <ShoppingCart size={16} className="text-[#4B6FFF]" />
+              Current Order
+            </h2>
+            {activeAllItems.length > 0 && !isReadOnly && (
+              <button
+                onClick={() => openModal('discard')}
+                className="text-[11px] font-bold text-rose-500 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors"
+              >
+                <Trash2 size={13} /> Clear
+              </button>
+            )}
+          </div>
+
+          {/* Cart Items */}
+          <div className="flex-1 overflow-y-auto px-5 py-2 no-scrollbar bg-white">
+            {activeAllItems.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center space-y-4">
+                <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100">
+                  <Utensils size={24} className="text-slate-300" />
+                </div>
+                <p className="text-[13px] font-semibold text-slate-400">Order is empty</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {activeAllItems.map(item => {
+                  const menuItem = menuItems.find(m => item.menuId === m._id || item.menuId.startsWith(m._id));
+                  const name = item.name || menuItem?.name || 'Item';
+                  return (
+                  <div key={item.menuId} className="py-3.5 flex gap-3.5">
+                    {/* Thumbnail */}
+                    <div className="w-12 h-12 rounded-md overflow-hidden shrink-0 bg-slate-50 border border-slate-100 flex items-center justify-center">
+                      {menuItem?.image ? (
+                        <img src={menuItem.image} alt={name} className="w-full h-full object-cover" />
+                      ) : (
+                        <Utensils size={16} className="text-slate-300" />
                       )}
                     </div>
-                  ) : null}
-                </>
-              )}
-            </div>
+                    
+                    {/* Details */}
+                    <div className="flex-1 flex flex-col justify-center min-w-0">
+                      <div className="flex justify-between items-start mb-1.5">
+                        <div className="flex items-center overflow-hidden pr-2">
+                          <span className="text-[14px] font-bold text-slate-800 leading-none truncate mt-0.5">{name}</span>
+                        </div>
+                        <span className="text-[14px] font-bold text-slate-900 leading-none mt-0.5 shrink-0">₹{item.price * item.qty}</span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between">
+                        <span className="text-[12px] font-semibold text-slate-400">₹{item.price}</span>
+                        
+                        {/* Sleek Pill Stepper */}
+                        {!isReadOnly && (
+                          <div className="flex items-center bg-[#f2f2f7] rounded-full h-7 px-1">
+                            <button 
+                              onClick={() => updateQty(item.menuId, -1)} 
+                              className="w-6 h-6 flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-200/50 rounded-full transition-colors"
+                            >
+                              <Minus size={12} strokeWidth={3} />
+                            </button>
+                            <span className="text-[12px] font-bold w-6 text-center text-slate-800">{item.qty}</span>
+                            <button 
+                              onClick={() => updateQty(item.menuId, 1)} 
+                              className="w-6 h-6 flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-200/50 rounded-full transition-colors"
+                            >
+                              <Plus size={12} strokeWidth={3} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )})}
+              </div>
+            )}
           </div>
+
+
+
+          {/* ── Desktop Cart Bottom Checkout Panel (QuickOrder Style) ── */}
+          <div className="p-3 bg-gradient-to-br from-indigo-500 to-indigo-600 shrink-0 relative shadow-[0_-10px_40px_rgba(79,70,229,0.2)] border-t border-indigo-500/30 flex flex-col">
+
+            <div className="rounded-lg border border-slate-200 bg-white overflow-hidden mb-4 shadow-sm relative z-20">
+              
+              <div className="px-3 py-2.5 bg-slate-50/50 border-b border-slate-100 flex justify-between items-center">
+                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest">Payment</p>
+                <div className="flex bg-slate-200/60 p-0.5 rounded-lg relative overflow-hidden">
+                  <div className={cn("absolute top-0.5 bottom-0.5 w-[calc(33.33%-2px)] rounded-md shadow-sm bg-white transition-all duration-300",
+                    paymentMode === 'UPI' || paymentMode === 'Online' ? "translate-x-0" :
+                      paymentMode === 'Cash' ? "translate-x-[calc(100%+2px)]" :
+                        "translate-x-[calc(200%+4px)]")} />
+                  <button onClick={() => { setPaymentMode('UPI'); setOnlineAmount(activeTotal); setCashAmount(0); }} className={cn("px-3 py-1 text-[10px] font-bold uppercase tracking-wide relative z-10 rounded-md transition-colors", (paymentMode === 'UPI' || paymentMode === 'Online') ? "text-slate-800" : "text-slate-500 hover:text-slate-700")}>UPI</button>
+                  <button onClick={() => { setPaymentMode('Cash'); setCashAmount(activeTotal); setOnlineAmount(0); }} className={cn("px-3 py-1 text-[10px] font-bold uppercase tracking-wide relative z-10 rounded-md transition-colors", paymentMode === 'Cash' ? "text-slate-800" : "text-slate-500 hover:text-slate-700")}>Cash</button>
+                  <button onClick={() => { setPaymentMode('Split'); setCashAmount(Math.floor(activeTotal / 2)); setOnlineAmount(activeTotal - Math.floor(activeTotal / 2)); }} className={cn("px-3 py-1 text-[10px] font-bold uppercase tracking-wide relative z-10 rounded-md transition-colors", paymentMode === 'Split' ? "text-slate-800" : "text-slate-500 hover:text-slate-700")}>Split</button>
+                </div>
+              </div>
+
+              {paymentMode === 'Split' && (
+                <div className="flex gap-3 px-3 py-3 border-b border-slate-100 bg-white">
+                  <div className="flex-1">
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest block mb-1">Cash (₹)</span>
+                    <input type="text" inputMode="decimal" value={cashAmount} onChange={e => { const val = Number(e.target.value); setCashAmount(val); setOnlineAmount(Math.max(0, activeTotal - val)); }}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-[14px] font-bold text-slate-700 outline-none focus:border-[#4B6FFF] transition-colors shadow-sm" placeholder="0" />
+                  </div>
+                  <div className="flex-1">
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest block mb-1">UPI (₹)</span>
+                    <input type="text" inputMode="decimal" value={onlineAmount} onChange={e => { const val = Number(e.target.value); setOnlineAmount(val); setCashAmount(Math.max(0, activeTotal - val)); }}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-[14px] font-bold text-slate-700 outline-none focus:border-[#4B6FFF] transition-colors shadow-sm" placeholder="0" />
+                  </div>
+                </div>
+              )}
+
+              {/* Discount / Pack */}
+              {!isReadOnly && (
+                <div className="flex relative border-b border-slate-100">
+                  <div className="flex-1 px-3 py-2.5 border-r border-slate-100">
+                    <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Discount (₹)</p>
+                    <input
+                      type="text" readOnly value={activeDiscountType === 'Fixed' ? activeDiscountValue : ''} onClick={() => setShowNumpad(true)}
+                      className="w-full text-[16px] font-bold text-emerald-500 outline-none placeholder:text-slate-300 cursor-pointer" placeholder="0"
+                    />
+                  </div>
+                  <div className="flex-1 p-2 flex items-center justify-center">
+                    {(() => {
+                      const packPrice = user?.packagingCharge || 20;
+                      const packObj = (activeExtraCharges || []).find(c => c.name === 'Packaging');
+                      const packQty = packObj ? packObj.amount / packPrice : 0;
+                      const handleUpdatePack = (delta) => {
+                        const newQty = Math.max(0, packQty + delta);
+                        const charges = [...(partExtraCharges[currentPartId] || [])];
+                        const packIdx = charges.findIndex(c => c.name === 'Packaging');
+                        if (packIdx >= 0) charges.splice(packIdx, 1);
+                        if (newQty > 0) charges.push({ name: 'Packaging', amount: newQty * packPrice });
+                        setPartExtraCharges(prev => ({ ...prev, [currentPartId]: charges }));
+                      };
+                      if (packQty === 0) {
+                        return (
+                          <button onClick={() => handleUpdatePack(1)} className="w-full h-full rounded-lg flex items-center justify-center gap-2 transition-all border bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-700">
+                            <Package size={16} strokeWidth={2.5} />
+                            <span className="text-[11px] font-bold uppercase tracking-widest">Add Pack</span>
+                          </button>
+                        );
+                      }
+                      return (
+                        <div className="w-full h-full py-1.5 flex items-center justify-between px-1 bg-amber-50 border border-amber-200 rounded-lg text-amber-600 shadow-sm">
+                          <button onClick={() => handleUpdatePack(-1)} className="w-8 h-full flex items-center justify-center hover:bg-amber-100 rounded-md transition-colors"><Minus size={14} strokeWidth={3} /></button>
+                          <span className="text-[11px] font-bold uppercase tracking-widest">{packQty} Pack</span>
+                          <button onClick={() => handleUpdatePack(1)} className="w-8 h-full flex items-center justify-center hover:bg-amber-100 rounded-md transition-colors"><Plus size={14} strokeWidth={3} /></button>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {/* Smooth Expanding Numpad */}
+              <div className={cn("grid transition-all duration-300 ease-in-out border-slate-100", showNumpad ? "grid-rows-[1fr] opacity-100 border-b" : "grid-rows-[0fr] opacity-0 border-b-0")}>
+                <div className="overflow-hidden">
+                  <CustomNumpad value={activeDiscountType === 'Fixed' ? activeDiscountValue : ''} onChange={(val) => setPartDiscount(prev => ({ ...prev, [currentPartId]: val ? { type: 'Fixed', value: Number(val) } : null }))} onClose={() => setShowNumpad(false)} />
+                </div>
+              </div>
+
+              {/* Totals Breakdown */}
+              <div className="px-3 py-3 bg-slate-50/50 space-y-2">
+                <div className="flex justify-between items-end">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Subtotal</span>
+                  <span className="text-[14px] font-bold text-slate-900 leading-none">₹{activeSub.toFixed(2)}</span>
+                </div>
+                {activeExtraCharges.map((c, i) => (
+                  <div key={i} className="flex justify-between items-end">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">{c.name}</span>
+                    <span className="text-[14px] font-bold text-slate-900 leading-none">₹{Number(c.amount).toFixed(2)}</span>
+                  </div>
+                ))}
+                {activeDiscountAmount > 0 && (
+                  <div className="flex justify-between items-end">
+                    <span className="text-[11px] font-bold text-emerald-500 uppercase tracking-widest">Discount ({activeDiscountType})</span>
+                    <span className="text-[14px] font-bold text-emerald-600 leading-none">-₹{activeDiscountAmount.toFixed(2)}</span>
+                  </div>
+                )}
+                {activeTaxes.map(t => (
+                  <div key={t.name} className="flex justify-between items-end">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">{t.name} ({t.pct}%)</span>
+                    <span className="text-[14px] font-bold text-slate-900 leading-none">+₹{t.amt.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-end justify-between px-1 mb-4 relative z-20">
+              <div className="flex flex-col">
+                <span className="text-indigo-200 text-[12px] font-bold uppercase tracking-widest mb-1 shadow-sm">Total Pay</span>
+                <span className="text-[28px] font-black text-white leading-none drop-shadow-md">₹{activeTotal.toFixed(0)}</span>
+              </div>
+            </div>
+
+            {activeCurrent.length > 0 && !isReadOnly ? (
+              <button
+                onClick={() => saveRound(currentPartId)}
+                disabled={isDispatching}
+                className="relative overflow-hidden w-full h-[52px] rounded-xl flex items-center justify-center gap-2 group active:scale-[0.98] transition-transform z-20 disabled:opacity-50 disabled:cursor-not-allowed bg-white"
+              >
+                <div className="absolute inset-0 bg-white transition-opacity duration-300" />
+                <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 transition-opacity duration-300" />
+                {roundMsg ? (
+                  <>
+                    <CheckCircle2 size={18} className="text-emerald-600 relative z-10" />
+                    <span className="text-[15px] font-black uppercase tracking-wider text-emerald-600 relative z-10">Dispatched!</span>
+                  </>
+                ) : (
+                  <>
+                    <ArrowRight size={18} className="text-indigo-600 relative z-10" />
+                    <span className="text-[15px] font-black uppercase tracking-wider text-indigo-600 relative z-10">
+                      Dispatch {activeCurrent.reduce((a, c) => a + c.qty, 0)} Items
+                    </span>
+                  </>
+                )}
+              </button>
+            ) : (
+              <button
+                onClick={async () => { await handleConfirmAndSave(); }}
+                disabled={activeAllItems.length === 0}
+                className="relative overflow-hidden w-full h-[52px] rounded-xl flex items-center justify-center gap-2 group active:scale-[0.98] transition-transform z-20 disabled:opacity-50 disabled:cursor-not-allowed bg-white"
+              >
+                <div className="absolute inset-0 bg-white transition-opacity duration-300" />
+                <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 transition-opacity duration-300" />
+                <CheckCircle2 size={18} className="text-indigo-600 relative z-10" />
+                <span className="text-[15px] font-black uppercase tracking-wider text-indigo-600 relative z-10">Confirm Bill</span>
+              </button>
+            )}
+
+          </div>
+
         </div>
+
       </div>
     );
   };
@@ -2017,7 +2349,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                       localStorage.setItem('restro_category_layout', tempCategoryLayout);
                       closeModals();
                     }}
-                    className="flex-1 py-3.5 rounded-xl font-bold text-[13px] text-white bg-blue-600 active:scale-[0.97] transition-all shadow-md shadow-blue-200 tracking-wide"
+                    className="flex-1 py-3.5 rounded-xl font-bold text-[13px] text-white bg-blue-600 lg:bg-[#FF5A36] active:scale-[0.97] transition-all shadow-md shadow-blue-200 lg:shadow-orange-100 tracking-wide"
                   >
                     Save Changes
                   </button>
@@ -2051,11 +2383,11 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
             className={cn(
               'w-11 h-11 shrink-0 flex items-center justify-center rounded-xl border-2 transition-all relative',
               isListening
-                ? 'bg-blue-600 border-blue-600 text-white'
-                : 'bg-white border-blue-500 text-blue-500'
+                ? 'bg-blue-600 lg:bg-[#FF5A36] border-blue-600 lg:border-[#FF5A36] text-white'
+                : 'bg-white border-blue-500 lg:border-[#FF5A36] text-blue-500 lg:text-[#FF5A36]'
             )}
           >
-            {isListening && <span className="absolute inset-0 rounded-xl bg-blue-400 animate-ping opacity-30" />}
+            {isListening && <span className="absolute inset-0 rounded-xl bg-blue-400 lg:bg-orange-400 animate-ping opacity-30" />}
             <Mic size={18} />
           </button>
         )}
@@ -2081,7 +2413,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
               className={cn(
                 'px-4 py-1.5 rounded-full text-[12px] font-bold whitespace-nowrap border shrink-0 transition-all',
                 catFilter === cat
-                  ? 'bg-white border-blue-500 text-blue-600 shadow-sm'
+                  ? 'bg-white border-blue-500 lg:border-[#FF5A36] text-blue-600 lg:text-[#FF5A36] shadow-sm'
                   : 'bg-white border-slate-200 text-slate-600'
               )}
             >
@@ -2120,20 +2452,20 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                 onClick={() => setCatFilter(cat)}
                 className={cn(
                   'flex flex-col items-center py-4 px-1 gap-1.5 transition-all relative',
-                  catFilter === cat ? 'bg-white text-blue-600' : 'text-slate-400'
+                  catFilter === cat ? 'bg-white text-blue-600 lg:text-[#FF5A36]' : 'text-slate-400'
                 )}
               >
-                {catFilter === cat && <div className="absolute right-0 top-2 bottom-2 w-1 bg-blue-600 rounded-l-full" />}
+                {catFilter === cat && <div className="absolute right-0 top-2 bottom-2 w-1 bg-blue-600 lg:bg-[#FF5A36] rounded-l-full" />}
                 <div className={cn(
                   "w-10 h-10 rounded-xl flex items-center justify-center transition-all",
-                  catFilter === cat ? "bg-blue-50" : "bg-transparent"
+                  catFilter === cat ? "bg-blue-50 lg:bg-orange-50" : "bg-transparent"
                 )}>
                   {cat === 'All' ? <Utensils size={18} /> :
                     cat.toLowerCase().includes('drink') ? <Coffee size={18} /> :
-                      cat.toLowerCase().includes('pizza') ? <Pizza size={18} /> :
+                    cat.toLowerCase().includes('pizza') ? <Pizza size={18} /> :
                         <Box size={18} />}
                 </div>
-                <span className={cn("text-[9px] font-black uppercase tracking-tighter text-center leading-none px-1", catFilter === cat ? "text-blue-700" : "text-slate-500")}>
+                <span className={cn("text-[9px] font-black uppercase tracking-tighter text-center leading-none px-1", catFilter === cat ? "text-blue-700 lg:text-[#FF5A36]" : "text-slate-500")}>
                   {cat}
                 </span>
               </button>
@@ -2166,12 +2498,12 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
             className="w-full flex items-center px-4 py-3 mb-1 border-b border-slate-200 bg-white active:bg-slate-50 transition-colors gap-2"
           >
             <div className="flex items-center gap-2 flex-1 min-w-0">
-              <ShoppingCart size={15} className="text-blue-500 shrink-0" />
+              <ShoppingCart size={15} className="text-blue-500 lg:text-[#FF5A36] shrink-0" />
               <span className="text-[13px] font-bold text-slate-800">View Cart</span>
               <span className="text-[11px] font-medium text-slate-400">·  {cartItemCount} items</span>
             </div>
-            <span className="text-[14px] font-black text-blue-600 shrink-0">₹{activeTotal.toFixed(0)}</span>
-            <ChevronRight size={14} className="text-blue-400 shrink-0" />
+            <span className="text-[14px] font-black text-blue-600 lg:text-[#FF5A36] shrink-0">₹{activeTotal.toFixed(0)}</span>
+            <ChevronRight size={14} className="text-blue-400 lg:text-orange-400 shrink-0" />
           </button>
         )}
 
@@ -2191,7 +2523,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
             onClick={handleKOTBill}
             disabled={activeAllItems.length === 0 || isReadOnly}
             className={cn(
-              'flex-1 py-3 rounded-xl font-bold text-[13px] text-white bg-blue-600 active:scale-[0.97] transition-all shadow-md shadow-blue-200 tracking-wide',
+              'flex-1 py-3 rounded-xl font-bold text-[13px] text-white bg-blue-600 lg:bg-[#FF5A36] active:scale-[0.97] transition-all shadow-md shadow-blue-200 lg:shadow-orange-100 tracking-wide',
               (activeAllItems.length === 0 || isReadOnly) ? 'opacity-40 cursor-not-allowed' : ''
             )}
           >
@@ -2214,7 +2546,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
 
         {/* Header — Cart title + table number on right */}
         <div className="flex items-center px-4 h-14 bg-white border-b border-slate-100 shrink-0">
-          <button onClick={() => onScreenChange?.('menu')} className="mr-3 text-slate-800 active:scale-95">
+          <button onClick={handleBack} className="mr-3 text-slate-800 active:scale-95">
             <ChevronLeft size={24} strokeWidth={2.5} />
           </button>
           <span className="text-[17px] font-bold text-slate-900 flex-1">Cart</span>
@@ -2252,7 +2584,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
               className="w-full flex items-center justify-between px-4 py-4"
             >
               <span className="text-[15px] font-semibold text-slate-800">Customer Details</span>
-              <span className="text-blue-600 text-[14px] font-bold">{customerDetailsOpen ? 'HIDE' : 'ADD'}</span>
+              <span className="text-blue-600 lg:text-[#FF5A36] text-[14px] font-bold">{customerDetailsOpen ? 'HIDE' : 'ADD'}</span>
             </button>
             {customerDetailsOpen && (
               <div className="px-4 pb-4 space-y-3 border-t border-slate-100">
@@ -2262,7 +2594,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                     value={customerName}
                     onChange={e => setCustomerName(e.target.value)}
                     placeholder="Customer name"
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-400 bg-slate-50"
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-400 lg:focus:border-[#FF5A36] bg-slate-50"
                   />
                 </div>
                 <div>
@@ -2273,7 +2605,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                     onChange={e => setPartPhones(prev => ({ ...prev, [currentPartId]: e.target.value }))}
                     placeholder="Mobile number"
                     maxLength={10}
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-400 bg-slate-50"
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-400 lg:focus:border-[#FF5A36] bg-slate-50"
                   />
                 </div>
               </div>
@@ -2306,7 +2638,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                   className={cn(
                     'px-4 py-2 rounded-full text-[13px] font-semibold border transition-all',
                     paymentMode === mode
-                      ? 'border-blue-500 text-blue-600 bg-white'
+                      ? 'border-blue-500 lg:border-[#FF5A36] text-blue-600 lg:text-[#FF5A36] bg-white'
                       : 'border-slate-200 text-slate-700 bg-white'
                   )}
                 >
@@ -2327,7 +2659,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                       setCashAmount(val);
                       setOnlineAmount(Math.max(0, activeTotal - val));
                     }}
-                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[15px] font-black text-slate-800 outline-none focus:border-blue-500"
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[15px] font-black text-slate-800 outline-none focus:border-blue-500 lg:focus:border-[#FF5A36]"
                   />
                 </div>
                 <div className="flex-1">
@@ -2340,7 +2672,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                       setOnlineAmount(val);
                       setCashAmount(Math.max(0, activeTotal - val));
                     }}
-                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[15px] font-black text-slate-800 outline-none focus:border-blue-500"
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[15px] font-black text-slate-800 outline-none focus:border-blue-500 lg:focus:border-[#FF5A36]"
                   />
                 </div>
               </div>
@@ -2356,19 +2688,101 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                   <ClipboardList size={16} className="text-slate-400" />
                   <span className="text-[14px] text-slate-700">Sub Total</span>
                 </div>
-                <span className="text-[14px] font-semibold text-slate-800">₹{activeSub.toFixed(0)}</span>
+                <span className="text-[14px] font-semibold text-slate-800">₹{activeSub.toFixed(2)}</span>
               </div>
+              
+              {activeExtraCharges.map((c, i) => (
+                <div key={i} className="flex items-center justify-between">
+                  <span className="text-[13px] text-slate-500 pl-6">{c.name}</span>
+                  <span className="text-[13px] text-slate-600">₹{Number(c.amount).toFixed(2)}</span>
+                </div>
+              ))}
+              
+              {activeDiscountAmount > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-[13px] text-emerald-500 pl-6">Discount ({activeDiscountType})</span>
+                  <span className="text-[13px] text-emerald-600">-₹{activeDiscountAmount.toFixed(2)}</span>
+                </div>
+              )}
+
               {activeTaxes.map(t => (
                 <div key={t.name} className="flex items-center justify-between">
-                  <span className="text-[13px] text-slate-500">{t.name} ({t.pct}%)</span>
+                  <span className="text-[13px] text-slate-500 pl-6">{t.name} ({t.pct}%)</span>
                   <span className="text-[13px] text-slate-600">₹{t.amt.toFixed(2)}</span>
                 </div>
               ))}
               <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                 <span className="text-[14px] font-black text-slate-800">Total Amount</span>
-                <span className="text-[16px] font-black text-blue-600">₹{activeTotal.toFixed(0)}</span>
+                <span className="text-[16px] font-black text-blue-600 lg:text-[#FF5A36]">₹{activeTotal.toFixed(0)}</span>
               </div>
             </div>
+
+            {!isReadOnly && (
+              <div className="flex flex-col mt-2 pt-2 border-t border-slate-100">
+                {/* Inline Quick Actions */}
+                <div className="flex relative border-b border-slate-100 mb-4 pb-4 mt-2">
+                  <div className="flex-1 px-3 py-1 border-r border-slate-100">
+                    <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Discount (₹)</p>
+                    <input
+                      type="text"
+                      readOnly
+                      value={activeDiscountType === 'Fixed' ? activeDiscountValue : ''}
+                      onClick={() => setShowNumpad(true)}
+                      className="w-full text-[16px] font-bold text-emerald-500 outline-none placeholder:text-slate-300 cursor-pointer"
+                      placeholder="0"
+                    />
+                  </div>
+                  <div className="flex-1 px-2 flex flex-col justify-center gap-1.5">
+                    {(() => {
+                      const packPrice = user?.packagingCharge || 20;
+                      const packObj = (activeExtraCharges || []).find(c => c.name === 'Packaging');
+                      const packQty = packObj ? packObj.amount / packPrice : 0;
+                      const handleUpdatePack = (delta) => {
+                        const newQty = Math.max(0, packQty + delta);
+                        const charges = [...(partExtraCharges[currentPartId] || [])];
+                        const packIdx = charges.findIndex(c => c.name === 'Packaging');
+                        if (packIdx >= 0) charges.splice(packIdx, 1);
+                        if (newQty > 0) charges.push({ name: 'Packaging', amount: newQty * packPrice });
+                        setPartExtraCharges(prev => ({ ...prev, [currentPartId]: charges }));
+                      };
+                      if (packQty === 0) {
+                        return (
+                          <button onClick={() => handleUpdatePack(1)} className="w-full py-1.5 rounded-lg flex items-center justify-center gap-2 transition-all border bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-700">
+                            <Package size={14} strokeWidth={2.5} />
+                            <span className="text-[11px] font-bold uppercase tracking-widest">Add Pack</span>
+                          </button>
+                        );
+                      }
+                      return (
+                        <div className="w-full py-1.5 flex items-center justify-between px-1 bg-amber-50 border border-amber-200 rounded-lg text-amber-600 shadow-sm">
+                          <button onClick={() => handleUpdatePack(-1)} className="w-6 flex items-center justify-center hover:bg-amber-100 rounded-md transition-colors"><Minus size={14} strokeWidth={3} /></button>
+                          <span className="text-[11px] font-bold uppercase tracking-widest">{packQty} Pack</span>
+                          <button onClick={() => handleUpdatePack(1)} className="w-6 flex items-center justify-center hover:bg-amber-100 rounded-md transition-colors"><Plus size={14} strokeWidth={3} /></button>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {/* Smooth Expanding Numpad */}
+                <div
+                  className={cn(
+                    "grid transition-all duration-300 ease-in-out border-slate-100 mb-4",
+                    showNumpad ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                  )}
+                >
+                  <div className="overflow-hidden border border-slate-200 rounded-xl">
+                    <CustomNumpad
+                      value={activeDiscountType === 'Fixed' ? activeDiscountValue : ''}
+                      onChange={(val) => setPartDiscount(prev => ({ ...prev, [currentPartId]: val ? { type: 'Fixed', value: Number(val) } : null }))}
+                      onClose={() => setShowNumpad(false)}
+                    />
+                  </div>
+                </div>
+
+
+              </div>
+            )}
           </div>
 
           {/* Final Bill Items Summary Card */}
@@ -2417,7 +2831,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
             }}
             disabled={activeAllItems.length === 0 || isReadOnly}
             className={cn(
-              'flex-1 py-3.5 rounded-xl font-bold text-[13px] text-white bg-blue-600 active:scale-[0.97] transition-all shadow-md shadow-blue-200 tracking-wide',
+              'flex-1 py-3.5 rounded-xl font-bold text-[13px] text-white bg-blue-600 lg:bg-[#FF5A36] active:scale-[0.97] transition-all shadow-md shadow-blue-200 lg:shadow-orange-100 tracking-wide',
               (activeAllItems.length === 0 || isReadOnly) ? 'opacity-40 cursor-not-allowed' : ''
             )}
           >

@@ -89,10 +89,17 @@ const KitchenDashboard = ({ user, onLogout }) => {
   };
 
   const getTimeSince = (dateStr) => {
-    const mins = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
-    if (mins < 1) return 'Just now';
-    if (mins < 60) return `${mins}m ago`;
-    return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+    if (!dateStr) return 'Just now';
+    try {
+      const t = new Date(dateStr).getTime();
+      if (isNaN(t)) return 'Just now';
+      const mins = Math.floor((Date.now() - t) / 60000);
+      if (mins < 1) return 'Just now';
+      if (mins < 60) return `${mins}m ago`;
+      return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+    } catch {
+      return 'Just now';
+    }
   };
 
   const statusConfig = {
@@ -102,7 +109,11 @@ const KitchenDashboard = ({ user, onLogout }) => {
 
   // 1) Filter only TODAY'S orders (empty after 24h / new day)
   const todayString = new Date().toDateString();
-  const todaysOrders = activeOrders.filter(o => new Date(o.createdAt).toDateString() === todayString);
+  const todaysOrders = activeOrders.filter(o => {
+    try {
+      return o?.createdAt && new Date(o.createdAt).toDateString() === todayString;
+    } catch { return false; }
+  });
 
   // Group today's orders by status for visual priority
   const pendingOrders = todaysOrders.filter(o => o.status === 'Pending');

@@ -1,24 +1,32 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import axios from 'axios';
-import { LayoutGrid, ShoppingBag, History, Settings, LogOut, User, BarChart3, Clock, ChevronDown, MoreVertical, HelpCircle, Utensils, BookOpen, LineChart, Grid, Key, X, Loader2, Package, Plus, Cookie, LayoutDashboard, Menu, Mic, Table2, Armchair, ChefHat, Coffee, ChartNoAxesColumnIncreasing, CheckCircle2 } from 'lucide-react';
+import { LayoutGrid, ShoppingBag, History, Settings, LogOut, User, BarChart3, Clock, ChevronDown, MoreVertical, HelpCircle, Utensils, BookOpen, LineChart, Grid, Key, X, Loader2, Package, Plus, Cookie, LayoutDashboard, Menu, Mic, Table2, Armchair, ChefHat, Coffee, ChartNoAxesColumnIncreasing, CheckCircle2, Wifi, WifiOff, Zap } from 'lucide-react';
 import { useNavigate, useLocation, Routes, Route, Navigate, useSearchParams } from 'react-router-dom';
-import TableGrid from './components/TableGrid';
-import TableView from './components/TableView';
-import POSInterface from './components/POSInterface';
-import OrderHistory from './components/OrderHistory';
+
+// Lazy loaded page components
+const TableGrid = lazy(() => import('./components/TableGrid'));
+const TableView = lazy(() => import('./components/TableView'));
+const POSInterface = lazy(() => import('./components/POSInterface'));
+const OrderHistory = lazy(() => import('./components/OrderHistory'));
+const ChoosePlan = lazy(() => import('./components/ChoosePlan'));
+const SettingsPanel = lazy(() => import('./components/SettingsPanel'));
+const SalesReport = lazy(() => import('./components/SalesReport'));
+const DashboardView = lazy(() => import('./components/DashboardView').then(m => ({ default: m.DashboardView })));
+const WaiterDashboard = lazy(() => import('./components/WaiterDashboard'));
+const KitchenDashboard = lazy(() => import('./components/KitchenDashboard'));
+const ParcelView = lazy(() => import('./components/ParcelView'));
+const QuickOrder = lazy(() => import('./components/QuickOrder'));
+const LoyaltyCustomerScan = lazy(() => import('./components/LoyaltyCustomerScan'));
+const PublicRestaurantPage = lazy(() => import('./components/PublicRestaurantPage'));
+
+// Eagerly loaded shared/auth layouts
 import Login from './components/Login';
-import ChoosePlan from './components/ChoosePlan';
 import SubscriptionBanner from './components/SubscriptionBanner';
-import SettingsPanel from './components/SettingsPanel';
-import SalesReport from './components/SalesReport';
-import { DashboardView } from './components/DashboardView';
-import WaiterDashboard from './components/WaiterDashboard';
-import KitchenDashboard from './components/KitchenDashboard';
 import NotificationBell from './components/NotificationBell';
 import { DashboardSkeleton } from './components/Skeleton';
-import ParcelView from './components/ParcelView';
+import { NavigationProvider } from './navigation/NavigationManager';
 
-// Navigation helper removed in favor of react-router-dom
+const cn = (...classes) => classes.filter(Boolean).join(' ');
 
 const BrandLogo = ({ className = '' }) => (
   <img
@@ -47,18 +55,25 @@ function App() {
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordState, setPasswordState] = useState({ current: '', new: '', confirm: '', error: '', loading: false, success: false });
   const [toast, setToast] = useState(null);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
   // Sync state with URL
   useEffect(() => {
     const path = location.pathname;
-    if (path === '/') {
+    if (path === '/' || path.startsWith('/dashboard')) {
       setActiveTab('dashboard');
     } else if (path.startsWith('/tables')) {
+      setActiveTab('tables');
+    } else if (path.startsWith('/menu')) {
+      setActiveTab('tables');
+    } else if (path.startsWith('/cart')) {
       setActiveTab('tables');
     } else if (path.startsWith('/parcel')) {
       setActiveTab('parcel');
     } else if (path.startsWith('/pos')) {
       setActiveTab('pos');
+    } else if (path.startsWith('/quick')) {
+      setActiveTab('quick');
     } else if (path.startsWith('/sales')) {
       setActiveTab('sales');
     } else if (path.startsWith('/settings')) {
@@ -78,6 +93,8 @@ function App() {
     setToast({ message, sub });
     setTimeout(() => setToast(null), 3000);
   };
+
+  // Offline sync listeners removed
 
   useEffect(() => {
     if (token) {
@@ -169,100 +186,67 @@ function App() {
     fetchSubscription();
   };
 
-  // ── Overlay state refs (used by both TableGrid and Parcel back handlers) ──
-  const locationRef = useRef(location);
-  useEffect(() => { locationRef.current = location; }, [location]);
-  const openTableIdRef = useRef(searchParams.get('tableId'));
-  const openOrderIdRef = useRef(searchParams.get('orderId'));
-  const isCreatingParcelRef = useRef(searchParams.get('newParcel') === 'true');
+  const isPublicRestroRoute = location.pathname.startsWith('/restro/');
+  const isLoyaltyScanRoute = location.pathname.startsWith('/loyalty/scan');
+  const isPublicRoute = isPublicRestroRoute || isLoyaltyScanRoute;
+
+  // History Stabilizer: Ensure /dashboard is ALWAYS the base entry behind any sub-page
   useEffect(() => {
-    openTableIdRef.current = searchParams.get('tableId');
-    openOrderIdRef.current = searchParams.get('orderId');
-    isCreatingParcelRef.current = searchParams.get('newParcel') === 'true';
-  }, [searchParams]);
-
-  // ── Native Mobile Navigation Stabilizers ──
-  useEffect(() => {
-    const isInsideTableView = searchParams.get('tableId') || searchParams.get('orderId') || searchParams.get('newParcel') === 'true';
-
-    if (location.pathname !== '/dashboard' && location.pathname !== '/' && location.pathname !== '/settings' && !isInsideTableView) {
-      // Push an app trap state
-      window.history.pushState({ appTrap: true }, '', window.location.href);
-
-      const handlePop = (e) => {
-        if (!e.state?.appTrap) {
-          // Back pressed on any sub-page -> go directly to dashboard
-          navigate('/dashboard', { replace: true });
-        }
-      };
-
-      window.addEventListener('popstate', handlePop);
-      return () => window.removeEventListener('popstate', handlePop);
-    }
-  }, [location.pathname, navigate, searchParams]);
-
-  useEffect(() => {
-    if (location.pathname === '/dashboard' || location.pathname === '/') {
-      // Clear active overlays & search params on dashboard tab
-      if (searchParams.toString()) {
-        setSearchParams({}, { replace: true });
-      }
-
-      // Trap state to prevent going back to settings/tables from dashboard
-      window.history.pushState({ dashboardTrap: true }, '', window.location.href);
-
-      const handlePop = (e) => {
-        if (!e.state?.dashboardTrap) {
-          // Back pressed on dashboard -> close/exit native-like
-          try {
-            window.close();
-          } catch (_) {}
-          window.history.pushState({ dashboardTrap: true }, '', window.location.href);
-        }
-      };
-
-      window.addEventListener('popstate', handlePop);
-      return () => window.removeEventListener('popstate', handlePop);
-    }
-  }, [location.pathname, searchParams, setSearchParams]);
-
-  useEffect(() => {
-    // Universal History Stabilizer:
-    // If user lands directly on a sub-page, ensure Dashboard is the base
+    if (isPublicRoute) return;
     if (location.pathname === '/' || location.pathname === '') {
       navigate('/dashboard', { replace: true });
     } else if (window.history.length <= 2 && location.pathname !== '/dashboard') {
-      // If we land on /tables etc with a fresh session, inject dashboard behind it
+      // Ensure Dashboard is always the base root entry in history behind any sub-page
       navigate('/dashboard', { replace: true });
+      if (location.pathname === '/settings' && location.search && location.search.includes('section=')) {
+        navigate('/settings');
+      }
       navigate(location.pathname + location.search);
     }
-  }, []);
+  }, [isPublicRoute]);
 
   const handleTabChange = useCallback((tabId, subSection = 'home') => {
     setSettingsSubSection(subSection);
     window.dispatchEvent(new Event('close-notifications'));
-    
+    if (location.pathname === `/${tabId}` && subSection === 'home') return;
     const isCurrentlyDashboard = location.pathname === '/dashboard' || location.pathname === '/';
-    const isNewDashboard = tabId === 'dashboard';
-    
-    if (isNewDashboard && !isCurrentlyDashboard) {
-      // Pop the stack to return to the original dashboard without duplicate history entries
-      navigate(-1);
-    } else {
-      // If we are currently NOT on dashboard, replace the history so "Back" always leads to Dashboard
-      const shouldReplace = !isCurrentlyDashboard;
-      navigate(`/${tabId}`, { replace: shouldReplace });
-    }
+    // If navigating from /dashboard, push the new tab onto history (so back goes to /dashboard).
+    // If switching between sub-tabs (e.g. from /tables to /pos), replace current tab so /dashboard remains the immediate parent!
+    navigate(`/${tabId}`, { replace: !isCurrentlyDashboard });
   }, [navigate, location.pathname]);
+
+  if (isPublicRoute) {
+    return (
+      <Suspense fallback={
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+          <span className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+      }>
+        <Routes>
+          <Route path="/restro/:restro_name" element={<PublicRestaurantPage />} />
+          <Route path="/loyalty/scan" element={<LoyaltyCustomerScan />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
+    );
+  }
 
   if (!token) return <Login onLoginSuccess={handleLoginSuccess} />;
 
   const userRole = user?.role;
   if (userRole === 'Waiter') {
-    return <WaiterDashboard user={user} onLogout={handleLogout} />;
+    return (
+      <NavigationProvider user={user}>
+        <WaiterDashboard user={user} onLogout={handleLogout} />
+      </NavigationProvider>
+    );
   }
   if (userRole === 'Kitchen') {
-    return <KitchenDashboard user={user} onLogout={handleLogout} />;
+    return (
+      <NavigationProvider user={user}>
+        <KitchenDashboard user={user} onLogout={handleLogout} />
+      </NavigationProvider>
+    );
   }
 
   if (!subLoading && (!subscription || !subscription.hasSubscription)) {
@@ -271,36 +255,8 @@ function App() {
 
   if (subLoading || !user) {
     return (
-      <div className="flex flex-col lg:flex-row h-[100dvh] bg-white lg:p-3 gap-2 lg:gap-3 overflow-hidden">
-        <aside className="hidden lg:flex w-56 bg-white rounded-3xl flex-col py-5 px-3.5 shrink-0 border border-slate-100">
-          <div className="sk-shimmer h-10 w-full rounded-xl mb-6 bg-slate-100" />
-          <div className="flex-1 space-y-2">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="sk-shimmer h-9 w-full rounded-xl bg-slate-100" />
-            ))}
-          </div>
-          <div className="border-t border-gray-100 pt-4 flex items-center gap-3">
-            <div className="sk-shimmer w-10 h-10 rounded-full bg-slate-100 shrink-0" />
-            <div className="flex-1 space-y-2">
-              <div className="sk-shimmer h-3 w-24 rounded bg-slate-100" />
-              <div className="sk-shimmer h-2.5 w-16 rounded bg-slate-100" />
-            </div>
-          </div>
-        </aside>
-        <main className="flex-1 overflow-hidden lg:rounded-3xl bg-white px-2 lg:px-0">
-          <DashboardSkeleton />
-        </main>
-        <style>{`
-          @keyframes sk-wave {
-            0%   { background-position: -400px 0; }
-            100% { background-position:  400px 0; }
-          }
-          .sk-shimmer {
-            background: linear-gradient(90deg, #f1f5f9 25%, #e8edf3 50%, #f1f5f9 75%);
-            background-size: 800px 100%;
-            animation: sk-wave 1.4s ease-in-out infinite;
-          }
-        `}</style>
+      <div className="flex items-center justify-center h-[100dvh] bg-white">
+        <span className="inline-block w-8 h-8 border-4 border-blue-500 lg:border-[#FF5A36] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -336,186 +292,269 @@ function App() {
     { id: 'tables', icon: Grid, label: 'Tables' },
     { id: 'parcel', icon: Package, label: 'Parcel' },
     { id: 'pos', icon: ShoppingBag, label: 'Orders' },
+    { id: 'quick', icon: Zap, label: 'Quick' },
     { id: 'sales', icon: BarChart3, label: 'Reports' },
     { id: 'settings', icon: Menu, label: 'More' },
   ];
 
   return (
-    <div className="flex flex-col lg:flex-row h-[100dvh] bg-white lg:p-3 gap-2 lg:gap-3 overflow-hidden relative">
-
+    <NavigationProvider user={user}>
+      <div className="flex flex-col lg:flex-row h-[100dvh] bg-white overflow-hidden">
       {/* ── Desktop Sidebar ─────────────────────────────────────────────────────────── */}
-      <aside className="hidden lg:flex w-56 bg-white rounded-3xl flex-col py-5 px-3.5 shrink-0 transition-all duration-500 z-[110] border border-slate-100">
-        {/* Logo */}
-        <div className="flex items-center justify-center lg:justify-start pl-1 pr-1.5 mb-3 mt-1">
-          <div className="shrink-0 h-10 w-full flex items-center justify-center lg:justify-start">
-            <BrandLogo className="h-10 object-contain shrink-0" />
+      <aside className={`hidden lg:flex rounded-none flex-col py-5 px-2 shrink-0 transition-all duration-300 shadow-[5px_0_15px_-3px_rgba(0,0,0,0.05)] z-[110] relative ${sidebarExpanded ? 'w-[182px]' : 'w-20'}`}>
+
+        {/* ── Background layers (absolute, behind all content) ── */}
+        {/* Peach rail: always covers the full left 80px */}
+        <div className="absolute left-0 top-0 bottom-0 w-20 bg-[#FFD5C5] z-0 pointer-events-none" />
+        {/* White panel: slides in to the right when expanded */}
+        {sidebarExpanded && (
+          <div className="absolute left-20 right-0 top-0 bottom-0 bg-white z-0 pointer-events-none" />
+        )}
+
+        {/* Header — hamburger sits in the peach zone */}
+        <div className="relative z-10 flex items-center mb-6 mt-1 shrink-0">
+          <div className="w-16 flex items-center justify-center">
+            <button
+              onClick={() => setSidebarExpanded(!sidebarExpanded)}
+              className="p-2 rounded-xl transition-all duration-200 text-slate-600 hover:bg-[#FFA588]/40 hover:text-orange-950"
+              title={sidebarExpanded ? 'Collapse' : 'Expand'}
+            >
+              {sidebarExpanded ? <X size={18} /> : <Menu size={18} />}
+            </button>
           </div>
         </div>
 
-        {/* Nav: Menu */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar">
-          <p className="text-[10px] text-gray-400 mb-1.5 px-2 font-semibold uppercase tracking-[0.12em]">Menu</p>
-          <nav className="space-y-1 mb-8">
-            {navTabs.filter(t => t.id !== 'settings').map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => handleTabChange(tab.id)}
-                className={`w-full flex items-center justify-start gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-300 text-[11px] font-bold uppercase tracking-[0.02em] ${activeTab === tab.id
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-100'
-                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
-                  }`}
-              >
-                <tab.icon size={17} className="shrink-0" />
-                <span>{tab.label}</span>
-              </button>
-            ))}
-          </nav>
+        {/* Nav */}
+        <div className="flex-1 relative z-10">
+          <nav className="space-y-3.5">
+            {navTabs.map((tab) => (
+              <div key={tab.id} className="relative group">
 
-          {/* Nav: Others */}
-          <p className="text-[10px] text-gray-400 mb-1.5 px-2 font-semibold uppercase tracking-[0.12em]">Others</p>
-          <nav className="space-y-1">
-            {navTabs.filter(t => t.id === 'settings').map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => handleTabChange(tab.id)}
-                className={`w-full flex items-center justify-start gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-300 text-[11px] font-bold uppercase tracking-[0.02em] ${activeTab === tab.id
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-100'
-                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
-                  }`}
-              >
-                <tab.icon size={17} className="shrink-0" />
-                <span>{tab.label}</span>
-              </button>
+                <button
+                  onClick={() => handleTabChange(tab.id)}
+                  className="w-full flex items-center transition-all duration-200"
+                >
+                  {/* Icon column — ALWAYS w-16 (= peach rail width minus px-2 sides).
+                      Icon center stays at 40px from aside-left in both collapsed & expanded. */}
+                  <div className={`w-16 flex items-center justify-center py-2.5 rounded-xl transition-all duration-200 shrink-0 ${activeTab === tab.id
+                    ? 'bg-[#FF5A36] text-white shadow-lg shadow-orange-100'
+                    : 'text-slate-700 group-hover:bg-[#FFA588]/40 group-hover:text-orange-950'
+                    }`}>
+                    <tab.icon size={21} />
+                  </div>
+
+                  {/* Label — styling matched to hover tooltip including bg, shadow, and rounded corner */}
+                  {sidebarExpanded && (
+                    <div className={`w-[110px] shrink-0 rounded-r-xl px-3 py-2.5 ml-3 flex items-center transition-all duration-200 ${activeTab === tab.id
+                      ? 'bg-[#FF5A36]/90 shadow-lg shadow-orange-100'
+                      : 'bg-[#FFD5C5] group-hover:bg-[#FFA588]/40 shadow-[4px_0_12px_rgba(255,90,54,0.08)]'
+                      }`}>
+                      <span className={`text-[13px] font-bold uppercase tracking-[0.02em] text-left truncate w-full transition-colors duration-200 ${activeTab === tab.id
+                        ? 'text-white'
+                        : 'text-orange-950'
+                        }`}>
+                        {tab.label}
+                      </span>
+                    </div>
+                  )}
+                </button>
+
+                {/* Hover tooltip — collapsed only */}
+                {!sidebarExpanded && (
+                  <div className="absolute top-0 bottom-0 left-[calc(100%+8px)] w-36 bg-[#FFD5C5] text-orange-950 text-[13px] font-bold uppercase tracking-[0.02em] rounded-r-xl px-4 flex items-center opacity-0 -translate-x-2 pointer-events-none group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300 whitespace-nowrap z-[150] shadow-[4px_0_12px_rgba(255,90,54,0.08)]">
+                    <span>{tab.label}</span>
+                  </div>
+                )}
+
+              </div>
             ))}
           </nav>
         </div>
 
-        {/* User + Logout */}
-        <div className="mt-4 pt-4 border-t border-gray-100 flex flex-col gap-2">
+        {/* Bottom tray — fixed width, always same, never changes */}
+        <div className="mt-4 pt-4 -mb-5 flex flex-col gap-1 shrink-0 relative z-[120] bg-[#FFD5C5] rounded-tr-2xl pb-2 w-56 -ml-2 pl-2 pr-4 shadow-[8px_0_15px_rgba(255,90,54,0.06)]">
+
+          {/* Concave corner — always visible */}
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              top: '-20px',
+              left: '64px',
+              width: '20px',
+              height: '20px',
+              background: 'radial-gradient(circle at 100% 0%, transparent 20px, #FFD5C5 20.5px)'
+            }}
+          />
+
           {subscription?.plan === 'trial' && subscription?.isValid && (
-            <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 rounded-xl border border-amber-100">
-              <Clock size={14} className="text-amber-500 shrink-0" />
-              <span className="text-[10px] font-bold text-amber-600 truncate">
-                Trial: {subscription.trialDaysRemaining}d
-              </span>
+            <div className="flex items-center gap-2 px-2 py-1.5 bg-[#FFA588]/30 rounded-xl border border-[#FFA588]/40 mb-1">
+              <Clock size={13} className="text-orange-700 shrink-0" />
+              <span className="text-[10px] font-bold text-orange-800 truncate">Trial: {subscription.trialDaysRemaining}d left</span>
             </div>
           )}
-          <div className="flex items-center justify-between p-2 rounded-xl border border-transparent hover:border-gray-200 transition-colors group relative cursor-pointer">
-            <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 shrink-0 overflow-hidden">
-                <img src={`https://ui-avatars.com/api/?name=${user?.name || 'User'}&background=DBEAFE&color=2563EB`} alt="avatar" className="w-full h-full object-cover" />
-              </div>
-              <div className="overflow-hidden">
-                <p className="text-[13px] font-semibold text-gray-900 truncate">{user?.name || 'User'}</p>
-                <p className="text-[10px] text-gray-400 font-medium capitalize">{user?.role || 'Admin'}</p>
-              </div>
+
+          {/* Profile — name always shown */}
+          <div className="flex items-center gap-2.5 p-2 cursor-pointer rounded-xl hover:bg-white/40 transition-all duration-200">
+            <div className="w-10 h-10 rounded-full bg-orange-50 flex items-center justify-center text-[#FF5A36] shrink-0 overflow-hidden shadow-sm">
+              <img src={`https://ui-avatars.com/api/?name=${user?.name || 'User'}&background=FF5A36&color=FFFFFF`} alt="avatar" className="w-full h-full object-cover" />
             </div>
-            <NotificationBell desktopOffset={true} />
+            <div className="overflow-hidden flex-1">
+              <p className="text-[13px] font-bold text-gray-900 truncate tracking-tight">{user?.name || 'User'}</p>
+              <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-widest">{user?.role || 'Admin'}</p>
+            </div>
           </div>
+
+          {/* Notifications — label always shown */}
+          <div className="flex items-center gap-2.5 p-2 cursor-pointer rounded-xl hover:bg-white/40 transition-all duration-200 relative group">
+            <div className="w-10 h-10 flex items-center justify-center shrink-0 relative z-20 pointer-events-auto">
+              <NotificationBell desktopOffset={true} />
+            </div>
+            <div className="overflow-hidden flex-1 pointer-events-none">
+              <p className="text-[13px] font-bold text-gray-900 truncate tracking-tight">Notifications</p>
+            </div>
+          </div>
+
         </div>
+
       </aside>
 
       {/* ── Main Content ─────────────────────────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto no-scrollbar relative lg:rounded-3xl pb-24 lg:pb-0 px-2 lg:px-0">
-        <div className="w-full h-full !pb-10 max-w-[1600px] mx-auto">
+
+
+      <main className={`flex-1 overflow-y-auto no-scrollbar relative lg:rounded-none px-2 ${location.pathname.startsWith('/settings') ? 'pb-0 lg:pb-0 lg:p-6' : location.pathname === '/quick' ? 'pb-24 lg:pb-0 lg:p-0' : 'pb-24 lg:pb-0 lg:p-6'}`}>
+        <div className="w-full h-full max-w-[1600px] mx-auto">
+
+          {/* Offline indicator banner removed */}
+
           {!bannerDismissed && (
             <SubscriptionBanner subscription={subscription} onDismiss={() => setBannerDismissed(true)} />
           )}
 
-          <Routes>
-            <Route path="/dashboard" element={
-              <div className="animate-in fade-in duration-500">
-                <DashboardView
-                  activeOrders={activeOrders}
-                  tableCount={tableCount}
-                  onTabChange={handleTabChange}
-                  user={user}
-                />
-              </div>
-            } />
+          <Suspense fallback={
+            <div className="flex-1 flex items-center justify-center bg-white lg:rounded-3xl h-[60vh]">
+              <span className="inline-block w-8 h-8 border-4 border-blue-500 lg:border-[#FF5A36] border-t-transparent rounded-full animate-spin" />
+            </div>
+          }>
+            <Routes>
+              <Route path="/dashboard" element={
+                <div className="animate-in fade-in duration-500 h-full">
+                  <DashboardView
+                    activeOrders={activeOrders}
+                    tableCount={tableCount}
+                    onTabChange={handleTabChange}
+                    user={user}
+                  />
+                </div>
+              } />
 
-            <Route path="/tables" element={
-              <div className="animate-in fade-in duration-500">
-                <TableGrid
-                  activeOrders={activeOrders}
-                  onTableClick={handleTableClick}
-                  tableCount={tableCount}
-                  isOverlayOpen={!!(openTableId || openOrderId || isCreatingParcel)}
-                />
-              </div>
-            } />
+              <Route path="/tables" element={
+                <div className="animate-in fade-in duration-500 h-full">
+                  <TableGrid
+                    activeOrders={activeOrders}
+                    onTableClick={handleTableClick}
+                    tableCount={tableCount}
+                  />
+                </div>
+              } />
 
-            <Route path="/pos" element={
-              <div className="animate-in fade-in duration-500">
-                <POSInterface
-                  activeOrders={activeOrders}
-                  user={user}
-                  onOrderUpdate={fetchActiveOrders}
-                  onCheckoutComplete={() => {
-                    fetchActiveOrders();
-                    navigate('/tables', { replace: true });
-                  }}
-                  onBillClick={(order) => {
-                    const params = { screen: 'cart' };
-                    if (order.tableId) params.tableId = order.tableId;
-                    else params.orderId = order._id;
-                    setSearchParams(params);
-                  }}
-                />
-              </div>
-            } />
+              <Route path="/pos" element={
+                <div className="animate-in fade-in duration-500 h-full">
+                  <POSInterface
+                    activeOrders={activeOrders}
+                    user={user}
+                    onOrderUpdate={fetchActiveOrders}
+                    onCheckoutComplete={() => {
+                      fetchActiveOrders();
+                      navigate('/tables', { replace: true });
+                    }}
+                    onBillClick={(order) => {
+                      const params = { screen: 'cart', orderId: order._id };
+                      if (order.tableId) params.tableId = order.tableId;
+                      setSearchParams(params);
+                    }}
+                    onManageClick={(order) => {
+                      const params = { screen: 'menu', orderId: order._id };
+                      if (order.tableId) params.tableId = order.tableId;
+                      setSearchParams(params);
+                    }}
+                  />
+                </div>
+              } />
 
-            <Route path="/parcel" element={
-              <div className="animate-in fade-in duration-500">
-                <ParcelView
-                  activeOrders={activeOrders}
-                  onNewParcel={() => setSearchParams({ newParcel: 'true', screen: 'menu' })}
-                  onOrderClick={(orderId) => setSearchParams({ orderId, screen: 'menu' })}
-                />
-              </div>
-            } />
+              <Route path="/quick" element={
+                <div className="animate-in fade-in duration-500 h-full">
+                  <QuickOrder
+                    menuItems={menuItems}
+                    user={user}
+                    onOrderUpdate={fetchActiveOrders}
+                  />
+                </div>
+              } />
 
-            <Route path="/history" element={
-              <div className="animate-in fade-in duration-500">
-                <OrderHistory
-                  activeOrders={activeOrders}
-                  onOrderUpdate={fetchActiveOrders}
-                  onOrderClick={(orderId) => setSearchParams({ orderId, screen: 'menu' })}
-                />
-              </div>
-            } />
+              <Route path="/parcel" element={
+                <div className="animate-in fade-in duration-500 h-full">
+                  <ParcelView
+                    activeOrders={activeOrders}
+                    onNewParcel={() => setSearchParams({ newParcel: 'true', screen: 'menu' })}
+                    onOrderClick={(orderId) => setSearchParams({ orderId, screen: 'menu' })}
+                  />
+                </div>
+              } />
 
-            <Route path="/sales" element={
-              <div className="animate-in fade-in duration-500">
-                <SalesReport />
-              </div>
-            } />
+              <Route path="/history" element={
+                <div className="animate-in fade-in duration-500 h-full">
+                  <OrderHistory
+                    activeOrders={activeOrders}
+                    onOrderUpdate={fetchActiveOrders}
+                    onOrderClick={(orderId) => setSearchParams({ orderId, screen: 'menu' })}
+                  />
+                </div>
+              } />
 
-            <Route path="/settings" element={
-              <div className="fixed inset-0 z-[120] lg:static lg:z-auto lg:h-full bg-white lg:bg-transparent animate-in slide-in-from-bottom lg:fade-in duration-300">
-                <SettingsPanel
-                  user={user}
-                  subscription={subscription}
-                  initialSection={settingsSubSection}
-                  onSettingsUpdate={handleSettingsUpdate}
-                  onShowPassword={() => setShowPasswordModal(true)}
-                  onLogout={handleLogout}
-                  onClose={() => handleTabChange('dashboard')}
-                />
-              </div>
-            } />
+              <Route path="/sales" element={
+                <div className="animate-in fade-in duration-500">
+                  <SalesReport />
+                </div>
+              } />
 
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
-          </Routes>
+              <Route path="/settings" element={
+                <div className="animate-in fade-in duration-500 h-full">
+                  <SettingsPanel
+                    user={user}
+                    subscription={subscription}
+                    initialSection={settingsSubSection}
+                    onSettingsUpdate={handleSettingsUpdate}
+                    onLogout={handleLogout}
+                    onClose={() => navigate('/dashboard')}
+                  />
+                </div>
+              } />
+
+              <Route path="/loyalty/scan" element={
+                <div className="animate-in fade-in duration-500">
+                  <LoyaltyCustomerScan />
+                </div>
+              } />
+
+              <Route path="/restro/:restro_name" element={
+                <div className="animate-in fade-in duration-500">
+                  <PublicRestaurantPage />
+                </div>
+              } />
+
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Routes>
+          </Suspense>
 
           {/* Table / Order View overlay */}
           {(openTableId || openOrderId || isCreatingParcel) && (
-            <div className="fixed inset-0 z-[120] md:z-[100]">
+            <div className="fixed inset-0 z-[150]">
               <TableView
                 tableId={openTableId}
                 orderId={openOrderId}
                 isHistoryView={!!openOrderId && !activeOrders.some(o => o._id === openOrderId)}
                 menuItems={menuItems}
+                activeOrders={activeOrders}
                 user={user}
                 onClose={() => {
                   fetchActiveOrders();
@@ -610,110 +649,112 @@ function App() {
       </main>
 
       {/* ── Mobile Bottom Nav ───────────────────────────────────────────────────────── */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-[110] overflow-hidden" style={{ background: '#ffffff' }}>
-        <nav className="flex items-center h-[74px] w-full ">
+      {!location.pathname.startsWith('/settings') && (
+        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-[110] overflow-hidden" style={{ background: '#ffffff' }}>
+          <nav className="flex items-center h-[74px] w-full ">
 
-          {/* Left: Home, Items */}
-          <div className="flex flex-1 justify-around items-center">
-            <button
-              onClick={() => handleTabChange('dashboard')}
-              className="flex flex-col items-center gap-[3px] active:scale-95 transition-transform"
-            >
-              <Cookie
-                size={20}
-                strokeWidth={activeTab === 'dashboard' ? 2 : 1.6}
-                color={activeTab === 'dashboard' ? '#3B82F6' : 'rgba(0,0,0,0.4)'}
-              />
-              <span
-                className="text-[11px] font-bold leading-none"
-                style={{ color: activeTab === 'dashboard' ? '#3B82F6' : 'rgba(0,0,0,0.4)' }}
+            {/* Left: Home, Items */}
+            <div className="flex flex-1 justify-around items-center">
+              <button
+                onClick={() => handleTabChange('dashboard')}
+                className="flex flex-col items-center gap-[3px] active:scale-95 transition-transform"
               >
-                Home
-              </span>
-            </button>
+                <Cookie
+                  size={20}
+                  strokeWidth={activeTab === 'dashboard' ? 2 : 1.6}
+                  color={activeTab === 'dashboard' ? '#3B82F6' : 'rgba(0,0,0,0.4)'}
+                />
+                <span
+                  className="text-[11px] font-bold leading-none"
+                  style={{ color: activeTab === 'dashboard' ? '#3B82F6' : 'rgba(0,0,0,0.4)' }}
+                >
+                  Home
+                </span>
+              </button>
 
-            <button
-              onClick={() => handleTabChange('tables')}
-              className="flex flex-col items-center gap-[3px] active:scale-95 transition-transform"
-            >
-              <Armchair
-                size={20}
-                strokeWidth={activeTab === 'tables' ? 2 : 1.6}
-                color={activeTab === 'tables' ? '#3B82F6' : 'rgba(0,0,0,0.4)'}
-              />
-              <span
-                className="text-[11px] font-bold leading-none"
-                style={{ color: activeTab === 'tables' ? '#3B82F6' : 'rgba(0,0,0,0.4)' }}
+              <button
+                onClick={() => handleTabChange('tables')}
+                className="flex flex-col items-center gap-[3px] active:scale-95 transition-transform"
               >
-                Tables
-              </span>
-            </button>
-          </div>
+                <Armchair
+                  size={20}
+                  strokeWidth={activeTab === 'tables' ? 2 : 1.6}
+                  color={activeTab === 'tables' ? '#3B82F6' : 'rgba(0,0,0,0.4)'}
+                />
+                <span
+                  className="text-[11px] font-bold leading-none"
+                  style={{ color: activeTab === 'tables' ? '#3B82F6' : 'rgba(0,0,0,0.4)' }}
+                >
+                  Tables
+                </span>
+              </button>
+            </div>
 
-          {/* Center FAB: Parcel */}
-          <div className="flex-shrink-0 mx-2">
-            <button
-              onClick={() => handleTabChange('parcel')}
-              className="w-[52px] h-[52px] bg-blue-600 rounded-full flex items-center justify-center active:scale-90 transition-all duration-200 shadow-[0_4px_16px_rgba(37,99,235,0.4)]"
-              style={{ marginBottom: '8px' }}
-            >
-              <Plus size={28} strokeWidth={2.8} color="#fff" />
-            </button>
-          </div>
-
-          {/* Right: Orders, Reports */}
-          <div className="flex flex-1 justify-around items-center">
-            <button
-              onClick={() => handleTabChange('pos')}
-              className="flex flex-col items-center gap-[3px] active:scale-95 transition-transform"
-            >
-              <ShoppingBag
-                size={20}
-                strokeWidth={activeTab === 'pos' ? 2 : 1.6}
-                color={activeTab === 'pos' ? '#3B82F6' : 'rgba(0,0,0,0.4)'}
-              />
-              <span
-                className="text-[11px] font-bold leading-none"
-                style={{ color: activeTab === 'pos' ? '#3B82F6' : 'rgba(0,0,0,0.4)' }}
+            {/* Center FAB: Parcel */}
+            <div className="flex-shrink-0 mx-2">
+              <button
+                onClick={() => handleTabChange('parcel')}
+                className="w-[52px] h-[52px] bg-blue-600 rounded-full flex items-center justify-center active:scale-90 transition-all duration-200 shadow-[0_4px_16px_rgba(37,99,235,0.4)]"
+                style={{ marginBottom: '8px' }}
               >
-                Orders
-              </span>
-            </button>
+                <Plus size={28} strokeWidth={2.8} color="#fff" />
+              </button>
+            </div>
 
-            <button
-              onClick={() => handleTabChange('sales')}
-              className="flex flex-col items-center gap-[3px] active:scale-95 transition-transform"
-            >
-              <ChartNoAxesColumnIncreasing
-                size={20}
-                strokeWidth={activeTab === 'sales' ? 2 : 1.6}
-                color={activeTab === 'sales' ? '#3B82F6' : 'rgba(0,0,0,0.4)'}
-              />
-              <span
-                className="text-[11px] font-bold leading-none"
-                style={{ color: activeTab === 'sales' ? '#3B82F6' : 'rgba(0,0,0,0.4)' }}
+            {/* Right: Orders, Reports */}
+            <div className="flex flex-1 justify-around items-center">
+              <button
+                onClick={() => handleTabChange('pos')}
+                className="flex flex-col items-center gap-[3px] active:scale-95 transition-transform"
               >
-                Reports
-              </span>
+                <ShoppingBag
+                  size={20}
+                  strokeWidth={activeTab === 'pos' ? 2 : 1.6}
+                  color={activeTab === 'pos' ? '#3B82F6' : 'rgba(0,0,0,0.4)'}
+                />
+                <span
+                  className="text-[11px] font-bold leading-none"
+                  style={{ color: activeTab === 'pos' ? '#3B82F6' : 'rgba(0,0,0,0.4)' }}
+                >
+                  Orders
+                </span>
+              </button>
+
+              <button
+                onClick={() => handleTabChange('sales')}
+                className="flex flex-col items-center gap-[3px] active:scale-95 transition-transform"
+              >
+                <ChartNoAxesColumnIncreasing
+                  size={20}
+                  strokeWidth={activeTab === 'sales' ? 2 : 1.6}
+                  color={activeTab === 'sales' ? '#3B82F6' : 'rgba(0,0,0,0.4)'}
+                />
+                <span
+                  className="text-[11px] font-bold leading-none"
+                  style={{ color: activeTab === 'sales' ? '#3B82F6' : 'rgba(0,0,0,0.4)' }}
+                >
+                  Reports
+                </span>
+              </button>
+            </div>
+
+            {/* More — restored purple gradient */}
+            <button
+              onClick={() => handleTabChange('settings')}
+              className="flex-shrink-0 h-[64px] w-[62px] flex items-center justify-center active:scale-95 transition-transform"
+              style={{
+                background: 'linear-gradient(135deg, #8B5CF6 0%, #6366F1 50%, #4F46E5 100%)',
+                borderRadius: '14px 0 0 14px',
+                marginLeft: '8px',
+                marginBottom: '8px'
+              }}
+            >
+              <Menu size={22} strokeWidth={2} color="#fff" />
             </button>
-          </div>
 
-          {/* More — restored purple gradient */}
-          <button
-            onClick={() => handleTabChange('settings')}
-            className="flex-shrink-0 h-[64px] w-[62px] flex items-center justify-center active:scale-95 transition-transform"
-            style={{
-              background: 'linear-gradient(135deg, #8B5CF6 0%, #6366F1 50%, #4F46E5 100%)',
-              borderRadius: '14px 0 0 14px',
-              marginLeft: '8px',
-              marginBottom: '8px'
-            }}
-          >
-            <Menu size={22} strokeWidth={2} color="#fff" />
-          </button>
-
-        </nav>
-      </div>
+          </nav>
+        </div>
+      )}
 
       {/* ── GLOBAL TOAST NOTIFICATION ── */}
       {toast && (
@@ -728,6 +769,7 @@ function App() {
 
 
     </div>
+    </NavigationProvider>
   );
 }
 

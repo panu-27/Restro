@@ -20,6 +20,7 @@ const Order = require('./models/Order');
 const Table = require('./models/Table');
 const Subscription = require('./models/Subscription');
 const Notification = require('./models/Notification');
+const Loyalty = require('./models/Loyalty');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -29,13 +30,20 @@ const SUBSCRIPTION_AMOUNT = parseFloat(process.env.SUBSCRIPTION_AMOUNT) || 1;
 
 // --- MIDDLEWARE ---
 app.use(cors({ origin: '*' }));
-app.use(express.json());
+app.use(express.json({ limit: '20mb' }));
+app.use(express.urlencoded({ limit: '20mb', extended: true }));
 
 // --- DB CONNECTION ---
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/archearc-restro', {
   serverSelectionTimeoutMS: 10000,
-}).then(() => {
+}).then(async () => {
   console.log('✓ MongoDB Connected');
+  try {
+    await mongoose.connection.collection('loyalties').dropIndex('restaurantId_1_ipAddress_1');
+  } catch (e) {
+    // Index already dropped or collection doesn't exist
+  }
+  ensureRestaurantSlugs();
 }).catch(err => {
   console.error('✗ MongoDB Failed:', err.message);
   process.exit(1);
@@ -202,10 +210,14 @@ app.get('/api/auth/me', auth, async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const userData = user.toObject();
+    if (!userData.slug) {
+      userData.slug = slugify(userData.restaurantName || userData.name || 'cafe');
+    }
     // For staff users, also include the owner's restaurant config
     if (user.parentUserId) {
-      const owner = await ArcheUser.findById(user.parentUserId).select('restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber taxEnabled taxes menuCategories tableCount tableAreas restaurantLogo menuCategoryImages');
+      const owner = await ArcheUser.findById(user.parentUserId).select('slug restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber taxEnabled taxes packagingCharge menuCategories tableCount tableAreas restaurantLogo menuCategoryImages');
       if (owner) {
+        userData.slug = owner.slug || slugify(owner.restaurantName || owner.name || 'cafe');
         userData.restaurantName = owner.restaurantName;
         userData.restaurantAddress = owner.restaurantAddress;
         userData.restaurantPhone = owner.restaurantPhone;
@@ -213,6 +225,7 @@ app.get('/api/auth/me', auth, async (req, res) => {
         userData.fssaiNumber = owner.fssaiNumber;
         userData.taxEnabled = owner.taxEnabled;
         userData.taxes = owner.taxes;
+        userData.packagingCharge = owner.packagingCharge;
         userData.menuCategories = owner.menuCategories;
         userData.tableCount = owner.tableCount;
         userData.tableAreas = owner.tableAreas;
@@ -402,7 +415,7 @@ app.patch('/api/subscription/cancel-autopay', auth, async (req, res) => {
 // GET /api/settings
 app.get('/api/settings', auth, async (req, res) => {
   try {
-    const user = await ArcheUser.findById(req.user.id).select('tableCount restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber printMobileRequired taxEnabled taxes menuCategories name email role restaurantLogo menuCategoryImages');
+    const user = await ArcheUser.findById(req.user.id).select('tableCount restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber printMobileRequired taxEnabled taxes menuCategories name email role restaurantLogo menuCategoryImages slug');
     if (!user) return res.status(404).json({ error: 'User not found' });
     const userData = user.toObject();
     if (userData.menuCategoryImages instanceof Map) {
@@ -417,12 +430,15 @@ app.get('/api/settings', auth, async (req, res) => {
 // PATCH /api/settings
 app.patch('/api/settings', auth, async (req, res) => {
   try {
-    const { tableCount, restaurantName, restaurantAddress, restaurantPhone, gstNumber, fssaiNumber, printMobileRequired, taxEnabled, taxes, menuCategories, restaurantLogo, menuCategoryImages } = req.body;
+    const { tableCount, restaurantName, restaurantAddress, restaurantPhone, gstNumber, fssaiNumber, printMobileRequired, taxEnabled, taxes, menuCategories, restaurantLogo, menuCategoryImages, packagingCharge } = req.body;
     const update = {};
     if (tableCount !== undefined) {
       update.tableCount = Math.max(10, Math.min(50, parseInt(tableCount)));
     }
-    if (restaurantName !== undefined) update.restaurantName = restaurantName;
+    if (restaurantName !== undefined) {
+      update.restaurantName = restaurantName;
+      update.slug = await generateUniqueSlug(restaurantName, req.user.id);
+    }
     if (restaurantAddress !== undefined) update.restaurantAddress = restaurantAddress;
     if (restaurantPhone !== undefined) update.restaurantPhone = restaurantPhone;
     if (gstNumber !== undefined) update.gstNumber = gstNumber;
@@ -430,6 +446,7 @@ app.patch('/api/settings', auth, async (req, res) => {
     if (printMobileRequired !== undefined) update.printMobileRequired = !!printMobileRequired;
     if (taxEnabled !== undefined) update.taxEnabled = taxEnabled;
     if (taxes !== undefined) update.taxes = taxes;
+    if (packagingCharge !== undefined) update.packagingCharge = Number(packagingCharge);
     if (restaurantLogo !== undefined) update.restaurantLogo = restaurantLogo;
     if (menuCategoryImages !== undefined && typeof menuCategoryImages === 'object') {
       // Store each key of the map
@@ -445,7 +462,7 @@ app.patch('/api/settings', auth, async (req, res) => {
     }
 
     const user = await ArcheUser.findByIdAndUpdate(req.user.id, update, { new: true })
-      .select('tableCount restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber printMobileRequired taxEnabled taxes menuCategories name email role restaurantLogo menuCategoryImages');
+      .select('tableCount restaurantName restaurantAddress restaurantPhone gstNumber fssaiNumber printMobileRequired taxEnabled taxes packagingCharge menuCategories name email role restaurantLogo menuCategoryImages slug');
     const userData = user.toObject();
     if (userData.menuCategoryImages instanceof Map) {
       userData.menuCategoryImages = Object.fromEntries(userData.menuCategoryImages);
@@ -1554,6 +1571,427 @@ app.patch('/api/notifications/:id/read', auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// =====================
+// SLUG & RESTAURANT UTILITIES
+// =====================
+
+function slugify(text) {
+  if (!text) return '';
+  return text
+    .toString()
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^\w\-]+/g, '')
+    .replace(/\-\-+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '');
+}
+
+async function generateUniqueSlug(name, excludeUserId = null) {
+  let baseSlug = slugify(name);
+  if (!baseSlug) baseSlug = 'restaurant';
+  let slug = baseSlug;
+  let counter = 1;
+
+  while (true) {
+    const query = { slug };
+    if (excludeUserId) query._id = { $ne: excludeUserId };
+    const existing = await ArcheUser.findOne(query);
+    if (!existing) break;
+    counter++;
+    slug = `${baseSlug}-${counter}`;
+  }
+  return slug;
+}
+
+async function ensureRestaurantSlugs() {
+  try {
+    const allAdmins = await ArcheUser.find({ role: 'Admin' });
+    for (const u of allAdmins) {
+      const name = (u.restaurantName && u.restaurantName.trim()) || (u.name && u.name.trim()) || 'cafe';
+      // If user has no slug or their slug is generic 'restaurant' or 'canvas-grove', assign their real name slug
+      if (!u.slug || u.slug === 'restaurant' || u.slug === 'canvas-grove') {
+        u.slug = await generateUniqueSlug(name, u._id);
+        if (!u.restaurantName) {
+          u.restaurantName = name;
+        }
+        await u.save();
+        console.log(`✓ Updated slug to "${u.slug}" for restaurant "${u.restaurantName || u.name}" (${u._id})`);
+      }
+    }
+  } catch (err) {
+    console.error('Error ensuring restaurant slugs:', err);
+  }
+}
+
+async function findRestaurantByIdentifier(identifier) {
+  if (!identifier) return null;
+  const cleanId = String(identifier).trim();
+
+  // 1. Try matching slug directly (exact or case-insensitive)
+  let restaurant = await ArcheUser.findOne({
+    slug: cleanId.toLowerCase(),
+    role: 'Admin'
+  });
+  if (restaurant) return restaurant;
+
+  // 2. Try matching by ObjectId if valid
+  if (mongoose.Types.ObjectId.isValid(cleanId)) {
+    restaurant = await ArcheUser.findOne({
+      _id: cleanId,
+      role: 'Admin'
+    });
+    if (restaurant) return restaurant;
+  }
+
+  // 3. Try matching restaurantName or name case-insensitively or slugified
+  const candidateSlug = slugify(cleanId);
+  restaurant = await ArcheUser.findOne({
+    $or: [
+      { slug: candidateSlug },
+      { restaurantName: new RegExp(`^${cleanId.replace(/-/g, ' ')}$`, 'i') },
+      { restaurantName: new RegExp(`^${cleanId}$`, 'i') },
+      { name: new RegExp(`^${cleanId.replace(/-/g, ' ')}$`, 'i') },
+      { name: new RegExp(`^${cleanId}$`, 'i') }
+    ],
+    role: 'Admin'
+  });
+  if (restaurant) return restaurant;
+
+  // No arbitrary fallback — strictly return null if the restaurant is not in the database
+  return null;
+}
+
+// =====================
+// PUBLIC RESTAURANT ROUTES
+// =====================
+
+// GET /api/public/restro/:identifier — Public restaurant details
+app.get('/api/public/restro/:identifier', async (req, res) => {
+  try {
+    const restaurant = await findRestaurantByIdentifier(req.params.identifier);
+    if (!restaurant) {
+      return res.status(404).json({ error: 'Restaurant not found' });
+    }
+
+    res.json({
+      _id: restaurant._id,
+      restaurantName: restaurant.restaurantName || restaurant.name,
+      slug: restaurant.slug || slugify(restaurant.restaurantName || restaurant.name),
+      restaurantLogo: restaurant.restaurantLogo || '',
+      restaurantAddress: restaurant.restaurantAddress || '',
+      restaurantPhone: restaurant.restaurantPhone || '',
+      mobileNumber: restaurant.mobileNumber || '',
+      whatsappNumber: restaurant.restaurantPhone || restaurant.mobileNumber || '',
+      menuCategories: restaurant.menuCategories || [],
+      menuCategoryImages: restaurant.menuCategoryImages ? (
+        restaurant.menuCategoryImages instanceof Map 
+          ? Object.fromEntries(restaurant.menuCategoryImages) 
+          : restaurant.menuCategoryImages
+      ) : {},
+      taxEnabled: !!restaurant.taxEnabled,
+      taxes: restaurant.taxes || [],
+      packagingCharge: restaurant.packagingCharge || 0
+    });
+  } catch (err) {
+    console.error('Public restaurant fetch error:', err);
+    res.status(500).json({ error: 'Failed to load restaurant information' });
+  }
+});
+
+// GET /api/public/restro/:identifier/menu — Public restaurant menu items
+app.get('/api/public/restro/:identifier/menu', async (req, res) => {
+  try {
+    const restaurant = await findRestaurantByIdentifier(req.params.identifier);
+    if (!restaurant) {
+      return res.status(404).json({ error: 'Restaurant not found' });
+    }
+
+    const items = await Menu.find({ userId: restaurant._id }).sort('category name');
+
+    res.json({
+      restaurantId: restaurant._id,
+      restaurantName: restaurant.restaurantName || restaurant.name,
+      slug: restaurant.slug,
+      restaurantLogo: restaurant.restaurantLogo || '',
+      categories: restaurant.menuCategories || [],
+      items: items.map(item => ({
+        _id: item._id,
+        name: item.name,
+        category: item.category,
+        price: item.price,
+        variations: item.variations || [],
+        image: item.image || '',
+        isAvailable: item.isAvailable !== false
+      }))
+    });
+  } catch (err) {
+    console.error('Public menu fetch error:', err);
+    res.status(500).json({ error: 'Failed to load restaurant menu' });
+  }
+});
+
+// =====================
+// LOYALTY ROUTES
+// =====================
+
+const crypto = require('crypto');
+const LoyaltyCode = require('./models/LoyaltyCode');
+
+// GET /api/loyalty/code — Owner fetches current unused verified QR code
+app.get('/api/loyalty/code', auth, adminOnly, async (req, res) => {
+  try {
+    const restaurantId = req.user.ownerId;
+    // Optimized: Re-use the existing unvisited/unused QR code from DB if one is already active
+    let loyaltyCode = await LoyaltyCode.findOne({ restaurantId, isUsed: false }).sort({ createdAt: -1 });
+    if (!loyaltyCode) {
+      // Generate a new 16-character high-entropy cryptographic hex code
+      const newCodeStr = crypto.randomBytes(8).toString('hex');
+      loyaltyCode = new LoyaltyCode({
+        restaurantId,
+        code: newCodeStr,
+        isUsed: false
+      });
+      await loyaltyCode.save();
+    }
+    res.json({ restaurantId, code: loyaltyCode.code, createdAt: loyaltyCode.createdAt });
+  } catch (err) {
+    console.error('Error fetching loyalty code:', err);
+    res.status(500).json({ error: 'Failed to fetch code' });
+  }
+});
+
+// POST /api/loyalty/code/rotate — Owner forces generating a new QR code (burns any old unused code)
+app.post('/api/loyalty/code/rotate', auth, adminOnly, async (req, res) => {
+  try {
+    const restaurantId = req.user.ownerId;
+    await LoyaltyCode.updateMany(
+      { restaurantId, isUsed: false },
+      { $set: { isUsed: true, usedBy: 'rotated_by_owner' } }
+    );
+    const newCodeStr = crypto.randomBytes(8).toString('hex');
+    const newLoyaltyCode = new LoyaltyCode({
+      restaurantId,
+      code: newCodeStr,
+      isUsed: false
+    });
+    await newLoyaltyCode.save();
+    res.json({ restaurantId, code: newLoyaltyCode.code, message: 'New QR code generated successfully.' });
+  } catch (err) {
+    console.error('Error rotating loyalty code:', err);
+    res.status(500).json({ error: 'Failed to rotate code' });
+  }
+});
+
+// POST /api/loyalty/scan — Public route for customer scanning verified QR URL
+app.post('/api/loyalty/scan', async (req, res) => {
+  try {
+    const { restaurantId, code, customerId, phone, name } = req.body;
+    if (!restaurantId || !code) {
+      return res.status(400).json({ error: 'Missing parameters or QR code' });
+    }
+
+    const restaurant = await findRestaurantByIdentifier(restaurantId);
+    if (!restaurant) {
+      return res.status(404).json({ error: 'Restaurant not found.' });
+    }
+
+    // 1. Strict verification: code MUST exist in DB for this restaurant and must NOT have been used
+    const cleanCode = String(code).trim();
+    const loyaltyCodeDoc = await LoyaltyCode.findOne({
+      restaurantId: restaurant._id,
+      code: cleanCode,
+      isUsed: false
+    });
+
+    if (!loyaltyCodeDoc) {
+      return res.status(400).json({
+        error: 'Invalid or expired QR code. Please scan the current QR code displayed at the restaurant.'
+      });
+    }
+
+    // Extract client IP (handling standard proxies)
+    let ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.ip;
+    if (ip && ip.includes(',')) ip = ip.split(',')[0].trim();
+    if (!ip) ip = 'unknown';
+
+    // 2. Strict One-Day-One-Mark enforcement by device/customer ID
+    let profile = null;
+    if (customerId) {
+      profile = await Loyalty.findOne({ restaurantId: restaurant._id, customerId });
+    }
+    if (!profile && phone) {
+      profile = await Loyalty.findOne({ restaurantId: restaurant._id, customerPhone: phone });
+    }
+    if (!profile && !customerId && ip && ip !== 'unknown') {
+      profile = await Loyalty.findOne({ restaurantId: restaurant._id, ipAddress: ip });
+    }
+
+    const now = new Date();
+    const todayStr = now.toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata' });
+
+    if (profile && profile.lastVisitDate) {
+      const lastVisitStr = profile.lastVisitDate.toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata' });
+      if (todayStr === lastVisitStr) {
+        // Do NOT consume the code if device was already marked today (so another customer can still use it)
+        return res.status(400).json({
+          error: 'Attendance already marked for today on this device. Only 1 mark per day is allowed.',
+          visitCount: profile.visitCount,
+          restaurantName: restaurant.restaurantName || restaurant.name,
+          restaurantLogo: restaurant.restaurantLogo || '',
+          slug: restaurant.slug || '',
+          alreadyMarkedToday: true
+        });
+      }
+    }
+
+    // 3. Mark code as consumed in DB so it cannot be reused
+    loyaltyCodeDoc.isUsed = true;
+    loyaltyCodeDoc.usedBy = customerId || ip;
+    loyaltyCodeDoc.usedAt = now;
+    await loyaltyCodeDoc.save();
+
+    // 4. Record attendance & increment streak/cookie
+    if (profile) {
+      profile.visitCount = (profile.visitCount || 0) + 1;
+      profile.lastVisitDate = now;
+      if (customerId && !profile.customerId) profile.customerId = customerId;
+      if (phone && !profile.customerPhone) profile.customerPhone = phone;
+      if (name && !profile.customerName) profile.customerName = name;
+      if (ip && ip !== 'unknown') profile.ipAddress = ip;
+      profile.history.push({
+        date: now,
+        type: 'check_in',
+        note: `Verified QR check-in (${cleanCode})`
+      });
+      await profile.save();
+    } else {
+      profile = new Loyalty({
+        restaurantId: restaurant._id,
+        customerId: customerId || undefined,
+        customerPhone: phone || undefined,
+        customerName: name || '',
+        ipAddress: ip,
+        visitCount: 1,
+        lastVisitDate: now,
+        history: [{
+          date: now,
+          type: 'check_in',
+          note: `First verified QR check-in (${cleanCode})`
+        }]
+      });
+      await profile.save();
+    }
+
+    res.json({
+      message: 'Attendance marked successfully! Cookie collected.',
+      visitCount: profile.visitCount,
+      restaurantName: restaurant.restaurantName || restaurant.name,
+      restaurantLogo: restaurant.restaurantLogo || '',
+      slug: restaurant.slug || '',
+      restaurantId: restaurant._id
+    });
+  } catch (err) {
+    console.error('Loyalty scan error:', err);
+    res.status(500).json({ error: 'Server error marking attendance' });
+  }
+});
+
+// GET /api/loyalty/status — Public route for customer viewing status
+app.get('/api/loyalty/status', async (req, res) => {
+  try {
+    const { restaurantId, customerId, phone } = req.query;
+    if (!restaurantId) return res.status(400).json({ error: 'Restaurant ID required.' });
+
+    const restaurant = await findRestaurantByIdentifier(restaurantId);
+    if (!restaurant) {
+      return res.status(404).json({ error: 'Restaurant not found.' });
+    }
+
+    let ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    if (ip && ip.includes(',')) ip = ip.split(',')[0].trim();
+
+    let profile = null;
+    if (customerId) {
+      profile = await Loyalty.findOne({ restaurantId: restaurant._id, customerId });
+    }
+    if (!profile && phone) {
+      profile = await Loyalty.findOne({ restaurantId: restaurant._id, customerPhone: phone });
+    }
+    if (!profile && !customerId && ip && ip !== 'unknown') {
+      profile = await Loyalty.findOne({ restaurantId: restaurant._id, ipAddress: ip });
+    }
+
+    res.json({
+      visitCount: profile ? profile.visitCount : 0,
+      lastVisitDate: profile ? profile.lastVisitDate : null,
+      restaurantName: restaurant.restaurantName || restaurant.name,
+      restaurantLogo: restaurant.restaurantLogo || '',
+      slug: restaurant.slug || ''
+    });
+  } catch (err) {
+    console.error('Loyalty status error:', err);
+    res.status(500).json({ error: 'Failed to fetch status.' });
+  }
+});
+
+// POST /api/loyalty/customer-reset — Customer clears their own loyalty attendance ticks
+app.post('/api/loyalty/customer-reset', async (req, res) => {
+  try {
+    const { restaurantId, customerId, phone } = req.body;
+    if (!restaurantId) return res.status(400).json({ error: 'Restaurant ID required' });
+    if (!customerId && !phone) return res.status(400).json({ error: 'Customer identifier required to reset attendance' });
+
+    const restaurant = await findRestaurantByIdentifier(restaurantId);
+    if (!restaurant) return res.status(404).json({ error: 'Restaurant not found' });
+
+    let profile = null;
+    if (customerId) {
+      profile = await Loyalty.findOne({ restaurantId: restaurant._id, customerId });
+    } else if (phone) {
+      profile = await Loyalty.findOne({ restaurantId: restaurant._id, customerPhone: phone });
+    }
+
+    if (!profile) {
+      return res.json({ message: 'No attendance records found to reset.', visitCount: 0 });
+    }
+
+    const previousVisits = profile.visitCount;
+    profile.visitCount = 0;
+    profile.history.push({
+      date: new Date(),
+      type: 'reset',
+      note: `Customer reset attendance (previous count: ${previousVisits})`
+    });
+    await profile.save();
+
+    res.json({
+      message: 'Your attendance count has been reset successfully.',
+      visitCount: 0,
+      restaurantName: restaurant.restaurantName || restaurant.name
+    });
+  } catch (err) {
+    console.error('Customer loyalty reset error:', err);
+    res.status(500).json({ error: 'Failed to reset attendance' });
+  }
+});
+
+// POST /api/loyalty/reset — Owner resets all streaks
+app.post('/api/loyalty/reset', auth, adminOnly, async (req, res) => {
+  try {
+    await Loyalty.updateMany(
+      { restaurantId: req.user.ownerId },
+      { $set: { visitCount: 0 } }
+    );
+    res.json({ message: 'All loyalty streaks have been reset.' });
+  } catch (err) {
+    console.error('Loyalty reset error:', err);
+    res.status(500).json({ error: 'Failed to reset streaks' });
+  }
+});
+
 
 // =====================
 // HEALTH CHECK

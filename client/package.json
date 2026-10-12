@@ -15,8 +15,10 @@
     "date-fns": "^4.1.0",
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.7.0",
+    "qrcode.react": "^4.2.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "react-loading-skeleton": "^3.5.0",
     "react-router-dom": "^7.15.0",
     "tailwind-merge": "^3.5.0"
   },
