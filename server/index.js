@@ -647,21 +647,33 @@ app.post('/api/orders', auth, canPlaceOrders, async (req, res) => {
       const subtotal = orderData.items.reduce((s, i) => s + (i.price * i.quantity), 0);
       orderData.subtotal = subtotal;
 
+      const extraTotal = (orderData.extraCharges || []).reduce((s, c) => s + (Number(c.amount) || 0), 0);
+      const subWithExtra = subtotal + extraTotal;
+
+      let discountAmount = 0;
+      if (orderData.discountType === 'Fixed') {
+        discountAmount = Math.min(subWithExtra, Number(orderData.discountValue || 0));
+      } else if (orderData.discountType === 'Percentage') {
+        discountAmount = Math.min(subWithExtra, subWithExtra * (Number(orderData.discountValue || 0) / 100));
+      }
+      orderData.discountAmount = discountAmount;
+      const afterDiscount = Math.max(0, subWithExtra - discountAmount);
+
       if (user && user.taxEnabled) {
         const taxes = (user.taxes || []).filter(t => t.enabled);
         const taxBreakdown = taxes.map(t => ({
           name: t.name,
           percentage: t.percentage,
-          amount: Math.round((subtotal * t.percentage / 100) * 100) / 100
+          amount: Math.round((afterDiscount * t.percentage / 100) * 100) / 100
         }));
         const taxAmount = taxBreakdown.reduce((s, t) => s + t.amount, 0);
         orderData.taxBreakdown = taxBreakdown;
         orderData.taxAmount = taxAmount;
-        orderData.totalAmount = subtotal + taxAmount;
+        orderData.totalAmount = afterDiscount + taxAmount;
       } else {
         orderData.taxAmount = 0;
         orderData.taxBreakdown = [];
-        orderData.totalAmount = subtotal;
+        orderData.totalAmount = afterDiscount;
       }
     }
 
@@ -741,13 +753,27 @@ app.patch('/api/orders/:id/add-items', auth, canPlaceOrders, async (req, res) =>
     const subtotal = order.items.reduce((s, i) => s + (i.price * i.quantity), 0);
     order.subtotal = subtotal;
 
+    const extraTotal = (order.extraCharges || []).reduce((s, c) => s + (Number(c.amount) || 0), 0);
+    const subWithExtra = subtotal + extraTotal;
+
+    let discountAmount = 0;
+    if (order.discountType === 'Fixed') {
+      discountAmount = Math.min(subWithExtra, Number(order.discountValue || 0));
+    } else if (order.discountType === 'Percentage') {
+      discountAmount = Math.min(subWithExtra, subWithExtra * (Number(order.discountValue || 0) / 100));
+    } else {
+      discountAmount = 0;
+    }
+    order.discountAmount = discountAmount;
+    const afterDiscount = Math.max(0, subWithExtra - discountAmount);
+
     // Recalculate taxes
     if (user && user.taxEnabled) {
       const taxes = (user.taxes || []).filter(t => t.enabled);
       const taxBreakdown = taxes.map(t => ({
         name: t.name,
         percentage: t.percentage,
-        amount: Math.round((subtotal * t.percentage / 100) * 100) / 100
+        amount: Math.round((afterDiscount * t.percentage / 100) * 100) / 100
       }));
       order.taxBreakdown = taxBreakdown;
       order.taxAmount = taxBreakdown.reduce((s, t) => s + t.amount, 0);
@@ -756,7 +782,7 @@ app.patch('/api/orders/:id/add-items', auth, canPlaceOrders, async (req, res) =>
       order.taxBreakdown = [];
     }
     
-    order.totalAmount = order.subtotal + order.taxAmount;
+    order.totalAmount = afterDiscount + order.taxAmount;
     await order.save();
     
     res.json(order);
@@ -781,13 +807,27 @@ app.put('/api/orders/:id/items', auth, canPlaceOrders, async (req, res) => {
     const subtotal = order.items.reduce((s, i) => s + (i.price * i.quantity), 0);
     order.subtotal = subtotal;
 
+    const extraTotal = (order.extraCharges || []).reduce((s, c) => s + (Number(c.amount) || 0), 0);
+    const subWithExtra = subtotal + extraTotal;
+
+    let discountAmount = 0;
+    if (order.discountType === 'Fixed') {
+      discountAmount = Math.min(subWithExtra, Number(order.discountValue || 0));
+    } else if (order.discountType === 'Percentage') {
+      discountAmount = Math.min(subWithExtra, subWithExtra * (Number(order.discountValue || 0) / 100));
+    } else {
+      discountAmount = 0;
+    }
+    order.discountAmount = discountAmount;
+    const afterDiscount = Math.max(0, subWithExtra - discountAmount);
+
     // Recalculate taxes
     if (user && user.taxEnabled) {
       const taxes = (user.taxes || []).filter(t => t.enabled);
       const taxBreakdown = taxes.map(t => ({
         name: t.name,
         percentage: t.percentage,
-        amount: Math.round((subtotal * t.percentage / 100) * 100) / 100
+        amount: Math.round((afterDiscount * t.percentage / 100) * 100) / 100
       }));
       order.taxBreakdown = taxBreakdown;
       order.taxAmount = taxBreakdown.reduce((s, t) => s + t.amount, 0);
@@ -796,12 +836,70 @@ app.put('/api/orders/:id/items', auth, canPlaceOrders, async (req, res) => {
       order.taxBreakdown = [];
     }
     
-    order.totalAmount = order.subtotal + order.taxAmount;
+    order.totalAmount = afterDiscount + order.taxAmount;
     await order.save();
     
     res.json(order);
   } catch (err) {
     console.error('Update items error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/orders/:id/charges — Auto-save extra charges & discount
+app.patch('/api/orders/:id/charges', auth, canPlaceOrders, async (req, res) => {
+  try {
+    const { extraCharges, discountType, discountValue, customerPhone } = req.body;
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const user = await ArcheUser.findById(req.user.ownerId);
+
+    if (extraCharges !== undefined) order.extraCharges = extraCharges;
+    if (discountType !== undefined) order.discountType = discountType;
+    if (discountValue !== undefined) order.discountValue = Number(discountValue) || 0;
+    if (customerPhone !== undefined) order.customerPhone = customerPhone;
+
+    // Recalculate subtotal
+    const subtotal = order.items.reduce((s, i) => s + (i.price * i.quantity), 0);
+    order.subtotal = subtotal;
+
+    const extraTotal = (order.extraCharges || []).reduce((s, c) => s + (Number(c.amount) || 0), 0);
+    const subWithExtra = subtotal + extraTotal;
+
+    let discountAmount = 0;
+    if (order.discountType === 'Fixed') {
+      discountAmount = Math.min(subWithExtra, Number(order.discountValue || 0));
+    } else if (order.discountType === 'Percentage') {
+      discountAmount = Math.min(subWithExtra, subWithExtra * (Number(order.discountValue || 0) / 100));
+    } else {
+      order.discountType = 'None';
+      order.discountValue = 0;
+      discountAmount = 0;
+    }
+    order.discountAmount = discountAmount;
+    const afterDiscount = Math.max(0, subWithExtra - discountAmount);
+
+    if (user && user.taxEnabled) {
+      const taxes = (user.taxes || []).filter(t => t.enabled);
+      const taxBreakdown = taxes.map(t => ({
+        name: t.name,
+        percentage: t.percentage,
+        amount: Math.round((afterDiscount * t.percentage / 100) * 100) / 100
+      }));
+      order.taxBreakdown = taxBreakdown;
+      order.taxAmount = taxBreakdown.reduce((s, t) => s + t.amount, 0);
+    } else {
+      order.taxAmount = 0;
+      order.taxBreakdown = [];
+    }
+
+    order.totalAmount = afterDiscount + order.taxAmount;
+    await order.save();
+
+    res.json(order);
+  } catch (err) {
+    console.error('Update charges error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -813,12 +911,7 @@ app.patch('/api/orders/:orderId/items/:itemId/serve', auth, async (req, res) => 
     const order = await Order.findById(req.params.orderId);
     if (!order) return res.status(404).json({ error: 'Order not found' });
     
-    // Check ownership if not admin
     const user = await ArcheUser.findById(req.user.ownerId);
-    if (order.userId.toString() !== req.user.ownerId && req.user.role !== 'Admin') {
-       // Waiters/Kitchen staff usually share the ownerId, but it's safe to just update it
-       // since they are authenticated.
-    }
 
     const item = order.items.id(req.params.itemId);
     if (!item) return res.status(404).json({ error: 'Item not found' });
@@ -834,7 +927,7 @@ app.patch('/api/orders/:orderId/items/:itemId/serve', auth, async (req, res) => 
 
 app.patch('/api/orders/:id/status', auth, async (req, res) => {
   try {
-    const { status, customerPhone, paymentMode, paymentType, guestNote, cashAmount, onlineAmount } = req.body;
+    const { status, customerPhone, paymentMode, paymentType, guestNote, cashAmount, onlineAmount, extraCharges, discountType, discountValue, discountAmount, subtotal, taxAmount, totalAmount } = req.body;
     const updateData = { status };
     if (customerPhone) updateData.customerPhone = customerPhone;
     if (paymentMode) updateData.paymentMode = paymentMode;
@@ -842,6 +935,13 @@ app.patch('/api/orders/:id/status', auth, async (req, res) => {
     if (guestNote !== undefined) updateData.guestNote = guestNote;
     if (cashAmount !== undefined) updateData.cashAmount = cashAmount;
     if (onlineAmount !== undefined) updateData.onlineAmount = onlineAmount;
+    if (extraCharges !== undefined) updateData.extraCharges = extraCharges;
+    if (discountType !== undefined) updateData.discountType = discountType;
+    if (discountValue !== undefined) updateData.discountValue = discountValue;
+    if (discountAmount !== undefined) updateData.discountAmount = discountAmount;
+    if (subtotal !== undefined) updateData.subtotal = subtotal;
+    if (taxAmount !== undefined) updateData.taxAmount = taxAmount;
+    if (totalAmount !== undefined) updateData.totalAmount = totalAmount;
     
     const order = await Order.findByIdAndUpdate(req.params.id, updateData, { new: true });
     if (!order) return res.status(404).json({ error: 'Order not found' });

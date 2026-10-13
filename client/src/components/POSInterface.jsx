@@ -232,8 +232,16 @@ const OrderCard = React.memo(({ order, activeOrders, onToggleServe, onCancelOrde
 const POSInterface = ({ activeOrders, user, onOrderUpdate, onManageClick, onBillClick }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [updatingItems, setUpdatingItems] = useState(new Set());
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [typeFilter, setTypeFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState(() => localStorage.getItem('restro_pos_status_filter') || 'All');
+  const [typeFilter, setTypeFilter] = useState(() => localStorage.getItem('restro_pos_type_filter') || 'All');
+
+  useEffect(() => {
+    localStorage.setItem('restro_pos_status_filter', statusFilter);
+  }, [statusFilter]);
+
+  useEffect(() => {
+    localStorage.setItem('restro_pos_type_filter', typeFilter);
+  }, [typeFilter]);
 
   const { registerBackInterceptor } = useNavigation();
 
@@ -243,14 +251,9 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onManageClick, onBill
         setSearchTerm('');
         return true;
       }
-      if (statusFilter !== 'All' || typeFilter !== 'All') {
-        setStatusFilter('All');
-        setTypeFilter('All');
-        return true;
-      }
       return false;
     });
-  }, [searchTerm, statusFilter, typeFilter, registerBackInterceptor]);
+  }, [searchTerm, registerBackInterceptor]);
 
   // ── Derived orders (logic unchanged) ──────────────────────────────────────
   const runningOrders = useMemo(() => {
@@ -335,7 +338,9 @@ const POSInterface = ({ activeOrders, user, onOrderUpdate, onManageClick, onBill
   }, [onOrderUpdate]);
 
   // ── Filter chip config (matches TableView chip pattern exactly) ────────────
-  const statusChips = ['All', 'Pending', 'Done'].concat(stats.critical > 0 ? ['Late'] : []);
+  const statusChips = ['All', 'Pending', 'Done'].concat(
+    stats.critical > 0 || statusFilter === 'Late' ? ['Late'] : []
+  );
   const labelMap = {
     All: `All (${stats.total})`,
     Pending: `Pending (${stats.pending})`,

@@ -566,6 +566,7 @@ function App() {
                 }}
                 initialScreen={tableScreen}
                 showToast={showToast}
+                onOrderUpdate={fetchActiveOrders}
                 onScreenChange={(screen) => {
                   const newParams = new URLSearchParams(searchParams);
                   newParams.set('screen', screen);

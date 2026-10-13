@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { useNavigation } from '../navigation/NavigationManager';
@@ -109,7 +109,7 @@ const CustomNumpad = ({ value, onChange, onClose }) => {
 };
 
 // ── Main Component ────────────────────────────────────────────────────────────────────────────
-const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onClose, onCheckoutComplete, initialScreen, showToast, onScreenChange }) => {
+const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onClose, onCheckoutComplete, initialScreen, showToast, onScreenChange, onOrderUpdate }) => {
 
   // ── State ─────────────────────────────────────────────────────────────────────────────────
   const navigate = useNavigate();
@@ -280,13 +280,15 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
 
   useEffect(() => {
     if (mobileScreen === 'cart') {
-      setTempRoundItems(JSON.parse(JSON.stringify(roundItems)));
-      setTempParts(JSON.parse(JSON.stringify(parts)));
       setIsEditingCart(true);
+      if (!isEditingCart || tempParts.length === 0) {
+        setTempRoundItems(JSON.parse(JSON.stringify(roundItems)));
+        setTempParts(JSON.parse(JSON.stringify(parts)));
+      }
     } else {
       setIsEditingCart(false);
     }
-  }, [mobileScreen]);
+  }, [mobileScreen, parts, roundItems]);
 
   // Customer details expand
   const [customerDetailsOpen, setCustomerDetailsOpen] = useState(false);
@@ -315,12 +317,71 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   // ── TABLE-ISOLATED DRAFT MANAGEMENT ──────────────────────────────────────────
   const draftKey = tableId || (isCreatingParcel ? 'parcel' : null);
 
+  const partExtraChargesRef = useRef(partExtraCharges);
+  partExtraChargesRef.current = partExtraCharges;
+  const partDiscountRef = useRef(partDiscount);
+  partDiscountRef.current = partDiscount;
+  const partOrderIdsRef = useRef(partOrderIds);
+  partOrderIdsRef.current = partOrderIds;
+
+  const autoSaveOrderCharges = useCallback((partId, charges, discountObj) => {
+    const oid = partOrderIdsRef.current[partId];
+    if (!oid) return;
+    const effectiveCharges = charges !== undefined ? charges : (partExtraChargesRef.current[partId] || []);
+    const effectiveDiscount = discountObj !== undefined ? discountObj : (partDiscountRef.current[partId] || { type: 'None', value: 0 });
+
+    axios.patch(`/api/orders/${oid}/charges`, {
+      extraCharges: effectiveCharges,
+      discountType: effectiveDiscount?.type || 'None',
+      discountValue: effectiveDiscount?.value || 0
+    }).then(() => {
+      onOrderUpdate?.();
+      setRoundMsg(true);
+      setTimeout(() => setRoundMsg(false), 1500);
+    }).catch(err => {
+      console.error('Failed to auto-save charges/discount:', err);
+    });
+  }, [onOrderUpdate]);
+
+  const updateExtraCharges = useCallback((partId, newCharges) => {
+    setPartExtraCharges(prev => {
+      const next = { ...prev, [partId]: newCharges };
+      partExtraChargesRef.current = next;
+      return next;
+    });
+    autoSaveOrderCharges(partId, newCharges, partDiscountRef.current[partId]);
+  }, [autoSaveOrderCharges]);
+
+  const discountDebounceRef = useRef(null);
+  const updateDiscount = useCallback((partId, newDiscount, immediate = false) => {
+    setPartDiscount(prev => {
+      const next = { ...prev, [partId]: newDiscount };
+      partDiscountRef.current = next;
+      return next;
+    });
+
+    if (discountDebounceRef.current) {
+      clearTimeout(discountDebounceRef.current);
+      discountDebounceRef.current = null;
+    }
+
+    if (immediate) {
+      autoSaveOrderCharges(partId, partExtraChargesRef.current[partId] || [], newDiscount);
+    } else {
+      discountDebounceRef.current = setTimeout(() => {
+        autoSaveOrderCharges(partId, partExtraChargesRef.current[partId] || [], newDiscount);
+      }, 350);
+    }
+  }, [autoSaveOrderCharges]);
+
   const saveDraft = (currentParts, roundItemsMap) => {
     if (!draftKey) return;
     const validParts = (currentParts || []).map(p => ({
       label: p.label || 'Part 1',
-      items: roundItemsMap[p.id] || []
-    })).filter(p => p.items.length > 0);
+      items: roundItemsMap[p.id] || [],
+      extraCharges: partExtraChargesRef.current?.[p.id] || partExtraCharges[p.id] || [],
+      discount: partDiscountRef.current?.[p.id] || partDiscount[p.id] || null
+    })).filter(p => (p.items && p.items.length > 0) || (p.extraCharges && p.extraCharges.length > 0) || (p.discount && p.discount.type !== 'None'));
     persistDraft(tableId, validParts, isCreatingParcel);
   };
 
@@ -335,11 +396,19 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   const applyDraft = (loadedParts, draft) => {
     if (!draft || !draft.length) return;
     const restored = {};
+    const restoredCharges = {};
+    const restoredDiscounts = {};
     draft.forEach((d, idx) => {
       const part = loadedParts[idx];
-      if (part && d.items && d.items.length > 0) restored[part.id] = d.items;
+      if (part) {
+        if (d.items && d.items.length > 0) restored[part.id] = d.items;
+        if (d.extraCharges && d.extraCharges.length > 0) restoredCharges[part.id] = d.extraCharges;
+        if (d.discount && d.discount.type !== 'None') restoredDiscounts[part.id] = d.discount;
+      }
     });
     if (Object.keys(restored).length > 0) setRoundItems(restored);
+    if (Object.keys(restoredCharges).length > 0) setPartExtraCharges(prev => ({ ...prev, ...restoredCharges }));
+    if (Object.keys(restoredDiscounts).length > 0) setPartDiscount(prev => ({ ...prev, ...restoredDiscounts }));
   };
 
   // ── BACK ACTION INTERCEPTOR ─────────────────────────────────────────────────
@@ -574,8 +643,8 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
   const phoneOf = (partId) => partPhones[partId] || '';
 
   const allItemsForPart = (partId) => {
-    const currentParts = isEditingCart ? tempParts : parts;
-    const part = currentParts.find(p => p.id === partId);
+    const currentParts = (isEditingCart && tempParts.length > 0) ? tempParts : parts;
+    const part = currentParts.find(p => p.id === partId) || parts.find(p => p.id === partId);
     if (!part) return [];
     const mergedMap = new Map();
     part.rounds.flatMap(r => r.items).forEach(si => {
@@ -798,6 +867,13 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
       let oid = partOrderIds[partId];
       if (oid) {
         await axios.patch(`/api/orders/${oid}/add-items`, { items: items.map(i => ({ ...i, quantity: i.qty })) });
+        if ((partExtraCharges[partId] && partExtraCharges[partId].length > 0) || (partDiscount[partId] && partDiscount[partId].type !== 'None')) {
+          await axios.patch(`/api/orders/${oid}/charges`, {
+            extraCharges: partExtraCharges[partId] || [],
+            discountType: partDiscount[partId]?.type || 'None',
+            discountValue: partDiscount[partId]?.value || 0
+          }).catch(console.error);
+        }
         setParts(prev => prev.map(p => {
           if (p.id !== partId) return p;
           return { ...p, rounds: [...p.rounds, { roundNumber: p.rounds.length + 1, items: [...items] }] };
@@ -808,7 +884,10 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
           partLabel: parts.find(p => p.id === partId)?.label || 'Part 1',
           items: items.map(i => ({ ...i, quantity: i.qty })),
           status: 'Pending',
-          customerPhone: phoneOf(partId) || ''
+          customerPhone: phoneOf(partId) || '',
+          extraCharges: partExtraCharges[partId] || [],
+          discountType: partDiscount[partId]?.type || 'None',
+          discountValue: partDiscount[partId]?.value || 0
         };
         if (tableId) orderPayload.tableId = tableId;
         const res = await axios.post('/api/orders', orderPayload);
@@ -1177,6 +1256,11 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
       if (part && oid) {
         const flattenedItems = part.rounds.flatMap(r => r.items.map(i => ({ ...i, quantity: i.qty, round: r.roundNumber })));
         await axios.put(`/api/orders/${oid}/items`, { items: flattenedItems });
+        await axios.patch(`/api/orders/${oid}/charges`, {
+          extraCharges: partExtraCharges[currentPartId] || [],
+          discountType: partDiscount[currentPartId]?.type || 'None',
+          discountValue: partDiscount[currentPartId]?.value || 0
+        }).catch(console.error);
       }
 
       // 2. Commit the new unsaved items (from tempRoundItems) to backend
@@ -1735,8 +1819,8 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
           )}
           
           <div className="flex gap-2">
-            <button onClick={() => { setPartDiscount(prev => ({...prev, [currentPartId]: { type: 'None', value: 0 }})); setShowDiscountModal(false); }} className="flex-1 py-3 rounded-xl font-bold text-[13px] border border-slate-200 text-slate-600 hover:bg-slate-50 active:scale-[0.98] transition-all">Clear</button>
-            <button onClick={() => { setPartDiscount(prev => ({...prev, [currentPartId]: { type: tempDiscountType, value: Number(tempDiscountValue) }})); setShowDiscountModal(false); }} className="flex-[2] py-3 rounded-xl font-bold text-[13px] text-white bg-blue-600 shadow-md shadow-blue-200 hover:bg-blue-700 active:scale-[0.98] transition-all">Apply Discount</button>
+            <button onClick={() => { updateDiscount(currentPartId, { type: 'None', value: 0 }, true); setShowDiscountModal(false); }} className="flex-1 py-3 rounded-xl font-bold text-[13px] border border-slate-200 text-slate-600 hover:bg-slate-50 active:scale-[0.98] transition-all">Clear</button>
+            <button onClick={() => { updateDiscount(currentPartId, { type: tempDiscountType, value: Number(tempDiscountValue) }, true); setShowDiscountModal(false); }} className="flex-[2] py-3 rounded-xl font-bold text-[13px] text-white bg-blue-600 shadow-md shadow-blue-200 hover:bg-blue-700 active:scale-[0.98] transition-all">Apply Discount</button>
           </div>
         </div>
       </div>
@@ -1776,7 +1860,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
 
           <div className="flex gap-2">
             <button onClick={() => setShowExtraChargeModal(false)} className="flex-1 py-3 rounded-xl font-bold text-[13px] border border-slate-200 text-slate-600 hover:bg-slate-50 active:scale-[0.98] transition-all">Cancel</button>
-            <button onClick={() => { setPartExtraCharges(prev => ({...prev, [currentPartId]: tempExtraCharges.filter(c => c.name && Number(c.amount) > 0) })); setShowExtraChargeModal(false); }} className="flex-[2] py-3 rounded-xl font-bold text-[13px] text-white bg-blue-600 shadow-md shadow-blue-200 hover:bg-blue-700 active:scale-[0.98] transition-all">Save Charges</button>
+            <button onClick={() => { updateExtraCharges(currentPartId, tempExtraCharges.filter(c => c.name && Number(c.amount) > 0)); setShowExtraChargeModal(false); }} className="flex-[2] py-3 rounded-xl font-bold text-[13px] text-white bg-blue-600 shadow-md shadow-blue-200 hover:bg-blue-700 active:scale-[0.98] transition-all">Save Charges</button>
           </div>
         </div>
       </div>
@@ -2133,7 +2217,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                         const packIdx = charges.findIndex(c => c.name === 'Packaging');
                         if (packIdx >= 0) charges.splice(packIdx, 1);
                         if (newQty > 0) charges.push({ name: 'Packaging', amount: newQty * packPrice });
-                        setPartExtraCharges(prev => ({ ...prev, [currentPartId]: charges }));
+                        updateExtraCharges(currentPartId, charges);
                       };
                       if (packQty === 0) {
                         return (
@@ -2158,7 +2242,14 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
               {/* Smooth Expanding Numpad */}
               <div className={cn("grid transition-all duration-300 ease-in-out border-slate-100", showNumpad ? "grid-rows-[1fr] opacity-100 border-b" : "grid-rows-[0fr] opacity-0 border-b-0")}>
                 <div className="overflow-hidden">
-                  <CustomNumpad value={activeDiscountType === 'Fixed' ? activeDiscountValue : ''} onChange={(val) => setPartDiscount(prev => ({ ...prev, [currentPartId]: val ? { type: 'Fixed', value: Number(val) } : null }))} onClose={() => setShowNumpad(false)} />
+                  <CustomNumpad
+                    value={activeDiscountType === 'Fixed' ? activeDiscountValue : ''}
+                    onChange={(val) => updateDiscount(currentPartId, val ? { type: 'Fixed', value: Number(val) } : { type: 'None', value: 0 })}
+                    onClose={() => {
+                      updateDiscount(currentPartId, activeDiscountType === 'Fixed' && activeDiscountValue ? { type: 'Fixed', value: Number(activeDiscountValue) } : { type: 'None', value: 0 }, true);
+                      setShowNumpad(false);
+                    }}
+                  />
                 </div>
               </div>
 
@@ -2743,7 +2834,7 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                         const packIdx = charges.findIndex(c => c.name === 'Packaging');
                         if (packIdx >= 0) charges.splice(packIdx, 1);
                         if (newQty > 0) charges.push({ name: 'Packaging', amount: newQty * packPrice });
-                        setPartExtraCharges(prev => ({ ...prev, [currentPartId]: charges }));
+                        updateExtraCharges(currentPartId, charges);
                       };
                       if (packQty === 0) {
                         return (
@@ -2774,8 +2865,11 @@ const TableView = ({ tableId, orderId, isHistoryView, menuItems = [], user, onCl
                   <div className="overflow-hidden border border-slate-200 rounded-xl">
                     <CustomNumpad
                       value={activeDiscountType === 'Fixed' ? activeDiscountValue : ''}
-                      onChange={(val) => setPartDiscount(prev => ({ ...prev, [currentPartId]: val ? { type: 'Fixed', value: Number(val) } : null }))}
-                      onClose={() => setShowNumpad(false)}
+                      onChange={(val) => updateDiscount(currentPartId, val ? { type: 'Fixed', value: Number(val) } : { type: 'None', value: 0 })}
+                      onClose={() => {
+                        updateDiscount(currentPartId, activeDiscountType === 'Fixed' && activeDiscountValue ? { type: 'Fixed', value: Number(activeDiscountValue) } : { type: 'None', value: 0 }, true);
+                        setShowNumpad(false);
+                      }}
                     />
                   </div>
                 </div>

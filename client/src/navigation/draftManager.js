@@ -23,8 +23,8 @@ export function getDraft(tableId, isParcel = false) {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
-      const hasAnyItems = parsed.some(p => Array.isArray(p.items) && p.items.length > 0);
-      return hasAnyItems ? parsed : null;
+      const hasAnyContent = parsed.some(p => (Array.isArray(p.items) && p.items.length > 0) || (Array.isArray(p.extraCharges) && p.extraCharges.length > 0) || (p.discount && p.discount.type !== 'None'));
+      return hasAnyContent ? parsed : null;
     }
     return null;
   } catch (err) {
@@ -42,11 +42,13 @@ export function saveDraft(tableId, draftParts, isParcel = false) {
       return;
     }
 
-    // Only save parts that contain items
+    // Save parts that contain items, extraCharges, or discounts
     const validParts = draftParts.map(p => ({
       label: p.label || 'Part 1',
-      items: Array.isArray(p.items) ? p.items : []
-    })).filter(p => p.items.length > 0);
+      items: Array.isArray(p.items) ? p.items : [],
+      extraCharges: Array.isArray(p.extraCharges) ? p.extraCharges : [],
+      discount: p.discount || null
+    })).filter(p => p.items.length > 0 || (p.extraCharges && p.extraCharges.length > 0) || (p.discount && p.discount.type !== 'None'));
 
     if (validParts.length > 0) {
       localStorage.setItem(key, JSON.stringify(validParts));
